@@ -1213,7 +1213,7 @@ const Merchant = () => {
                 <textarea className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all h-32" placeholder="Tell us about your trading volume on other platforms..."></textarea>
               </div>
               <button className="w-full py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold text-lg transition-colors shadow-lg shadow-primary/30">
-                Submit Application
+                Apply for Waitlist
               </button>
             </form>
           </div>
@@ -1340,20 +1340,14 @@ const AboutUs = () => {
     <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
-          <h1 className="text-4xl font-bold text-gray-900 mb-8">About Us</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-8">About NovaP2P</h1>
           <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
-            <p className="text-lg">Welcome to NovaP2P, the next-generation peer-to-peer cryptocurrency trading platform designed for simplicity, security, and speed.</p>
-            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Our Mission</h2>
-            <p>Our mission is to democratize access to digital assets by providing a secure, transparent, and user-friendly platform for peer-to-peer trading. We believe in financial inclusion and the power of decentralized technologies to transform the global economy.</p>
-            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Why Choose NovaP2P?</h2>
-            <ul className="list-disc pl-6 space-y-2">
-              <li><strong>Security First:</strong> We utilize advanced smart contract escrow systems to ensure that every trade is secure and trustless.</li>
-              <li><strong>Zero Maker Fees:</strong> We empower our merchants by offering zero fees for makers, encouraging liquidity and competitive pricing.</li>
-              <li><strong>Global Reach:</strong> Trade with users from around the world using a wide variety of local payment methods.</li>
-              <li><strong>24/7 Support:</strong> Our dedicated support team is always available to assist you with any issues or disputes.</li>
-            </ul>
-            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Our Team</h2>
-            <p>NovaP2P is built by a team of passionate blockchain enthusiasts, security experts, and financial technologists who are dedicated to creating the best possible trading experience for our users.</p>
+            <p className="text-lg">NovaP2P is a technology platform designed to provide a secure and transparent peer-to-peer digital asset marketplace. The platform enables users to buy and sell digital assets directly with one another through a simple and reliable trading environment.</p>
+            <p>Our mission is to build a trusted digital marketplace where individuals can interact, trade, and exchange digital assets efficiently. NovaP2P focuses on providing modern technology infrastructure that supports fast transactions, transparent trading processes, and strong platform security.</p>
+            <p>The platform operates using an escrow-based mechanism that helps protect both parties involved in a transaction. When a trade is initiated, digital assets are temporarily held within the platform until the trade conditions are fulfilled and both parties confirm completion.</p>
+            <p>NovaP2P is committed to maintaining a safe and responsible trading environment. To support platform integrity, the system implements identity verification procedures and transaction monitoring mechanisms that help reduce fraudulent activity and enhance user protection.</p>
+            <p>Our goal is to create a reliable peer-to-peer ecosystem powered by technology, where users can interact confidently while maintaining transparency and operational efficiency.</p>
+            <p>NovaP2P continues to evolve with the aim of improving user experience, strengthening platform security, and building a sustainable digital marketplace for the future.</p>
           </div>
         </div>
       </div>
@@ -1429,7 +1423,7 @@ const FeeStructure = () => {
                   </tr>
                   <tr>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Taker (Regular User)</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">0.10%</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">0.03 $</td>
                     <td className="px-6 py-4 text-sm text-gray-500">Users who respond to and accept existing trade advertisements.</td>
                   </tr>
                 </tbody>
