@@ -931,6 +931,26 @@ const FAQ = () => {
 };
 
 const Footer = () => {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    
+    setStatus('loading');
+    
+    setTimeout(() => {
+      setStatus('success');
+      
+      window.location.href = `mailto:support@novap2p.com?subject=New Newsletter Subscriber&body=Please add my email to the newsletter: ${email}`;
+      
+      setEmail('');
+      
+      setTimeout(() => setStatus('idle'), 5000);
+    }, 1000);
+  };
+
   return (
     <footer className="bg-gray-50 pt-16 pb-8 border-t border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -977,28 +997,60 @@ const Footer = () => {
           <div className="lg:col-span-2">
             <h4 className="font-bold text-gray-900 mb-4">Legal</h4>
             <ul className="space-y-2">
-              <li><a href="#" className="text-gray-500 hover:text-primary transition-colors">Privacy Policy</a></li>
-              <li><a href="#" className="text-gray-500 hover:text-primary transition-colors">Terms of Service</a></li>
-              <li><a href="#" className="text-gray-500 hover:text-primary transition-colors">Cookie Policy</a></li>
+              <li><Link to="/privacy-policy" className="text-gray-500 hover:text-primary transition-colors">Privacy Policy</Link></li>
+              <li><Link to="/terms-of-service" className="text-gray-500 hover:text-primary transition-colors">Terms of Service</Link></li>
+              <li><Link to="/cookie-policy" className="text-gray-500 hover:text-primary transition-colors">Cookie Policy</Link></li>
             </ul>
           </div>
 
           <div className="lg:col-span-4">
             <h4 className="font-bold text-gray-900 mb-4">Follow Us</h4>
-            <form className="mb-6 relative" onSubmit={(e) => e.preventDefault()}>
-              <input 
-                type="email" 
-                placeholder="Enter your email" 
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all pr-28 text-sm"
-                required
-              />
-              <button 
-                type="submit" 
-                className="absolute right-1.5 top-1.5 bottom-1.5 px-4 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors text-sm"
-              >
-                Subscribe
-              </button>
-            </form>
+            <div className="mb-6 relative min-h-[52px]">
+              <AnimatePresence mode="wait">
+                {status === 'success' ? (
+                  <motion.div 
+                    key="success"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl flex items-center justify-center gap-2 text-sm"
+                  >
+                    <CheckCircle2 className="text-green-500 shrink-0" size={18} />
+                    <span className="font-medium">Successfully subscribed!</span>
+                  </motion.div>
+                ) : (
+                  <motion.form 
+                    key="form"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="relative" 
+                    onSubmit={handleSubmit}
+                  >
+                    <input 
+                      type="email" 
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Enter your email" 
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all pr-28 text-sm disabled:opacity-50 disabled:bg-gray-100"
+                      required
+                      disabled={status === 'loading'}
+                    />
+                    <button 
+                      type="submit" 
+                      disabled={status === 'loading'}
+                      className="absolute right-1.5 top-1.5 bottom-1.5 px-4 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors text-sm disabled:opacity-70 flex items-center justify-center min-w-[90px]"
+                    >
+                      {status === 'loading' ? (
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        'Subscribe'
+                      )}
+                    </button>
+                  </motion.form>
+                )}
+              </AnimatePresence>
+            </div>
             <div className="space-y-4 text-sm text-gray-600">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0">
@@ -1133,6 +1185,114 @@ const Merchant = () => {
   );
 };
 
+const PrivacyPolicy = () => {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <h1 className="text-4xl font-bold text-gray-900 mb-8">Privacy Policy</h1>
+          <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
+            <p>Last updated: {new Date().toLocaleDateString()}</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">1. Introduction</h2>
+            <p>Welcome to NovaP2P. We respect your privacy and are committed to protecting your personal data. This privacy policy will inform you as to how we look after your personal data when you visit our website and tell you about your privacy rights and how the law protects you.</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">2. The Data We Collect</h2>
+            <p>We may collect, use, store and transfer different kinds of personal data about you which we have grouped together as follows:</p>
+            <ul className="list-disc pl-6 space-y-2">
+              <li><strong>Identity Data</strong> includes first name, last name, username or similar identifier.</li>
+              <li><strong>Contact Data</strong> includes email address and telephone numbers.</li>
+              <li><strong>Financial Data</strong> includes payment details and wallet addresses used for P2P transactions.</li>
+              <li><strong>Transaction Data</strong> includes details about payments to and from you and other details of products and services you have purchased from us.</li>
+            </ul>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">3. How We Use Your Data</h2>
+            <p>We will only use your personal data when the law allows us to. Most commonly, we will use your personal data in the following circumstances:</p>
+            <ul className="list-disc pl-6 space-y-2">
+              <li>Where we need to perform the contract we are about to enter into or have entered into with you (e.g., facilitating escrow trades).</li>
+              <li>Where it is necessary for our legitimate interests (or those of a third party) and your interests and fundamental rights do not override those interests.</li>
+              <li>Where we need to comply with a legal or regulatory obligation.</li>
+            </ul>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">4. Data Security</h2>
+            <p>We have put in place appropriate security measures to prevent your personal data from being accidentally lost, used or accessed in an unauthorised way, altered or disclosed. In addition, we limit access to your personal data to those employees, agents, contractors and other third parties who have a business need to know.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TermsOfService = () => {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <h1 className="text-4xl font-bold text-gray-900 mb-8">Terms of Service</h1>
+          <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
+            <p>Last updated: {new Date().toLocaleDateString()}</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">1. Agreement to Terms</h2>
+            <p>By accessing or using NovaP2P, you agree to be bound by these Terms of Service and all applicable laws and regulations. If you do not agree with any of these terms, you are prohibited from using or accessing this site.</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">2. Description of Service</h2>
+            <p>NovaP2P provides a peer-to-peer (P2P) cryptocurrency trading platform that allows users to buy and sell digital assets (such as USDT) directly with one another. We provide an escrow service to facilitate secure transactions between buyers and sellers.</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">3. User Responsibilities</h2>
+            <ul className="list-disc pl-6 space-y-2">
+              <li>You must be at least 18 years old to use our services.</li>
+              <li>You are responsible for maintaining the confidentiality of your account and password.</li>
+              <li>You agree to provide accurate and complete information when creating an account or completing a trade.</li>
+              <li>You must not use the platform for any illegal or unauthorized purpose, including money laundering or financing terrorism.</li>
+            </ul>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">4. Escrow and Disputes</h2>
+            <p>When a trade is initiated, the seller's cryptocurrency is locked in our smart contract escrow. The cryptocurrency is only released when the seller confirms receipt of the fiat payment. In the event of a dispute, NovaP2P's moderation team will step in to review evidence (such as payment receipts) and resolve the issue. Our decision in dispute resolutions is final.</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">5. Limitation of Liability</h2>
+            <p>NovaP2P shall not be liable for any indirect, incidental, special, consequential or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses, resulting from your access to or use of or inability to access or use the service.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CookiePolicy = () => {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <h1 className="text-4xl font-bold text-gray-900 mb-8">Cookie Policy</h1>
+          <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
+            <p>Last updated: {new Date().toLocaleDateString()}</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">1. What Are Cookies</h2>
+            <p>As is common practice with almost all professional websites, this site uses cookies, which are tiny files that are downloaded to your computer, to improve your experience. This page describes what information they gather, how we use it and why we sometimes need to store these cookies.</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">2. How We Use Cookies</h2>
+            <p>We use cookies for a variety of reasons detailed below. Unfortunately, in most cases, there are no industry standard options for disabling cookies without completely disabling the functionality and features they add to this site.</p>
+            <ul className="list-disc pl-6 space-y-2">
+              <li><strong>Account related cookies:</strong> If you create an account with us then we will use cookies for the management of the signup process and general administration.</li>
+              <li><strong>Login related cookies:</strong> We use cookies when you are logged in so that we can remember this fact. This prevents you from having to log in every single time you visit a new page.</li>
+              <li><strong>Site preferences cookies:</strong> In order to provide you with a great experience on this site we provide the functionality to set your preferences for how this site runs when you use it.</li>
+            </ul>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">3. Third Party Cookies</h2>
+            <p>In some special cases we also use cookies provided by trusted third parties. The following section details which third party cookies you might encounter through this site.</p>
+            <ul className="list-disc pl-6 space-y-2">
+              <li>This site uses Google Analytics which is one of the most widespread and trusted analytics solutions on the web for helping us to understand how you use the site and ways that we can improve your experience.</li>
+              <li>We also use social media buttons and/or plugins on this site that allow you to connect with your social network in various ways.</li>
+            </ul>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">4. Disabling Cookies</h2>
+            <p>You can prevent the setting of cookies by adjusting the settings on your browser (see your browser Help for how to do this). Be aware that disabling cookies will affect the functionality of this and many other websites that you visit.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Home = () => {
   return (
     <main>
@@ -1158,6 +1318,9 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/merchant" element={<Merchant />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/terms-of-service" element={<TermsOfService />} />
+          <Route path="/cookie-policy" element={<CookiePolicy />} />
         </Routes>
         <Footer />
       </div>
