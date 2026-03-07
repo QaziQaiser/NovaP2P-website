@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldCheck, Zap, Eye, Wallet, Users, Scale, 
   ArrowRight, CheckCircle2, Lock, Smartphone, 
   Globe, ChevronDown, Menu, X, Mail, Twitter, 
-  MessageCircle, Github, ArrowRightLeft, CreditCard
+  MessageCircle, Github, ArrowRightLeft, CreditCard,
+  Facebook, Instagram, Send, Phone, MapPin, MessageSquare
 } from 'lucide-react';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -20,11 +23,11 @@ const Navbar = () => {
   }, []);
 
   const navLinks = [
-    { name: 'Home', href: '#home' },
-    { name: 'How It Works', href: '#how-it-works' },
-    { name: 'Features', href: '#features' },
-    { name: 'Security', href: '#security' },
-    { name: 'FAQ', href: '#faq' },
+    { name: 'Home', href: '/#home' },
+    { name: 'How It Works', href: '/#how-it-works' },
+    { name: 'Features', href: '/#features' },
+    { name: 'Security', href: '/#security' },
+    { name: 'FAQ', href: '/#faq' },
   ];
 
   return (
@@ -32,12 +35,12 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center">
           <div className="flex items-center">
-            <a href="#" className="text-2xl font-bold text-primary flex items-center gap-2">
+            <Link to="/" className="text-2xl font-bold text-primary flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white">
                 <ArrowRightLeft size={20} />
               </div>
               NovaP2P
-            </a>
+            </Link>
           </div>
           
           <div className="hidden md:flex items-center space-x-8">
@@ -46,7 +49,7 @@ const Navbar = () => {
                 {link.name}
               </a>
             ))}
-            <a href="#coming-soon" className="bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-full font-medium transition-colors shadow-lg shadow-primary/30">
+            <a href="/#coming-soon" className="bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-full font-medium transition-colors shadow-lg shadow-primary/30">
               Join Waitlist
             </a>
           </div>
@@ -80,7 +83,7 @@ const Navbar = () => {
                 </a>
               ))}
               <a 
-                href="#coming-soon" 
+                href="/#coming-soon" 
                 onClick={() => setMobileMenuOpen(false)}
                 className="block w-full text-center mt-4 bg-primary text-white px-6 py-3 rounded-xl font-medium"
               >
@@ -135,12 +138,12 @@ const Hero = () => {
             transition={{ duration: 0.5, delay: 0.3 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
-            <a href="#coming-soon" className="w-full sm:w-auto px-8 py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-semibold text-lg transition-all shadow-lg shadow-primary/30 hover:shadow-primary/50 flex items-center justify-center gap-2">
+            <a href="/#coming-soon" className="w-full sm:w-auto px-8 py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-semibold text-lg transition-all shadow-lg shadow-primary/30 hover:shadow-primary/50 flex items-center justify-center gap-2">
               Join Waitlist <ArrowRight size={20} />
             </a>
-            <a href="#how-it-works" className="w-full sm:w-auto px-8 py-4 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-xl font-semibold text-lg transition-all flex items-center justify-center">
+            <Link to="/merchant" className="w-full sm:w-auto px-8 py-4 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-xl font-semibold text-lg transition-all flex items-center justify-center">
               Apply for Merchant
-            </a>
+            </Link>
           </motion.div>
         </div>
 
@@ -931,8 +934,8 @@ const Footer = () => {
   return (
     <footer className="bg-gray-50 pt-16 pb-8 border-t border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
-          <div className="col-span-1 md:col-span-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-12 mb-12">
+          <div className="lg:col-span-4">
             <a href="#" className="text-2xl font-bold text-primary flex items-center gap-2 mb-4">
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white">
                 <ArrowRightLeft size={20} />
@@ -942,36 +945,80 @@ const Footer = () => {
             <p className="text-gray-500 max-w-sm mb-6">
               A next-generation peer-to-peer crypto trading platform designed for simplicity, security, and speed.
             </p>
-            <div className="flex space-x-4">
+            <div className="flex space-x-3">
+              <a href="#" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
+                <Facebook size={18} />
+              </a>
+              <a href="#" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
+                <Instagram size={18} />
+              </a>
               <a href="#" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
                 <Twitter size={18} />
               </a>
               <a href="#" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
-                <MessageCircle size={18} />
+                <Send size={18} />
               </a>
               <a href="#" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
-                <Mail size={18} />
+                <MessageSquare size={18} />
               </a>
             </div>
           </div>
           
-          <div>
+          <div className="lg:col-span-2">
             <h4 className="font-bold text-gray-900 mb-4">Quick Links</h4>
             <ul className="space-y-2">
-              <li><a href="#home" className="text-gray-500 hover:text-primary transition-colors">Home</a></li>
-              <li><a href="#how-it-works" className="text-gray-500 hover:text-primary transition-colors">How It Works</a></li>
-              <li><a href="#features" className="text-gray-500 hover:text-primary transition-colors">Features</a></li>
-              <li><a href="#faq" className="text-gray-500 hover:text-primary transition-colors">FAQ</a></li>
+              <li><a href="/#home" className="text-gray-500 hover:text-primary transition-colors">Home</a></li>
+              <li><a href="/#how-it-works" className="text-gray-500 hover:text-primary transition-colors">How It Works</a></li>
+              <li><a href="/#features" className="text-gray-500 hover:text-primary transition-colors">Features</a></li>
+              <li><Link to="/merchant" className="text-gray-500 hover:text-primary transition-colors">Apply for Merchant</Link></li>
             </ul>
           </div>
           
-          <div>
+          <div className="lg:col-span-2">
             <h4 className="font-bold text-gray-900 mb-4">Legal</h4>
             <ul className="space-y-2">
               <li><a href="#" className="text-gray-500 hover:text-primary transition-colors">Privacy Policy</a></li>
               <li><a href="#" className="text-gray-500 hover:text-primary transition-colors">Terms of Service</a></li>
               <li><a href="#" className="text-gray-500 hover:text-primary transition-colors">Cookie Policy</a></li>
             </ul>
+          </div>
+
+          <div className="lg:col-span-4">
+            <h4 className="font-bold text-gray-900 mb-4">Follow Us</h4>
+            <form className="mb-6 relative" onSubmit={(e) => e.preventDefault()}>
+              <input 
+                type="email" 
+                placeholder="Enter your email" 
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all pr-28 text-sm"
+                required
+              />
+              <button 
+                type="submit" 
+                className="absolute right-1.5 top-1.5 bottom-1.5 px-4 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors text-sm"
+              >
+                Subscribe
+              </button>
+            </form>
+            <div className="space-y-4 text-sm text-gray-600">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0">
+                  <Phone size={14} />
+                </div>
+                <span>+44 7353 905958</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0">
+                  <Mail size={14} />
+                </div>
+                <span>support@novap2p.com</span>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0 mt-0.5">
+                  <MapPin size={14} />
+                </div>
+                <span>Bahria Phase IV Civic Center, Islamabad</span>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -992,23 +1039,128 @@ const Footer = () => {
   );
 };
 
+const Merchant = () => {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center max-w-3xl mx-auto mb-16">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-sm mb-6"
+          >
+            🌟 Verified Merchant Program
+          </motion.div>
+          <motion.h1 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-4xl md:text-5xl font-bold text-gray-900 mb-6"
+          >
+            Become a NovaP2P Merchant
+          </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="text-xl text-gray-600"
+          >
+            Join our elite group of verified traders. Enjoy exclusive benefits, lower fees, and higher trading limits to scale your P2P business.
+          </motion.p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+          {[
+            { icon: <Zap size={24} />, title: "Zero Maker Fees", desc: "Post your buy and sell ads with absolutely zero fees." },
+            { icon: <ShieldCheck size={24} />, title: "Verified Badge", desc: "Stand out with a verified merchant badge to build trust." },
+            { icon: <Users size={24} />, title: "Dedicated Support", desc: "Get 24/7 priority customer support for all your trades." }
+          ].map((benefit, idx) => (
+            <motion.div 
+              key={idx}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 + idx * 0.1 }}
+              className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center"
+            >
+              <div className="w-14 h-14 rounded-full bg-blue-50 text-primary flex items-center justify-center mx-auto mb-6">
+                {benefit.icon}
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">{benefit.title}</h3>
+              <p className="text-gray-600">{benefit.desc}</p>
+            </motion.div>
+          ))}
+        </div>
+
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden max-w-4xl mx-auto"
+        >
+          <div className="p-8 md:p-12">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Merchant Application Form</h2>
+            <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                  <input type="text" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="John Doe" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                  <input type="email" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="john@example.com" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Telegram / WhatsApp Number</label>
+                <input type="text" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="+1 234 567 8900" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Previous P2P Experience</label>
+                <textarea className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all h-32" placeholder="Tell us about your trading volume on other platforms..."></textarea>
+              </div>
+              <button className="w-full py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold text-lg transition-colors shadow-lg shadow-primary/30">
+                Submit Application
+              </button>
+            </form>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
+const Home = () => {
+  return (
+    <main>
+      <Hero />
+      <About />
+      <HowItWorks />
+      <Features />
+      <WhyDifferent />
+      <AppPreview />
+      <Security />
+      <Roadmap />
+      <ComingSoon />
+      <FAQ />
+    </main>
+  );
+};
+
 export default function App() {
   return (
-    <div className="min-h-screen bg-white font-sans selection:bg-primary/20 selection:text-primary">
-      <Navbar />
-      <main>
-        <Hero />
-        <About />
-        <HowItWorks />
-        <Features />
-        <WhyDifferent />
-        <AppPreview />
-        <Security />
-        <Roadmap />
-        <ComingSoon />
-        <FAQ />
-      </main>
-      <Footer />
-    </div>
+    <BrowserRouter>
+      <div className="min-h-screen bg-white font-sans selection:bg-primary/20 selection:text-primary">
+        <Navbar />
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/merchant" element={<Merchant />} />
+        </Routes>
+        <Footer />
+      </div>
+    </BrowserRouter>
   );
 }
