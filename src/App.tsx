@@ -1131,6 +1131,7 @@ const Footer = () => {
 
 const Merchant = () => {
   useEffect(() => {
+    document.title = "Apply for Merchant - NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1225,6 +1226,7 @@ const Merchant = () => {
 
 const PrivacyPolicy = () => {
   useEffect(() => {
+    document.title = "Privacy Policy - NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1263,6 +1265,7 @@ const PrivacyPolicy = () => {
 
 const TermsOfService = () => {
   useEffect(() => {
+    document.title = "Terms of Service - NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1297,6 +1300,7 @@ const TermsOfService = () => {
 
 const CookiePolicy = () => {
   useEffect(() => {
+    document.title = "Cookie Policy - NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1333,6 +1337,7 @@ const CookiePolicy = () => {
 
 const AboutUs = () => {
   useEffect(() => {
+    document.title = "About Us - NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1357,6 +1362,7 @@ const AboutUs = () => {
 
 const AmlKycPolicy = () => {
   useEffect(() => {
+    document.title = "AML & KYC Policy - NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1395,6 +1401,7 @@ const AmlKycPolicy = () => {
 
 const FeeStructure = () => {
   useEffect(() => {
+    document.title = "Fee Structure - NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1442,6 +1449,10 @@ const FeeStructure = () => {
 };
 
 const Home = () => {
+  useEffect(() => {
+    document.title = "NovaP2P";
+  }, []);
+
   return (
     <main>
       <Hero />
