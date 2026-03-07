@@ -45,11 +45,33 @@ const Navbar = () => {
           
           <div className="hidden md:flex items-center space-x-8">
             {navLinks.map((link) => (
-              <a key={link.name} href={link.href} className="text-gray-600 hover:text-primary font-medium transition-colors">
+              <a 
+                key={link.name} 
+                href={link.href} 
+                onClick={(e) => {
+                  if (link.href.startsWith('/#') && window.location.pathname === '/') {
+                    e.preventDefault();
+                    const id = link.href.replace('/#', '');
+                    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+                    window.history.pushState(null, '', link.href);
+                  }
+                }}
+                className="text-gray-600 hover:text-primary font-medium transition-colors"
+              >
                 {link.name}
               </a>
             ))}
-            <a href="/#coming-soon" className="bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-full font-medium transition-colors shadow-lg shadow-primary/30">
+            <a 
+              href="/#coming-soon" 
+              onClick={(e) => {
+                if (window.location.pathname === '/') {
+                  e.preventDefault();
+                  document.getElementById('coming-soon')?.scrollIntoView({ behavior: 'smooth' });
+                  window.history.pushState(null, '', '/#coming-soon');
+                }
+              }}
+              className="bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-full font-medium transition-colors shadow-lg shadow-primary/30"
+            >
               Join Waitlist
             </a>
           </div>
@@ -76,7 +98,17 @@ const Navbar = () => {
                 <a 
                   key={link.name} 
                   href={link.href} 
-                  onClick={() => setMobileMenuOpen(false)}
+                  onClick={(e) => {
+                    setMobileMenuOpen(false);
+                    if (link.href.startsWith('/#') && window.location.pathname === '/') {
+                      e.preventDefault();
+                      const id = link.href.replace('/#', '');
+                      setTimeout(() => {
+                        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+                        window.history.pushState(null, '', link.href);
+                      }, 300);
+                    }
+                  }}
                   className="block px-3 py-3 text-base font-medium text-gray-700 hover:text-primary hover:bg-gray-50 rounded-md"
                 >
                   {link.name}
@@ -84,7 +116,16 @@ const Navbar = () => {
               ))}
               <a 
                 href="/#coming-soon" 
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={(e) => {
+                  setMobileMenuOpen(false);
+                  if (window.location.pathname === '/') {
+                    e.preventDefault();
+                    setTimeout(() => {
+                      document.getElementById('coming-soon')?.scrollIntoView({ behavior: 'smooth' });
+                      window.history.pushState(null, '', '/#coming-soon');
+                    }, 300);
+                  }
+                }}
                 className="block w-full text-center mt-4 bg-primary text-white px-6 py-3 rounded-xl font-medium"
               >
                 Join Waitlist
@@ -988,8 +1029,9 @@ const Footer = () => {
             <h4 className="font-bold text-gray-900 mb-4">Quick Links</h4>
             <ul className="space-y-2">
               <li><a href="/#home" className="text-gray-500 hover:text-primary transition-colors">Home</a></li>
-              <li><a href="/#how-it-works" className="text-gray-500 hover:text-primary transition-colors">How It Works</a></li>
+              <li><Link to="/about" className="text-gray-500 hover:text-primary transition-colors">About Us</Link></li>
               <li><a href="/#features" className="text-gray-500 hover:text-primary transition-colors">Features</a></li>
+              <li><a href="/#how-it-works" className="text-gray-500 hover:text-primary transition-colors">How It Works</a></li>
               <li><Link to="/merchant" className="text-gray-500 hover:text-primary transition-colors">Apply for Merchant</Link></li>
             </ul>
           </div>
@@ -1000,6 +1042,8 @@ const Footer = () => {
               <li><Link to="/privacy-policy" className="text-gray-500 hover:text-primary transition-colors">Privacy Policy</Link></li>
               <li><Link to="/terms-of-service" className="text-gray-500 hover:text-primary transition-colors">Terms of Service</Link></li>
               <li><Link to="/cookie-policy" className="text-gray-500 hover:text-primary transition-colors">Cookie Policy</Link></li>
+              <li><Link to="/aml-kyc-policy" className="text-gray-500 hover:text-primary transition-colors">AML & KYC Policy</Link></li>
+              <li><Link to="/fee-structure" className="text-gray-500 hover:text-primary transition-colors">Fee Structure</Link></li>
             </ul>
           </div>
 
@@ -1054,18 +1098,12 @@ const Footer = () => {
             <div className="space-y-4 text-sm text-gray-600">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0">
-                  <Phone size={14} />
-                </div>
-                <span>+44 7353 905958</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0">
                   <Mail size={14} />
                 </div>
                 <span>support@novap2p.com</span>
               </div>
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0 mt-0.5">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0">
                   <MapPin size={14} />
                 </div>
                 <span>Bahria Phase IV Civic Center, Islamabad</span>
@@ -1293,6 +1331,122 @@ const CookiePolicy = () => {
   );
 };
 
+const AboutUs = () => {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <h1 className="text-4xl font-bold text-gray-900 mb-8">About Us</h1>
+          <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
+            <p className="text-lg">Welcome to NovaP2P, the next-generation peer-to-peer cryptocurrency trading platform designed for simplicity, security, and speed.</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Our Mission</h2>
+            <p>Our mission is to democratize access to digital assets by providing a secure, transparent, and user-friendly platform for peer-to-peer trading. We believe in financial inclusion and the power of decentralized technologies to transform the global economy.</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Why Choose NovaP2P?</h2>
+            <ul className="list-disc pl-6 space-y-2">
+              <li><strong>Security First:</strong> We utilize advanced smart contract escrow systems to ensure that every trade is secure and trustless.</li>
+              <li><strong>Zero Maker Fees:</strong> We empower our merchants by offering zero fees for makers, encouraging liquidity and competitive pricing.</li>
+              <li><strong>Global Reach:</strong> Trade with users from around the world using a wide variety of local payment methods.</li>
+              <li><strong>24/7 Support:</strong> Our dedicated support team is always available to assist you with any issues or disputes.</li>
+            </ul>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Our Team</h2>
+            <p>NovaP2P is built by a team of passionate blockchain enthusiasts, security experts, and financial technologists who are dedicated to creating the best possible trading experience for our users.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AmlKycPolicy = () => {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <h1 className="text-4xl font-bold text-gray-900 mb-8">AML & KYC Policy</h1>
+          <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
+            <p>Last updated: {new Date().toLocaleDateString()}</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">1. Introduction</h2>
+            <p>NovaP2P is committed to the highest standards of Anti-Money Laundering (AML) and Know Your Customer (KYC) compliance. We have implemented robust policies and procedures to prevent our platform from being used for illicit activities.</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">2. Know Your Customer (KYC)</h2>
+            <p>To ensure the security of our platform and comply with regulatory requirements, we require users to undergo a KYC verification process before they can access certain features or higher trading limits. This process may include:</p>
+            <ul className="list-disc pl-6 space-y-2">
+              <li>Providing a valid government-issued ID (e.g., passport, driver's license).</li>
+              <li>Submitting a proof of address (e.g., utility bill, bank statement).</li>
+              <li>Completing a facial recognition or liveness check.</li>
+            </ul>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">3. Anti-Money Laundering (AML)</h2>
+            <p>Our AML program is designed to detect and prevent money laundering and terrorist financing. Key components of our program include:</p>
+            <ul className="list-disc pl-6 space-y-2">
+              <li>Continuous monitoring of user transactions for suspicious activity.</li>
+              <li>Reporting suspicious transactions to the relevant authorities as required by law.</li>
+              <li>Maintaining comprehensive records of user identities and transactions.</li>
+              <li>Regular training for our staff on AML compliance and risk awareness.</li>
+            </ul>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">4. Sanctions and Restricted Jurisdictions</h2>
+            <p>NovaP2P strictly prohibits the use of our platform by individuals or entities located in restricted jurisdictions or subject to international sanctions. We employ advanced screening tools to ensure compliance with these restrictions.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const FeeStructure = () => {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <h1 className="text-4xl font-bold text-gray-900 mb-8">Fee Structure</h1>
+          <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
+            <p>At NovaP2P, we believe in transparent and competitive pricing. Our fee structure is designed to be simple and fair for all users.</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Trading Fees</h2>
+            <div className="overflow-x-auto mt-4">
+              <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fee Rate</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Maker (Merchant)</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">0.00%</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">Users who create and post trade advertisements.</td>
+                  </tr>
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Taker (Regular User)</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">0.10%</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">Users who respond to and accept existing trade advertisements.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Deposit Fees</h2>
+            <p>NovaP2P does not charge any fees for depositing cryptocurrency into your platform wallet. However, please note that you may still incur standard network (miner) fees from the blockchain when transferring funds from an external wallet.</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Withdrawal Fees</h2>
+            <p>When withdrawing cryptocurrency from NovaP2P to an external wallet, a small flat fee is applied to cover the blockchain network costs. This fee varies dynamically based on current network congestion.</p>
+            <p className="text-sm text-gray-500 mt-4">* All fees are deducted automatically from the transaction amount. NovaP2P reserves the right to adjust the fee structure at any time with prior notice to users.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Home = () => {
   return (
     <main>
@@ -1317,10 +1471,13 @@ export default function App() {
         <Navbar />
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/about" element={<AboutUs />} />
           <Route path="/merchant" element={<Merchant />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/terms-of-service" element={<TermsOfService />} />
           <Route path="/cookie-policy" element={<CookiePolicy />} />
+          <Route path="/aml-kyc-policy" element={<AmlKycPolicy />} />
+          <Route path="/fee-structure" element={<FeeStructure />} />
         </Routes>
         <Footer />
       </div>
