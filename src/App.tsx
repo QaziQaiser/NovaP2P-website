@@ -139,7 +139,7 @@ const Hero = () => {
               Join Waitlist <ArrowRight size={20} />
             </a>
             <a href="#how-it-works" className="w-full sm:w-auto px-8 py-4 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-xl font-semibold text-lg transition-all flex items-center justify-center">
-              Learn How It Works
+              Apply for Merchant
             </a>
           </motion.div>
         </div>
@@ -163,21 +163,25 @@ const Hero = () => {
               </div>
               
               <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="bg-white p-4 rounded-xl border border-gray-100 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+                {[
+                  { id: 1, price: '288.78 PKR' },
+                  { id: 2, price: '288.90 PKR' },
+                  { id: 3, price: '288.91 PKR' }
+                ].map((trader) => (
+                  <div key={trader.id} className="bg-white p-4 rounded-xl border border-gray-100 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow cursor-pointer">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center font-bold text-primary">
-                        U{i}
+                        U{trader.id}
                       </div>
                       <div>
-                        <div className="font-medium text-sm">Trader{i}99</div>
+                        <div className="font-medium text-sm">Trader{trader.id}99</div>
                         <div className="text-xs text-gray-500 flex items-center gap-1">
                           <CheckCircle2 size={12} className="text-accent" /> 99% completion
                         </div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-bold text-gray-800">1.02 USD</div>
+                      <div className="font-bold text-gray-800">{trader.price}</div>
                       <div className="text-xs text-gray-500">Limits: $50 - $500</div>
                     </div>
                     <button className="px-4 py-2 bg-accent/10 text-accent hover:bg-accent hover:text-white rounded-lg text-sm font-semibold transition-colors">
@@ -205,11 +209,11 @@ const Hero = () => {
                 </div>
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-500">Price</span>
-                  <span className="font-semibold">1.02 USD</span>
+                  <span className="font-semibold">288.87 PKR</span>
                 </div>
                 <div className="flex justify-between text-sm pt-2 border-t border-gray-200">
                   <span className="text-gray-500">Total to Pay</span>
-                  <span className="font-bold text-primary">102.00 USD</span>
+                  <span className="font-bold text-primary">28,887.00 PKR</span>
                 </div>
               </div>
               
@@ -601,16 +605,21 @@ const AppPreview = () => {
                     
                     {/* Table Rows */}
                     <div className="space-y-3">
-                      {[1, 2, 3, 4].map((i) => (
-                        <div key={i} className="grid grid-cols-4 items-center bg-gray-50 p-4 rounded-xl border border-gray-100">
+                      {[
+                        { id: 1, price: '288.81 PKR' },
+                        { id: 2, price: '288.85 PKR' },
+                        { id: 3, price: '288.89 PKR' },
+                        { id: 4, price: '288.92 PKR' }
+                      ].map((trader) => (
+                        <div key={trader.id} className="grid grid-cols-4 items-center bg-gray-50 p-4 rounded-xl border border-gray-100">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-blue-100 text-primary flex items-center justify-center font-bold text-xs shrink-0">T{i}</div>
+                            <div className="w-8 h-8 rounded-full bg-blue-100 text-primary flex items-center justify-center font-bold text-xs shrink-0">T{trader.id}</div>
                             <div>
-                              <div className="font-medium text-sm text-gray-800">TraderPro_{i}</div>
-                              <div className="text-xs text-gray-500">99.{i}% completion</div>
+                              <div className="font-medium text-sm text-gray-800">TraderPro_{trader.id}</div>
+                              <div className="text-xs text-gray-500">99.{trader.id}% completion</div>
                             </div>
                           </div>
-                          <div className="font-bold text-gray-800">1.0{i} USD</div>
+                          <div className="font-bold text-gray-800">{trader.price}</div>
                           <div>
                             <div className="text-sm text-gray-800">Available: 1,000 USDT</div>
                             <div className="text-xs text-gray-500">Limit: $100 - $1,000</div>
@@ -866,10 +875,10 @@ const ComingSoon = () => {
 
 const FAQ = () => {
   const faqs = [
-    { q: "What is P2P trading?", a: "Peer-to-peer (P2P) trading allows users to buy and sell cryptocurrencies directly with each other without a central exchange acting as an intermediary." },
-    { q: "Is NovaP2P safe?", a: "Yes. NovaP2P uses a secure escrow system that locks the cryptocurrency during a trade until the seller confirms receipt of payment, protecting both parties." },
+    { q: "What is P2P trading?", a: "Peer-to-peer (P2P) trading allows users to buy and sell USDT directly with each other without a central exchange acting as an intermediary." },
+    { q: "Is NovaP2P safe?", a: "Yes. NovaP2P uses a secure escrow system that locks the USDT during a trade until the seller confirms receipt of payment, protecting both parties." },
     { q: "What cryptocurrencies will be supported?", a: "At launch, NovaP2P will primarily focus on USDT (Tether) to provide a stable trading environment. More assets will be added in later phases." },
-    { q: "How does the escrow system work?", a: "When a trade starts, the seller's crypto is locked in our smart contract escrow. It is only released to the buyer once the seller confirms they have received the fiat payment." },
+    { q: "How does the escrow system work?", a: "When a trade starts, the seller's USDT is locked in our smart contract escrow. It is only released to the buyer once the seller confirms they have received the fiat payment." },
     { q: "When will NovaP2P launch?", a: "We are currently in the final stages of platform development. Join our waitlist to be notified about our upcoming Closed Beta launch." }
   ];
 
