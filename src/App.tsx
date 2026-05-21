@@ -1102,12 +1102,6 @@ const Footer = () => {
                 </div>
                 <span>support@novap2p.com</span>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0">
-                  <MapPin size={14} />
-                </div>
-                <span>Bahria Phase IV Civic Center, Islamabad</span>
-              </div>
             </div>
           </div>
         </div>
@@ -1130,10 +1124,51 @@ const Footer = () => {
 };
 
 const Merchant = () => {
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [contactNo, setContactNo] = useState('');
+  const [experience, setExperience] = useState('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
+
   useEffect(() => {
     document.title = "Apply for Merchant - NovaP2P";
     window.scrollTo(0, 0);
   }, []);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fullName || !email || !contactNo) return;
+
+    setStatus('loading');
+
+    // Simulate API call delay
+    setTimeout(() => {
+      setStatus('success');
+
+      // Prepare mailto link parameters
+      const subject = encodeURIComponent("Merchant Application - NovaP2P");
+      const body = encodeURIComponent(
+        `Hello NovaP2P Team,\n\nI would like to apply for the Verified Merchant Program.\n\n` +
+        `Full Name: ${fullName}\n` +
+        `Email Address: ${email}\n` +
+        `Telegram / WhatsApp Number: ${contactNo}\n` +
+        `Previous P2P Experience:\n${experience}\n\n` +
+        `Please add me to the waitlist and review my application.\n\nBest regards,\n${fullName}`
+      );
+
+      // Open mailto link
+      window.location.href = `mailto:support@novap2p.com?subject=${subject}&body=${body}`;
+
+      // Clear the form fields
+      setFullName('');
+      setEmail('');
+      setContactNo('');
+      setExperience('');
+
+      // Reset status back to idle after a moderate delay
+      setTimeout(() => setStatus('idle'), 8000);
+    }, 1000);
+  };
 
   return (
     <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
@@ -1194,29 +1229,97 @@ const Merchant = () => {
         >
           <div className="p-8 md:p-12">
             <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Merchant Application Form</h2>
-            <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                  <input type="text" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="John Doe" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-                  <input type="email" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="john@example.com" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Telegram / WhatsApp Number</label>
-                <input type="text" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all" placeholder="+1 234 567 8900" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Previous P2P Experience</label>
-                <textarea className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all h-32" placeholder="Tell us about your trading volume on other platforms..."></textarea>
-              </div>
-              <button className="w-full py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold text-lg transition-colors shadow-lg shadow-primary/30">
-                Apply for Waitlist
-              </button>
-            </form>
+            <AnimatePresence mode="wait">
+              {status === 'success' ? (
+                <motion.div 
+                  key="success"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="bg-green-50 border border-green-100 rounded-2xl p-8 text-center"
+                >
+                  <div className="w-16 h-16 rounded-full bg-green-100 text-green-600 flex items-center justify-center mx-auto mb-6">
+                    <CheckCircle2 size={32} />
+                  </div>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Application Form Initiated!</h3>
+                  <p className="text-gray-600 max-w-md mx-auto mb-4">
+                    Thank you for applying to the NovaP2P Verified Merchant Program. Please verify and send the pre-filled email via your mail client to complete your waitlist submission.
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Our team will verify your details and follow up with you shortly.
+                  </p>
+                </motion.div>
+              ) : (
+                <motion.form 
+                  key="form"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="space-y-6" 
+                  onSubmit={handleSubmit}
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all disabled:opacity-50" 
+                        placeholder="John Doe" 
+                        disabled={status === 'loading'}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                      <input 
+                        type="email" 
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all disabled:opacity-50" 
+                        placeholder="john@example.com" 
+                        disabled={status === 'loading'}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Telegram / WhatsApp Number</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={contactNo}
+                      onChange={(e) => setContactNo(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all disabled:opacity-50" 
+                      placeholder="+1 234 567 8900" 
+                      disabled={status === 'loading'}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Previous P2P Experience</label>
+                    <textarea 
+                      value={experience}
+                      onChange={(e) => setExperience(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all h-32 disabled:opacity-50" 
+                      placeholder="Tell us about your trading volume on other platforms..."
+                      disabled={status === 'loading'}
+                    ></textarea>
+                  </div>
+                  <button 
+                    type="submit"
+                    disabled={status === 'loading'}
+                    className="w-full py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold text-lg transition-colors shadow-lg shadow-primary/30 flex items-center justify-center min-h-[56px] disabled:opacity-75"
+                  >
+                    {status === 'loading' ? (
+                      <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    ) : (
+                      'Apply for Waitlist'
+                    )}
+                  </button>
+                </motion.form>
+              )}
+            </AnimatePresence>
           </div>
         </motion.div>
       </div>
