@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "novap2p-website",
+  "name": "novap2pwebsite",
   "compatibility_date": "2026-04-26",
   "observability": {
     "enabled": true
