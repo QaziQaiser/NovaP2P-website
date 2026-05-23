@@ -826,8 +826,17 @@ const ComingSoon = () => {
     setTimeout(() => {
       setStatus('success');
       
+      const subject = encodeURIComponent("Waitlist Registration - NovaP2P");
+      const body = encodeURIComponent(
+        `Hello NovaP2P Team,\n\n` +
+        `I would like to join the early access waitlist for NovaP2P.\n\n` +
+        `My Email Address: ${email}\n\n` +
+        `Please notify me when the platform is launched and early access starts.\n\n` +
+        `Best regards.`
+      );
+      
       // Open mailto link to send the email to support@novap2p.com
-      window.location.href = `mailto:support@novap2p.com?subject=New Waitlist Subscriber&body=Please add my email to the waitlist: ${email}`;
+      window.location.href = `mailto:support@novap2p.com?subject=${subject}&body=${body}`;
       
       setEmail('');
       
@@ -984,7 +993,15 @@ const Footer = () => {
     setTimeout(() => {
       setStatus('success');
       
-      window.location.href = `mailto:support@novap2p.com?subject=New Newsletter Subscriber&body=Please add my email to the newsletter: ${email}`;
+      const subject = encodeURIComponent("Newsletter Subscription - NovaP2P");
+      const body = encodeURIComponent(
+        `Hello NovaP2P Team,\n\n` +
+        `I would like to subscribe to the official NovaP2P newsletter to receive platform updates and news.\n\n` +
+        `Subscriber Email: ${email}\n\n` +
+        `Best regards.`
+      );
+      
+      window.location.href = `mailto:support@novap2p.com?subject=${subject}&body=${body}`;
       
       setEmail('');
       
