@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldCheck, Zap, Eye, Wallet, Users, Scale, 
-  ArrowRight, CheckCircle2, Lock, Smartphone, 
+  ArrowRight, CheckCircle2, AlertCircle, Lock, Smartphone, 
   Globe, ChevronDown, Menu, X, Mail, Twitter, 
   MessageCircle, Github, ArrowRightLeft, CreditCard,
   Facebook, Instagram, Send, Phone, MapPin, MessageSquare
@@ -825,24 +825,19 @@ const ComingSoon = () => {
     setStatus('loading');
     
     const appEnv = (import.meta as any).env || {};
-    const serviceId = appEnv.VITE_EMAILJS_SERVICE_ID;
-    const templateId = appEnv.VITE_EMAILJS_TEMPLATE_ID;
-    const publicKey = appEnv.VITE_EMAILJS_PUBLIC_KEY;
+    const serviceId = appEnv.VITE_EMAILJS_SERVICE_ID || 'service_vdt1rat';
+    const templateId = appEnv.VITE_EMAILJS_TEMPLATE_ID || 'template_k3vb6pp';
+    const publicKey = appEnv.VITE_EMAILJS_PUBLIC_KEY || '8J3X62oVWT-2HXcvw';
 
     try {
-      if (serviceId && templateId && publicKey) {
-        const templateParams = {
-          from_name: "Waitlist Subscriber",
-          from_email: email,
-          message: `Join early access waitlist contact: ${email}`,
-          subject: "Waitlist Registration - NovaP2P",
-          form_source: "Waitlist Registration Section"
-        };
-        await emailjs.send(serviceId, templateId, templateParams, publicKey);
-      } else {
-        console.warn("EmailJS credentials missing. Simulated waitlist subscription for: " + email);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
+      const templateParams = {
+        from_name: "Waitlist Subscriber",
+        from_email: email,
+        message: `Join early access waitlist contact: ${email}`,
+        subject: "Waitlist Registration - NovaP2P",
+        form_source: "Waitlist Registration Section"
+      };
+      await emailjs.send(serviceId, templateId, templateParams, publicKey);
       setStatus('success');
       setEmail('');
       setTimeout(() => setStatus('idle'), 5000);
@@ -1001,24 +996,19 @@ const Footer = () => {
     setStatus('loading');
     
     const appEnv = (import.meta as any).env || {};
-    const serviceId = appEnv.VITE_EMAILJS_SERVICE_ID;
-    const templateId = appEnv.VITE_EMAILJS_TEMPLATE_ID;
-    const publicKey = appEnv.VITE_EMAILJS_PUBLIC_KEY;
+    const serviceId = appEnv.VITE_EMAILJS_SERVICE_ID || 'service_vdt1rat';
+    const templateId = appEnv.VITE_EMAILJS_TEMPLATE_ID || 'template_k3vb6pp';
+    const publicKey = appEnv.VITE_EMAILJS_PUBLIC_KEY || '8J3X62oVWT-2HXcvw';
 
     try {
-      if (serviceId && templateId && publicKey) {
-        const templateParams = {
-          from_name: "Newsletter Subscriber",
-          from_email: email,
-          message: `Join newsletter subscriber details: ${email}`,
-          subject: "Newsletter Subscription - NovaP2P",
-          form_source: "Footer Newsletter Form"
-        };
-        await emailjs.send(serviceId, templateId, templateParams, publicKey);
-      } else {
-        console.warn("EmailJS credentials missing. Simulated newsletter subscription for: " + email);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
+      const templateParams = {
+        from_name: "Newsletter Subscriber",
+        from_email: email,
+        message: `Join newsletter subscriber details: ${email}`,
+        subject: "Newsletter Subscription - NovaP2P",
+        form_source: "Footer Newsletter Form"
+      };
+      await emailjs.send(serviceId, templateId, templateParams, publicKey);
       setStatus('success');
       setEmail('');
       setTimeout(() => setStatus('idle'), 5000);
@@ -1167,41 +1157,39 @@ const Merchant = () => {
   const [email, setEmail] = useState('');
   const [contactNo, setContactNo] = useState('');
   const [experience, setExperience] = useState('');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   useEffect(() => {
     document.title = "Apply for Merchant - NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!fullName || !email || !contactNo) return;
 
     setStatus('loading');
 
     const appEnv = (import.meta as any).env || {};
-    const serviceId = appEnv.VITE_EMAILJS_SERVICE_ID;
-    const templateId = appEnv.VITE_EMAILJS_TEMPLATE_ID;
-    const publicKey = appEnv.VITE_EMAILJS_PUBLIC_KEY;
+    const serviceId = appEnv.VITE_EMAILJS_SERVICE_ID || 'service_vdt1rat';
+    const templateId = appEnv.VITE_EMAILJS_TEMPLATE_ID || 'template_k3vb6pp';
+    const publicKey = appEnv.VITE_EMAILJS_PUBLIC_KEY || '8J3X62oVWT-2HXcvw';
 
     try {
-      if (serviceId && templateId && publicKey) {
-        const templateParams = {
-          from_name: fullName,
-          from_email: email,
-          name: fullName,
-          email: email,
-          number: contactNo,
-          message: experience,
-          subject: "Merchant Application - NovaP2P",
-          form_source: "Merchant Registration Form"
-        };
-        await emailjs.send(serviceId, templateId, templateParams, publicKey);
-      } else {
-        console.warn("EmailJS credentials missing. Simulated merchant registration send of Name: " + fullName);
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      }
+      console.log("Submitting Merchant Form to EmailJS using sendForm style...", {
+        serviceId,
+        templateId,
+        publicKey
+      });
+
+      const response = await emailjs.sendForm(
+        serviceId,
+        templateId,
+        e.currentTarget,
+        publicKey
+      );
+
+      console.log("EmailJS Success Response:", response);
 
       setStatus('success');
       setFullName('');
@@ -1212,14 +1200,8 @@ const Merchant = () => {
       // Reset status back to idle after a moderate delay
       setTimeout(() => setStatus('idle'), 8000);
     } catch (error) {
-      console.error("Merchant submission error:", error);
-      // Fallback: show success anyway so user experience is smooth
-      setStatus('success');
-      setFullName('');
-      setEmail('');
-      setContactNo('');
-      setExperience('');
-      setTimeout(() => setStatus('idle'), 8000);
+      console.error("EmailJS Error Response:", error);
+      setStatus('error');
     }
   };
 
@@ -1294,9 +1276,9 @@ const Merchant = () => {
                   <div className="w-16 h-16 rounded-full bg-green-100 text-green-600 flex items-center justify-center mx-auto mb-6">
                     <CheckCircle2 size={32} />
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Application Form Initiated!</h3>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Application Submitted!</h3>
                   <p className="text-gray-600 max-w-md mx-auto mb-4">
-                    Thank you for applying to the NovaP2P Verified Merchant Program. Please verify and send the pre-filled email via your mail client to complete your waitlist submission.
+                    Thank you for applying to the NovaP2P Verified Merchant Program. Your application has been sent securely in real-time.
                   </p>
                   <p className="text-sm text-gray-500">
                     Our team will verify your details and follow up with you shortly.
@@ -1311,6 +1293,14 @@ const Merchant = () => {
                   className="space-y-6" 
                   onSubmit={handleSubmit}
                 >
+                  {status === 'error' && (
+                    <div className="p-4 bg-red-50 border border-red-100 text-red-750 font-medium rounded-xl flex items-center gap-3">
+                      <AlertCircle className="shrink-0 text-red-500 font-bold" size={20} />
+                      <div className="text-sm">
+                        <span>Failed to send your application. Please try again or contact us directly at <strong className="font-semibold">support@novap2p.com</strong>.</span>
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>

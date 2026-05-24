@@ -23,9 +23,9 @@ export const ContactForm: React.FC<ContactFormProps> = ({ className = '', source
 
   // Loaded credentials from environment variables or safe fallbacks
   const env = (import.meta as any).env || {};
-  const serviceId = env.VITE_EMAILJS_SERVICE_ID;
-  const templateId = env.VITE_EMAILJS_TEMPLATE_ID;
-  const publicKey = env.VITE_EMAILJS_PUBLIC_KEY;
+  const serviceId = env.VITE_EMAILJS_SERVICE_ID || 'service_vdt1rat';
+  const templateId = env.VITE_EMAILJS_TEMPLATE_ID || 'template_k3vb6pp';
+  const publicKey = env.VITE_EMAILJS_PUBLIC_KEY || '8J3X62oVWT-2HXcvw';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
