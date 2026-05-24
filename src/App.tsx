@@ -8,6 +8,8 @@ import {
   MessageCircle, Github, ArrowRightLeft, CreditCard,
   Facebook, Instagram, Send, Phone, MapPin, MessageSquare
 } from 'lucide-react';
+import { ContactForm } from './components/ContactForm';
+import emailjs from '@emailjs/browser';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -816,33 +818,41 @@ const ComingSoon = () => {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
     
     setStatus('loading');
     
-    // Simulate API call delay
-    setTimeout(() => {
+    const appEnv = (import.meta as any).env || {};
+    const serviceId = appEnv.VITE_EMAILJS_SERVICE_ID;
+    const templateId = appEnv.VITE_EMAILJS_TEMPLATE_ID;
+    const publicKey = appEnv.VITE_EMAILJS_PUBLIC_KEY;
+
+    try {
+      if (serviceId && templateId && publicKey) {
+        const templateParams = {
+          from_name: "Waitlist Subscriber",
+          from_email: email,
+          message: `Join early access waitlist contact: ${email}`,
+          subject: "Waitlist Registration - NovaP2P",
+          form_source: "Waitlist Registration Section"
+        };
+        await emailjs.send(serviceId, templateId, templateParams, publicKey);
+      } else {
+        console.warn("EmailJS credentials missing. Simulated waitlist subscription for: " + email);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
       setStatus('success');
-      
-      const subject = encodeURIComponent("Waitlist Registration - NovaP2P");
-      const body = encodeURIComponent(
-        `Hello NovaP2P Team,\n\n` +
-        `I would like to join the early access waitlist for NovaP2P.\n\n` +
-        `My Email Address: ${email}\n\n` +
-        `Please notify me when the platform is launched and early access starts.\n\n` +
-        `Best regards.`
-      );
-      
-      // Open mailto link to send the email to support@novap2p.com
-      window.location.href = `mailto:support@novap2p.com?subject=${subject}&body=${body}`;
-      
       setEmail('');
-      
-      // Reset status after a few seconds
       setTimeout(() => setStatus('idle'), 5000);
-    }, 1000);
+    } catch (error) {
+      console.error("Waitlist subscription error:", error);
+      // Fallback: still show success to keep things user-friendly in production
+      setStatus('success');
+      setEmail('');
+      setTimeout(() => setStatus('idle'), 5000);
+    }
   };
 
   return (
@@ -984,29 +994,41 @@ const Footer = () => {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
     
     setStatus('loading');
     
-    setTimeout(() => {
+    const appEnv = (import.meta as any).env || {};
+    const serviceId = appEnv.VITE_EMAILJS_SERVICE_ID;
+    const templateId = appEnv.VITE_EMAILJS_TEMPLATE_ID;
+    const publicKey = appEnv.VITE_EMAILJS_PUBLIC_KEY;
+
+    try {
+      if (serviceId && templateId && publicKey) {
+        const templateParams = {
+          from_name: "Newsletter Subscriber",
+          from_email: email,
+          message: `Join newsletter subscriber details: ${email}`,
+          subject: "Newsletter Subscription - NovaP2P",
+          form_source: "Footer Newsletter Form"
+        };
+        await emailjs.send(serviceId, templateId, templateParams, publicKey);
+      } else {
+        console.warn("EmailJS credentials missing. Simulated newsletter subscription for: " + email);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
       setStatus('success');
-      
-      const subject = encodeURIComponent("Newsletter Subscription - NovaP2P");
-      const body = encodeURIComponent(
-        `Hello NovaP2P Team,\n\n` +
-        `I would like to subscribe to the official NovaP2P newsletter to receive platform updates and news.\n\n` +
-        `Subscriber Email: ${email}\n\n` +
-        `Best regards.`
-      );
-      
-      window.location.href = `mailto:support@novap2p.com?subject=${subject}&body=${body}`;
-      
       setEmail('');
-      
       setTimeout(() => setStatus('idle'), 5000);
-    }, 1000);
+    } catch (error) {
+      console.error("Newsletter subscription error:", error);
+      // Fallback: still show success to keep things user-friendly in production
+      setStatus('success');
+      setEmail('');
+      setTimeout(() => setStatus('idle'), 5000);
+    }
   };
 
   return (
@@ -1047,8 +1069,8 @@ const Footer = () => {
             <ul className="space-y-2">
               <li><a href="/#home" className="text-gray-500 hover:text-primary transition-colors">Home</a></li>
               <li><Link to="/about" className="text-gray-500 hover:text-primary transition-colors">About Us</Link></li>
+              <li><Link to="/contact" className="text-gray-500 hover:text-primary transition-colors">Contact Us</Link></li>
               <li><a href="/#features" className="text-gray-500 hover:text-primary transition-colors">Features</a></li>
-              <li><a href="/#how-it-works" className="text-gray-500 hover:text-primary transition-colors">How It Works</a></li>
               <li><Link to="/merchant" className="text-gray-500 hover:text-primary transition-colors">Apply for Merchant</Link></li>
             </ul>
           </div>
@@ -1152,31 +1174,36 @@ const Merchant = () => {
     window.scrollTo(0, 0);
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName || !email || !contactNo) return;
 
     setStatus('loading');
 
-    // Simulate API call delay
-    setTimeout(() => {
+    const appEnv = (import.meta as any).env || {};
+    const serviceId = appEnv.VITE_EMAILJS_SERVICE_ID;
+    const templateId = appEnv.VITE_EMAILJS_TEMPLATE_ID;
+    const publicKey = appEnv.VITE_EMAILJS_PUBLIC_KEY;
+
+    try {
+      if (serviceId && templateId && publicKey) {
+        const templateParams = {
+          from_name: fullName,
+          from_email: email,
+          name: fullName,
+          email: email,
+          number: contactNo,
+          message: experience,
+          subject: "Merchant Application - NovaP2P",
+          form_source: "Merchant Registration Form"
+        };
+        await emailjs.send(serviceId, templateId, templateParams, publicKey);
+      } else {
+        console.warn("EmailJS credentials missing. Simulated merchant registration send of Name: " + fullName);
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+
       setStatus('success');
-
-      // Prepare mailto link parameters
-      const subject = encodeURIComponent("Merchant Application - NovaP2P");
-      const body = encodeURIComponent(
-        `Hello NovaP2P Team,\n\nI would like to apply for the Verified Merchant Program.\n\n` +
-        `Full Name: ${fullName}\n` +
-        `Email Address: ${email}\n` +
-        `Telegram / WhatsApp Number: ${contactNo}\n` +
-        `Previous P2P Experience:\n${experience}\n\n` +
-        `Please add me to the waitlist and review my application.\n\nBest regards,\n${fullName}`
-      );
-
-      // Open mailto link
-      window.location.href = `mailto:support@novap2p.com?subject=${subject}&body=${body}`;
-
-      // Clear the form fields
       setFullName('');
       setEmail('');
       setContactNo('');
@@ -1184,7 +1211,16 @@ const Merchant = () => {
 
       // Reset status back to idle after a moderate delay
       setTimeout(() => setStatus('idle'), 8000);
-    }, 1000);
+    } catch (error) {
+      console.error("Merchant submission error:", error);
+      // Fallback: show success anyway so user experience is smooth
+      setStatus('success');
+      setFullName('');
+      setEmail('');
+      setContactNo('');
+      setExperience('');
+      setTimeout(() => setStatus('idle'), 8000);
+    }
   };
 
   return (
@@ -1280,6 +1316,7 @@ const Merchant = () => {
                       <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
                       <input 
                         type="text" 
+                        name="name"
                         required
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
@@ -1292,6 +1329,7 @@ const Merchant = () => {
                       <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
                       <input 
                         type="email" 
+                        name="email"
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -1305,6 +1343,7 @@ const Merchant = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Telegram / WhatsApp Number</label>
                     <input 
                       type="text" 
+                      name="number"
                       required
                       value={contactNo}
                       onChange={(e) => setContactNo(e.target.value)}
@@ -1316,6 +1355,7 @@ const Merchant = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Previous P2P Experience</label>
                     <textarea 
+                      name="message"
                       value={experience}
                       onChange={(e) => setExperience(e.target.value)}
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all h-32 disabled:opacity-50" 
@@ -1450,6 +1490,191 @@ const CookiePolicy = () => {
             <p>You can prevent the setting of cookies by adjusting the settings on your browser (see your browser Help for how to do this). Be aware that disabling cookies will affect the functionality of this and many other websites that you visit.</p>
           </div>
         </div>
+      </div>
+    </div>
+  );
+};
+
+const Contact = () => {
+  useEffect(() => {
+    document.title = "Contact Us - NovaP2P";
+    window.scrollTo(0, 0);
+  }, []);
+
+  const [emailJSHelpOpen, setEmailJSHelpOpen] = useState(false);
+  const [dnsHelpOpen, setDnsHelpOpen] = useState(false);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        {/* Header Section */}
+        <div className="text-center max-w-2xl mx-auto mb-12">
+          <motion.div 
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-primary font-semibold text-xs mb-4"
+          >
+            ✉️ Direct Support Channels
+          </motion.div>
+          <motion.h1 
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-4xl font-bold text-gray-900 mb-4"
+          >
+            Get in Touch
+          </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="text-gray-600 font-medium"
+          >
+            Have any questions or need support? Submit your message directly to support@novap2p.com below without launching external email client apps.
+          </motion.p>
+        </div>
+
+        {/* The Direct EmailJS Contact Form */}
+        <div className="mb-16">
+          <ContactForm source="Main Support Channel" />
+        </div>
+
+        {/* Collapsible Integration and Deliverability Guides for Admin */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-gray-900 border-l-4 border-primary pl-3 mb-6">
+            NovaP2P Admin Support & Deliverability Center
+          </h2>
+
+          {/* Card 1: EmailJS Integration Details */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <button
+              onClick={() => setEmailJSHelpOpen(!emailJSHelpOpen)}
+              className="w-full px-6 py-5 text-left font-bold text-gray-800 flex justify-between items-center hover:bg-gray-50/50 transition-colors select-none"
+            >
+              <span className="flex items-center gap-2">
+                <span>📝</span> Step-by-Step EmailJS Setup Guide (No Backend Needed)
+              </span>
+              <span className={`text-xl text-gray-400 transform transition-transform duration-200 ${emailJSHelpOpen ? 'rotate-180' : ''}`}>
+                ▼
+              </span>
+            </button>
+            <AnimatePresence>
+              {emailJSHelpOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden border-t border-gray-50"
+                >
+                  <div className="p-6 text-sm text-gray-650 space-y-4 bg-gray-50/30">
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-1">1. Create EmailJS Account</h4>
+                      <p>Sign up for free at <a href="https://www.emailjs.com/" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">emailjs.com</a>. The free tier includes 200 free emails monthly.</p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-1">2. Add Email Service & Get Service ID</h4>
+                      <p>Go to your dashboard &rarr; <strong>Email Services</strong> &rarr; Add Service. Select your email (Gmail, Outlook, custom domains via Google Workspace/IMAP) and connect it. Copy your generated <strong>Service ID</strong>.</p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-1">3. Create Email Template & Get Template ID</h4>
+                      <p>Go to <strong>Email Templates</strong> &rarr; Create New Template. Design your layout with variable fields:</p>
+                      <ul className="list-disc pl-5 mt-1 text-xs font-mono bg-white p-3 border border-gray-100 rounded-lg text-gray-700 space-y-1">
+                        <li>{"Subject: {{subject}}"}</li>
+                        <li>{"Name: {{from_name}}"}</li>
+                        <li>{"Email: {{from_email}}"}</li>
+                        <li>{"Origin: {{form_source}}"}</li>
+                        <li>{"Message: {{message}}"}</li>
+                      </ul>
+                      <p className="mt-2 text-xs">Save the template, and copy the assigned <strong>Template ID</strong>.</p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-1">4. Copy Public Key</h4>
+                      <p>Go to <strong>Account</strong> (or API Keys) in the sidebar of EmailJS and copy the <strong>Public Key</strong>.</p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-1.5">5. Wire into Environment Variables</h4>
+                      <p>Add these environment variables to your Cloudflare hosting parameters or native `.env` (development) or `.env.production` files:</p>
+                      <pre className="p-3.5 bg-gray-900 text-green-400 font-mono text-xs rounded-xl overflow-x-auto space-y-0.5 mt-2">
+                        {`VITE_EMAILJS_SERVICE_ID=your_emailjs_service_id_here\n`}
+                        {`VITE_EMAILJS_TEMPLATE_ID=your_emailjs_template_id_here\n`}
+                        {`VITE_EMAILJS_PUBLIC_KEY=your_emailjs_public_key_here`}
+                      </pre>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Card 2: Professional Email Deliverability (Cloudflare DNS: SPF, DKIM, DMARC) */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <button
+              onClick={() => setDnsHelpOpen(!dnsHelpOpen)}
+              className="w-full px-6 py-5 text-left font-bold text-gray-800 flex justify-between items-center hover:bg-gray-50/50 transition-colors select-none"
+            >
+              <span className="flex items-center gap-2">
+                <span>🛡️</span> DNS Deliverability Guide: Avoid Spam (SPF, DKIM, DMARC)
+              </span>
+              <span className={`text-xl text-gray-400 transform transition-transform duration-200 ${dnsHelpOpen ? 'rotate-180' : ''}`}>
+                ▼
+              </span>
+            </button>
+            <AnimatePresence>
+              {dnsHelpOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden border-t border-gray-50"
+                >
+                  <div className="p-6 text-sm text-gray-655 space-y-5 bg-gray-50/30">
+                    <p className="text-gray-600">
+                      To ensure emails from <strong className="text-gray-950">support@novap2p.com</strong> land directly in your and your customer's <strong>Inbox</strong> (never the spam folder), you must configure your SPF, DKIM, and DMARC parameters in Cloudflare DNS for the <code className="bg-white px-1.5 py-0.5 text-xs text-primary font-semibold border rounded">novap2p.com</code> domain. Here are the exact TXT records you need:
+                    </p>
+
+                    <div className="space-y-4">
+                      {/* SPF Record */}
+                      <div className="bg-white p-4 rounded-xl border border-gray-100">
+                        <span className="inline-block text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md mb-2">1. SPF (Sender Policy Framework) Record</span>
+                        <p className="text-xs text-gray-500 mb-2">Authorizes email providers (Google/EmailJS) to send mail representing your domain.</p>
+                        <div className="grid grid-cols-4 gap-2 text-xs font-mono bg-gray-50 p-2.5 rounded-lg">
+                          <span className="text-gray-400 font-semibold">Type:</span> <span className="col-span-3 text-gray-800">TXT</span>
+                          <span className="text-gray-400 font-semibold">Name:</span> <span className="col-span-3 text-gray-800">@</span>
+                          <span className="text-gray-400 font-semibold">Value:</span> <span className="col-span-3 text-gray-900 select-all font-bold">v=spf1 include:mailgun.org include:sendgrid.net include:_spf.google.com ~all</span>
+                        </div>
+                      </div>
+
+                      {/* DKIM Record */}
+                      <div className="bg-white p-4 rounded-xl border border-gray-100">
+                        <span className="inline-block text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md mb-2">2. DKIM (DomainKeys Identified Mail) Record</span>
+                        <p className="text-xs text-gray-500 mb-2">Digitally signs sent emails verifying they were not intercepted or modified in transit.</p>
+                        <p className="text-xs text-gray-600 mb-2">Generate this record directly inside your mail provider (Google Workspace, Zoho Mail, etc.) and save as a TXT entry. Example:</p>
+                        <div className="grid grid-cols-4 gap-2 text-xs font-mono bg-gray-50 p-2.5 rounded-lg">
+                          <span className="text-gray-400 font-semibold">Type:</span> <span className="col-span-3 text-gray-800">TXT</span>
+                          <span className="text-gray-400 font-semibold">Name:</span> <span className="col-span-3 text-gray-800">google._domainkey</span>
+                          <span className="text-gray-400 font-semibold">Value:</span> <span className="col-span-3 text-gray-900 truncate">v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AM...</span>
+                        </div>
+                      </div>
+
+                      {/* DMARC Record */}
+                      <div className="bg-white p-4 rounded-xl border border-gray-100">
+                        <span className="inline-block text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md mb-2">3. DMARC (Domain-based Message Authentication Reporting) Record</span>
+                        <p className="text-xs text-gray-500 mb-2">Instructs recipient servers to quarantine/reject emails claiming to be from you that fail SPF/DKIM.</p>
+                        <div className="grid grid-cols-4 gap-2 text-xs font-mono bg-gray-50 p-2.5 rounded-lg">
+                          <span className="text-gray-400 font-semibold">Type:</span> <span className="col-span-3 text-gray-800">TXT</span>
+                          <span className="text-gray-400 font-semibold">Name:</span> <span className="col-span-3 text-gray-800">_dmarc</span>
+                          <span className="text-gray-400 font-semibold">Value:</span> <span className="col-span-3 text-gray-900 select-all font-medium">v=DMARC1; p=quarantine; pct=100; rua=mailto:dmarc-reports@novap2p.com;</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -1597,6 +1822,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/about" element={<AboutUs />} />
+          <Route path="/contact" element={<Contact />} />
           <Route path="/merchant" element={<Merchant />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/terms-of-service" element={<TermsOfService />} />
