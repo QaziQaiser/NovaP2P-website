@@ -210,9 +210,9 @@ const Hero = () => {
               
               <div className="space-y-3">
                 {[
-                  { id: 1, price: '288.78 PKR' },
-                  { id: 2, price: '288.90 PKR' },
-                  { id: 3, price: '288.91 PKR' }
+                  { id: 1, price: '1365.10 NGN' },
+                  { id: 2, price: '123.50 BDT' },
+                  { id: 3, price: '95.31 INR' }
                 ].map((trader) => (
                   <div key={trader.id} className="bg-white p-4 rounded-xl border border-gray-100 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow cursor-pointer">
                     <div className="flex items-center gap-3">
@@ -652,10 +652,10 @@ const AppPreview = () => {
                     {/* Table Rows */}
                     <div className="space-y-3">
                       {[
-                        { id: 1, price: '288.81 PKR' },
-                        { id: 2, price: '288.85 PKR' },
-                        { id: 3, price: '288.89 PKR' },
-                        { id: 4, price: '288.92 PKR' }
+                        { id: 1, price: '1365.10 NGN' },
+                        { id: 2, price: '123.50 BDT' },
+                        { id: 3, price: '95.31 INR' },
+                        { id: 4, price: '26300.49 VND' }
                       ].map((trader) => (
                         <div key={trader.id} className="grid grid-cols-4 items-center bg-gray-50 p-4 rounded-xl border border-gray-100">
                           <div className="flex items-center gap-3">
@@ -1035,20 +1035,6 @@ const Footer = () => {
             <p className="text-gray-500 max-w-sm mb-6">
               A next-generation peer-to-peer crypto trading platform designed for simplicity, security, and speed.
             </p>
-            <div className="flex space-x-3">
-              <a href="https://facebook.com/novap2p" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
-                <Facebook size={18} />
-              </a>
-              <a href="https://x.com/novap2pofficial" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
-                <Twitter size={18} />
-              </a>
-              <a href="https://t.me/novap2pofficial" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
-                <Send size={18} />
-              </a>
-              <a href="https://whatsapp.com/channel/0029VbCZrCdE50UZsxiXWE37" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
-                <MessageCircle size={18} />
-              </a>
-            </div>
           </div>
           
           <div className="lg:col-span-2">
@@ -1128,6 +1114,20 @@ const Footer = () => {
                 </div>
                 <span>support@novap2p.com</span>
               </div>
+            </div>
+            <div className="flex space-x-3 mt-6">
+              <a href="https://facebook.com/novap2p" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
+                <Facebook size={18} />
+              </a>
+              <a href="https://x.com/novap2pofficial" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
+                <Twitter size={18} />
+              </a>
+              <a href="https://t.me/novap2pofficial" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
+                <Send size={18} />
+              </a>
+              <a href="https://whatsapp.com/channel/0029VbCZrCdE50UZsxiXWE37" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
+                <MessageCircle size={18} />
+              </a>
             </div>
           </div>
         </div>
