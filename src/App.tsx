@@ -255,11 +255,11 @@ const Hero = () => {
                 </div>
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-500">Price</span>
-                  <span className="font-semibold">288.87 PKR</span>
+                  <span className="font-semibold">95.31 INR</span>
                 </div>
                 <div className="flex justify-between text-sm pt-2 border-t border-gray-200">
                   <span className="text-gray-500">Total to Pay</span>
-                  <span className="font-bold text-primary">28,887.00 PKR</span>
+                  <span className="font-bold text-primary">9,538.55 INR</span>
                 </div>
               </div>
               
