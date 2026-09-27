@@ -1,3 +1,8 @@
+"scripts": {
+  "dev": "vite",
+  "build": "vite build",
+  "start": "node server.js"
+}
 {
   "name": "react-example",
   "private": true,
