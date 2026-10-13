@@ -64,17 +64,10 @@ const Navbar = () => {
               </a>
             ))}
             <a 
-              href="/#coming-soon" 
-              onClick={(e) => {
-                if (window.location.pathname === '/') {
-                  e.preventDefault();
-                  document.getElementById('coming-soon')?.scrollIntoView({ behavior: 'smooth' });
-                  window.history.pushState(null, '', '/#coming-soon');
-                }
-              }}
+              href="https://app.novap2p.com/register" 
               className="bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-full font-medium transition-colors shadow-lg shadow-primary/30"
             >
-              Join Waitlist
+              Sign In / Sign Up
             </a>
           </div>
 
@@ -117,20 +110,11 @@ const Navbar = () => {
                 </a>
               ))}
               <a 
-                href="/#coming-soon" 
-                onClick={(e) => {
-                  setMobileMenuOpen(false);
-                  if (window.location.pathname === '/') {
-                    e.preventDefault();
-                    setTimeout(() => {
-                      document.getElementById('coming-soon')?.scrollIntoView({ behavior: 'smooth' });
-                      window.history.pushState(null, '', '/#coming-soon');
-                    }, 300);
-                  }
-                }}
+                href="https://app.novap2p.com/register" 
+                onClick={() => setMobileMenuOpen(false)}
                 className="block w-full text-center mt-4 bg-primary text-white px-6 py-3 rounded-xl font-medium"
               >
-                Join Waitlist
+                Sign In / Sign Up
               </a>
             </div>
           </motion.div>
@@ -154,7 +138,7 @@ const Hero = () => {
             transition={{ duration: 0.5 }}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-sm mb-8"
           >
-            <span className="animate-pulse">🚀</span> NovaP2P Launching Soon
+            <span className="animate-pulse">🚀</span> NovaP2P is live now
           </motion.div>
           
           <motion.h1 
@@ -181,8 +165,8 @@ const Hero = () => {
             transition={{ duration: 0.5, delay: 0.3 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
-            <a href="/#coming-soon" className="w-full sm:w-auto px-8 py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-semibold text-lg transition-all shadow-lg shadow-primary/30 hover:shadow-primary/50 flex items-center justify-center gap-2">
-              Join Waitlist <ArrowRight size={20} />
+            <a href="https://app.novap2p.com/register" className="w-full sm:w-auto px-8 py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-semibold text-lg transition-all shadow-lg shadow-primary/30 hover:shadow-primary/50 flex items-center justify-center gap-2">
+              Sign In / Sign Up <ArrowRight size={20} />
             </a>
             <Link to="/merchant" className="w-full sm:w-auto px-8 py-4 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-xl font-semibold text-lg transition-all flex items-center justify-center">
               Apply for Merchant
@@ -1141,7 +1125,7 @@ const Footer = () => {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
               <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
             </span>
-            🚀 NovaP2P Beta Coming Soon
+            🚀 NovaP2P is live now
           </div>
         </div>
       </div>
