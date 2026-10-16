@@ -6,7 +6,8 @@ import {
   ArrowRight, CheckCircle2, AlertCircle, Lock, Smartphone, 
   Globe, ChevronDown, Menu, X, Mail, Twitter, 
   MessageCircle, Github, ArrowRightLeft, CreditCard,
-  Facebook, Instagram, Send, Phone, MapPin, MessageSquare
+  Facebook, Instagram, Send, Phone, MapPin, MessageSquare,
+  HelpCircle, LifeBuoy, ShieldAlert
 } from 'lucide-react';
 import { ContactForm } from './components/ContactForm';
 import emailjs from '@emailjs/browser';
@@ -1004,33 +1005,44 @@ const Footer = () => {
   return (
     <footer className="bg-gray-50 pt-16 pb-8 border-t border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-12 mb-12">
-          <div className="lg:col-span-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-8 lg:gap-8 mb-12">
+          <div className="lg:col-span-3">
             <a href="#" className="text-2xl font-bold text-primary flex items-center gap-2 mb-4">
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white">
                 <ArrowRightLeft size={20} />
               </div>
               NovaP2P
             </a>
-            <p className="text-gray-500 max-w-sm mb-6">
+            <p className="text-gray-500 max-w-sm mb-6 text-sm">
               A next-generation peer-to-peer crypto trading platform designed for simplicity, security, and speed.
             </p>
           </div>
           
           <div className="lg:col-span-2">
             <h4 className="font-bold text-gray-900 mb-4">Quick Links</h4>
-            <ul className="space-y-2">
+            <ul className="space-y-2 text-sm">
               <li><a href="/#home" className="text-gray-500 hover:text-primary transition-colors">Home</a></li>
               <li><Link to="/about" className="text-gray-500 hover:text-primary transition-colors">About Us</Link></li>
               <li><Link to="/contact" className="text-gray-500 hover:text-primary transition-colors">Contact Us</Link></li>
               <li><a href="/#features" className="text-gray-500 hover:text-primary transition-colors">Features</a></li>
               <li><Link to="/merchant" className="text-gray-500 hover:text-primary transition-colors">Apply for Merchant</Link></li>
+              <li><Link to="/risk-disclosure" className="text-gray-500 hover:text-primary transition-colors">Risk Disclosure</Link></li>
+            </ul>
+          </div>
+
+          <div className="lg:col-span-2">
+            <h4 className="font-bold text-gray-900 mb-4">Help & Support</h4>
+            <ul className="space-y-2 text-sm">
+              <li><Link to="/help-center" className="text-gray-500 hover:text-primary transition-colors">Help Center/ FAQs</Link></li>
+              <li><Link to="/contact-support" className="text-gray-500 hover:text-primary transition-colors">Contact Support</Link></li>
+              <li><Link to="/dispute-support" className="text-gray-500 hover:text-primary transition-colors">Dispute Support</Link></li>
+              <li><Link to="/report-issue" className="text-gray-500 hover:text-primary transition-colors">Report an issue</Link></li>
             </ul>
           </div>
           
           <div className="lg:col-span-2">
             <h4 className="font-bold text-gray-900 mb-4">Legal</h4>
-            <ul className="space-y-2">
+            <ul className="space-y-2 text-sm">
               <li><Link to="/privacy-policy" className="text-gray-500 hover:text-primary transition-colors">Privacy Policy</Link></li>
               <li><Link to="/terms-of-service" className="text-gray-500 hover:text-primary transition-colors">Terms of Service</Link></li>
               <li><Link to="/cookie-policy" className="text-gray-500 hover:text-primary transition-colors">Cookie Policy</Link></li>
@@ -1039,7 +1051,7 @@ const Footer = () => {
             </ul>
           </div>
 
-          <div className="lg:col-span-4">
+          <div className="lg:col-span-3">
             <h4 className="font-bold text-gray-900 mb-4">Follow Us</h4>
             <div className="mb-6 relative min-h-[52px]">
               <AnimatePresence mode="wait">
@@ -1748,6 +1760,8 @@ const FeeStructure = () => {
                 </tbody>
               </table>
             </div>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Annual Platform Fee – $20 USD</h2>
+            <p>NovaP2P charges an annual platform fee of $20 USD per calendar year. This fee is collected from the user's available wallet balance at the time of withdrawal, according to the platform's applicable fee policy. The annual fee period ends on December 31 and renews on January 1 each year, regardless of the payment date. This fee is based on the calendar year, not a rolling 365-day period. If the fee is collected in December, a new annual fee applies from January 1 for the new calendar year. Users will be notified by email when the fee is deducted.</p>
             <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Deposit Fees</h2>
             <p>NovaP2P does not charge any fees for depositing cryptocurrency into your platform wallet. However, please note that you may still incur standard network (miner) fees from the blockchain when transferring funds from an external wallet.</p>
             <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Withdrawal Fees</h2>
@@ -1757,6 +1771,768 @@ const FeeStructure = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+const RiskDisclosure = () => {
+  useEffect(() => {
+    document.title = "Risk Disclosure - NovaP2P";
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <h1 className="text-4xl font-bold text-gray-900 mb-8">Risk Disclosure</h1>
+          <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
+            <p className="text-sm text-gray-500 font-medium">Last Updated: October 16, 2026</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">1. Introduction</h2>
+            <p>Welcome to Nova P2P.</p>
+            <p>This Risk Disclosure explains the potential risks associated with cryptocurrency transactions and peer-to-peer (P2P) trading on the Nova P2P platform.</p>
+            <p>By accessing or using Nova P2P, you acknowledge that cryptocurrency transactions involve risks and that you should understand these risks before participating in any trade.</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">2. Cryptocurrency Price Volatility</h2>
+            <p>Cryptocurrency prices can change rapidly due to market conditions, supply and demand, regulatory developments and other factors.</p>
+            <p>The value of cryptocurrencies, including USDT and other supported assets, may fluctuate. You may receive less value than expected or experience financial losses when buying, selling or holding cryptocurrency.</p>
+            <p>You should make trading decisions carefully and consider your financial circumstances.</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">3. P2P Trading Risks</h2>
+            <p>P2P trading involves transactions between buyers and sellers. Risks may include delayed payments, incorrect payment details, payment disputes, fraudulent activity and failure by a trading party to follow the agreed trade instructions.</p>
+            <p>Always review the offer details, payment method, trading limits and instructions before placing an order.</p>
+            <p>Do not complete transactions outside the platform's approved trading process.</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">4. Payment and Fraud Risks</h2>
+            <p>Payment confirmations, screenshots and receipts may be incomplete, misleading or fraudulent.</p>
+            <p>Sellers should independently verify that the required payment has actually been received in the correct account before releasing cryptocurrency.</p>
+            <p>Users should never rely solely on screenshots, messages or statements from another party as proof of payment.</p>
+            <p>Do not share passwords, one-time verification codes, private keys or recovery phrases with anyone.</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">5. Escrow and Dispute Resolution</h2>
+            <p>Where escrow is available, it is designed to hold the cryptocurrency associated with a trade while the applicable transaction requirements are completed.</p>
+            <p>Escrow does not eliminate every risk or guarantee that every dispute will be resolved in a user's favour.</p>
+            <p>Dispute resolution may depend on the evidence provided, the circumstances of the transaction and the applicable platform procedures.</p>
+            <p>Users should follow the instructions provided by Nova P2P and submit accurate information when requesting assistance.</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">6. Regulatory and Legal Risks</h2>
+            <p>Cryptocurrency laws and regulatory requirements differ across jurisdictions and may change over time.</p>
+            <p>Users are responsible for understanding and complying with the laws and requirements applicable to their activities.</p>
+            <p>Access to particular services may be restricted depending on location, eligibility or applicable legal requirements.</p>
+            <p>Nothing on this website should be interpreted as a representation that Nova P2P is licensed, approved or authorised in a jurisdiction unless that status has been independently established and accurately disclosed.</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">7. Technology and Security Risks</h2>
+            <p>Online platforms and digital transactions may be affected by technical failures, internet connectivity issues, service interruptions, cybersecurity incidents or other operational problems.</p>
+            <p>Users should maintain appropriate security practices and access Nova P2P through official channels.</p>
+            <p>Nova P2P cannot guarantee uninterrupted service or absolute protection against every possible security threat.</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">8. Third-Party Risks</h2>
+            <p>Payments and other services may depend on banks, payment providers, blockchain networks or other third parties.</p>
+            <p>Delays, service interruptions, transaction fees or restrictions imposed by these third parties may affect a transaction.</p>
+            <p>Blockchain transactions may be irreversible once confirmed. Always verify wallet addresses, networks and transaction details before making a transfer.</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">9. No Guarantee of Profit</h2>
+            <p>Nova P2P does not guarantee profits, investment returns or the absence of financial losses from cryptocurrency or P2P trading.</p>
+            <p>Past prices, trading activity, rankings or performance do not guarantee future results.</p>
+            <p>Users should not trade with funds they cannot afford to lose.</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">10. User Responsibility</h2>
+            <p>Before placing a trade, users should:</p>
+            <ul className="list-disc pl-6 space-y-2">
+              <li>Review the offer and payment instructions carefully.</li>
+              <li>Confirm the amount, price and applicable fees.</li>
+              <li>Verify payments independently.</li>
+              <li>Keep relevant transaction records.</li>
+              <li>Protect their account credentials and personal information.</li>
+              <li>Use the official dispute process when a trading problem occurs.</li>
+              <li>Avoid transactions that appear suspicious or violate platform rules.</li>
+            </ul>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">11. Contact and Assistance</h2>
+            <p>If you experience a trading issue or suspect fraudulent activity, use the official support channels provided on the Nova P2P website.</p>
+            <p>Please provide accurate transaction details and relevant evidence when requesting assistance. Never disclose your password, verification codes, private keys or recovery phrases.</p>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">12. Acknowledgement</h2>
+            <p>By using Nova P2P, you acknowledge that cryptocurrency and P2P transactions involve risks and that you are responsible for making informed decisions.</p>
+            <p>This Risk Disclosure is intended to explain general risks. It does not replace professional legal, financial or tax advice.</p>
+            <p>Users should review the applicable Terms of Service, Privacy Policy, AML/KYC Policy and Fee Structure before using the platform.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const HelpCenter = () => {
+  useEffect(() => {
+    document.title = "Help Center / FAQs - NovaP2P";
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <div className="border-b border-gray-100 pb-8 mb-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-xs mb-4">
+              <HelpCircle size={14} /> Help Center & Support
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">Nova P2P Help Center</h1>
+            <p className="text-lg text-gray-600 leading-relaxed">
+              Welcome to the Nova P2P Help Center. Find answers to common questions about your account, identity verification, P2P trading, payments, merchant services and account security.
+            </p>
+          </div>
+
+          <div className="space-y-10">
+            {/* 1. Getting Started */}
+            <section className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-blue-100 text-primary flex items-center justify-center text-sm font-bold">1</span>
+                Getting Started
+              </h2>
+              
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">What is Nova P2P?</h3>
+                  <p className="text-gray-600">
+                    Nova P2P is a peer-to-peer cryptocurrency trading platform that connects buyers and sellers through a structured trading process.
+                  </p>
+                </div>
+
+                <div className="border-t border-gray-200/60 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">How do I create an account?</h3>
+                  <p className="text-gray-600">
+                    Visit the Nova P2P website, select Sign Up and follow the on-screen instructions to register your account.
+                  </p>
+                </div>
+
+                <div className="border-t border-gray-200/60 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Where is Nova P2P available?</h3>
+                  <p className="text-gray-600">
+                    Nova P2P currently provides services in Nigeria. Available features may depend on your account eligibility and the services offered on the platform.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* 2. Account Verification */}
+            <section className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-blue-100 text-primary flex items-center justify-center text-sm font-bold">2</span>
+                Account Verification
+              </h2>
+
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Why is identity verification required?</h3>
+                  <p className="text-gray-600">
+                    Identity verification may be required to establish your identity and meet applicable compliance requirements.
+                  </p>
+                </div>
+
+                <div className="border-t border-gray-200/60 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">What should I do if my verification fails?</h3>
+                  <p className="text-gray-600">
+                    Check the information submitted and follow any instructions displayed on your account. If the issue continues, contact official support.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* 3. P2P Trading */}
+            <section className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-blue-100 text-primary flex items-center justify-center text-sm font-bold">3</span>
+                P2P Trading
+              </h2>
+
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">How do I buy USDT?</h3>
+                  <ol className="list-decimal pl-6 space-y-2 text-gray-600">
+                    <li>Sign in to your account.</li>
+                    <li>Open the Buy section.</li>
+                    <li>Review available offers, prices, limits and payment methods.</li>
+                    <li>Select an offer and follow the order instructions.</li>
+                    <li>Complete the required payment within the specified time.</li>
+                    <li>Follow the platform's instructions to complete the trade.</li>
+                  </ol>
+                </div>
+
+                <div className="border-t border-gray-200/60 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">How do I sell USDT?</h3>
+                  <ol className="list-decimal pl-6 space-y-2 text-gray-600">
+                    <li>Sign in and open the Sell section.</li>
+                    <li>Review available offers and their conditions.</li>
+                    <li>Select an offer and follow the order instructions.</li>
+                    <li>Verify that payment has actually arrived in your account.</li>
+                    <li>Release the cryptocurrency only after confirming the required payment.</li>
+                  </ol>
+                </div>
+
+                <div className="border-t border-gray-200/60 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">What is escrow protection?</h3>
+                  <p className="text-gray-600">
+                    Where available, escrow is designed to hold cryptocurrency associated with a trade until the required transaction conditions are met. It helps reduce certain trading risks but does not guarantee that every transaction or dispute will be resolved successfully.
+                  </p>
+                </div>
+
+                <div className="border-t border-gray-200/60 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">What if my trade is delayed?</h3>
+                  <p className="text-gray-600">
+                    Check the order status and instructions. If the issue cannot be resolved through the normal trading process, use the available appeal or support procedure.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* 4. Payments and Fees */}
+            <section className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-blue-100 text-primary flex items-center justify-center text-sm font-bold">4</span>
+                Payments and Fees
+              </h2>
+
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Which payment methods can I use?</h3>
+                  <p className="text-gray-600">
+                    Available payment methods depend on the offers displayed on the platform. Always follow the instructions shown for your selected trade.
+                  </p>
+                </div>
+
+                <div className="border-t border-gray-200/60 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">What if I have paid but have not received USDT?</h3>
+                  <p className="text-gray-600">
+                    Keep your payment evidence and order details. Use the available appeal process or contact support if the issue remains unresolved.
+                  </p>
+                </div>
+
+                <div className="border-t border-gray-200/60 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Where can I check fees?</h3>
+                  <p className="text-gray-600">
+                    Review the <Link to="/fee-structure" className="text-primary hover:underline font-medium">Fee Structure</Link> page before completing a transaction. Applicable fees may depend on the service or transaction.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* 5. Merchant Services */}
+            <section className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-blue-100 text-primary flex items-center justify-center text-sm font-bold">5</span>
+                Merchant Services
+              </h2>
+
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">How can I apply to become a merchant?</h3>
+                  <p className="text-gray-600">
+                    Visit the <Link to="/merchant" className="text-primary hover:underline font-medium">Apply for Merchant</Link> section on the Nova P2P website and follow the application instructions.
+                  </p>
+                </div>
+
+                <div className="border-t border-gray-200/60 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Is merchant approval guaranteed?</h3>
+                  <p className="text-gray-600">
+                    No. Applications may be subject to eligibility requirements, verification and platform review.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* 6. Account Security */}
+            <section className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-blue-100 text-primary flex items-center justify-center text-sm font-bold">6</span>
+                Account Security
+              </h2>
+
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">How can I protect my account?</h3>
+                  <ul className="list-disc pl-6 space-y-2 text-gray-600">
+                    <li>Use a strong, unique password.</li>
+                    <li>Never share your password or verification codes.</li>
+                    <li>Verify payment details before making a transaction.</li>
+                    <li>Access the platform through official channels.</li>
+                    <li>Never release cryptocurrency based only on a payment screenshot.</li>
+                    <li>Report suspicious activity promptly.</li>
+                  </ul>
+                </div>
+
+                <div className="border-t border-gray-200/60 pt-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">What if I suspect unauthorized account access?</h3>
+                  <p className="text-gray-600">
+                    Secure your account using the available security options and contact official support as soon as possible.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* Need More Help? */}
+            <div className="p-8 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 text-center">
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">Need More Help?</h3>
+              <p className="text-gray-600 max-w-xl mx-auto mb-6">
+                If you cannot find an answer here, visit Contact Support to submit your question. For a trade-related payment dispute, use the appropriate appeal process where available.
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-4">
+                <Link 
+                  to="/contact-support" 
+                  className="px-6 py-3 rounded-xl bg-primary text-white font-medium hover:bg-primary-dark transition-colors shadow-sm"
+                >
+                  Contact Support
+                </Link>
+                <Link 
+                  to="/dispute-support" 
+                  className="px-6 py-3 rounded-xl bg-white border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors shadow-sm"
+                >
+                  Dispute Support
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ContactSupport = () => {
+  useEffect(() => {
+    document.title = "Contact Support - NovaP2P";
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <div className="border-b border-gray-100 pb-8 mb-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-xs mb-4">
+              <LifeBuoy size={14} /> Official Support
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">Contact Nova P2P Support</h1>
+            <p className="text-lg text-gray-600 leading-relaxed">
+              Need assistance? Our support team is here to help with questions about your account, verification, trading, payments and other platform-related issues.
+            </p>
+          </div>
+
+          <div className="space-y-8">
+            {/* How We Can Help */}
+            <div className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <CheckCircle2 size={22} className="text-primary" />
+                How We Can Help
+              </h2>
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 text-gray-700">
+                <li className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+                  Account registration and access
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+                  Identity verification questions
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+                  P2P trading and order issues
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+                  Payment-related questions
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+                  Merchant applications
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+                  Technical problems
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+                  General platform enquiries
+                </li>
+              </ul>
+            </div>
+
+            {/* Submit a Support Request */}
+            <div className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Submit a Support Request</h2>
+              <p className="text-gray-600 mb-4">
+                Please provide the following information when contacting support:
+              </p>
+              <ul className="list-disc pl-6 space-y-2 text-gray-700 mb-6">
+                <li>Your registered email address</li>
+                <li>Order ID (if applicable)</li>
+                <li>Transaction ID or hash (if applicable)</li>
+                <li>Description of the issue</li>
+                <li>Screenshots or supporting documents (if available)</li>
+              </ul>
+              <div className="pt-2">
+                <Link
+                  to="/contact"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white font-medium hover:bg-primary-dark transition-colors shadow-sm text-sm"
+                >
+                  <MessageSquare size={16} /> Open Web Contact Form
+                </Link>
+              </div>
+            </div>
+
+            {/* Contact Channels */}
+            <div className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Contact Channels</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white p-5 rounded-xl border border-gray-200">
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 text-primary flex items-center justify-center mb-3">
+                    <Mail size={20} />
+                  </div>
+                  <h3 className="font-bold text-gray-900 mb-1">Email Support</h3>
+                  <a href="mailto:support@novap2p.com" className="text-primary hover:underline text-sm font-medium break-all">
+                    support@novap2p.com
+                  </a>
+                </div>
+
+                <div className="bg-white p-5 rounded-xl border border-gray-200">
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 text-primary flex items-center justify-center mb-3">
+                    <Globe size={20} />
+                  </div>
+                  <h3 className="font-bold text-gray-900 mb-1">Official Help Form</h3>
+                  <Link to="/contact" className="text-primary hover:underline text-sm font-medium">
+                    Available through the website contact form
+                  </Link>
+                </div>
+
+                <div className="bg-white p-5 rounded-xl border border-gray-200">
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 text-primary flex items-center justify-center mb-3">
+                    <MessageCircle size={20} />
+                  </div>
+                  <h3 className="font-bold text-gray-900 mb-1">Live Support</h3>
+                  <p className="text-gray-500 text-sm">
+                    Coming soon to registered users
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Important Security Reminder */}
+            <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-4">
+              <ShieldAlert className="text-amber-600 shrink-0 mt-0.5" size={24} />
+              <div>
+                <h3 className="text-base font-bold text-amber-900 mb-1">Important Security Reminder</h3>
+                <p className="text-amber-800 text-sm leading-relaxed">
+                  Nova P2P support agents will never ask for your password, seed phrase, private keys or 2FA codes.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DisputeSupport = () => {
+  useEffect(() => {
+    document.title = "Dispute Support - NovaP2P";
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <div className="border-b border-gray-100 pb-8 mb-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-xs mb-4">
+              <Scale size={14} /> Fair Mediation & Escrow Protection
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">Dispute Support</h1>
+            <h2 className="text-xl font-semibold text-gray-600">Nova P2P Dispute Support</h2>
+          </div>
+
+          <div className="space-y-8">
+            {/* How P2P Trade Disputes Work */}
+            <div className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-3">How P2P Trade Disputes Work</h2>
+              <p className="text-gray-600 leading-relaxed">
+                When a trade dispute arises between a buyer and a seller, Nova P2P provides an appeal process to help resolve the issue fairly based on transaction evidence.
+              </p>
+            </div>
+
+            {/* Common Reasons for Disputes */}
+            <div className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Common Reasons for Disputes</h2>
+              <ul className="space-y-3 text-gray-700">
+                <li className="flex items-start gap-3">
+                  <span className="w-2 h-2 rounded-full bg-red-500 mt-2 shrink-0"></span>
+                  <div>
+                    <strong className="text-gray-900">Payment not received:</strong> The seller claims payment was not received in their account.
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="w-2 h-2 rounded-full bg-red-500 mt-2 shrink-0"></span>
+                  <div>
+                    <strong className="text-gray-900">Payment made but crypto not released:</strong> The buyer made payment within the allowed time, but the seller has not released cryptocurrency.
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="w-2 h-2 rounded-full bg-red-500 mt-2 shrink-0"></span>
+                  <div>
+                    <strong className="text-gray-900">Incorrect payment amount:</strong> The buyer paid an amount different from the agreed order amount.
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="w-2 h-2 rounded-full bg-red-500 mt-2 shrink-0"></span>
+                  <div>
+                    <strong className="text-gray-900">Third-party payment issues:</strong> Payment was sent from an account not matching the buyer's registered name.
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="w-2 h-2 rounded-full bg-red-500 mt-2 shrink-0"></span>
+                  <div>
+                    <strong className="text-gray-900">Unresponsive trading counterparty:</strong> One party stops responding during an active trade.
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            {/* How to Open a Dispute / Appeal */}
+            <div className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">How to Open a Dispute / Appeal</h2>
+              <ol className="space-y-4 text-gray-700">
+                {[
+                  "Open the active trade in your Nova P2P account.",
+                  "Select Appeal or Report Dispute.",
+                  "Select the reason for your dispute.",
+                  "Provide a clear description of what happened.",
+                  "Upload clear evidence (proof of payment, bank statement, chat history, or payment receipt).",
+                  "Submit the appeal."
+                ].map((step, idx) => (
+                  <li key={idx} className="flex items-start gap-3">
+                    <span className="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm shrink-0">
+                      {idx + 1}
+                    </span>
+                    <span className="pt-0.5 leading-relaxed">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* What Evidence is Accepted? */}
+            <div className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">What Evidence is Accepted?</h2>
+              <ul className="space-y-2.5 list-disc pl-6 text-gray-700">
+                <li>Bank account transaction receipts showing date, time, reference number and sender/recipient details.</li>
+                <li>Bank statements or mobile money transaction SMS/notifications.</li>
+                <li>Video screen recording showing the banking app with transaction details.</li>
+                <li>Proof that payment was or was not credited to the recipient's bank account.</li>
+              </ul>
+            </div>
+
+            {/* Dispute Guidelines */}
+            <div className="bg-blue-50/80 p-6 md:p-8 rounded-2xl border border-blue-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <ShieldCheck size={24} className="text-primary" />
+                Dispute Guidelines
+              </h2>
+              <ul className="space-y-2.5 list-disc pl-6 text-gray-800">
+                <li>Do not cancel a trade if you have already sent payment.</li>
+                <li>Never release cryptocurrency before confirming actual receipt in your bank account or wallet.</li>
+                <li>Only communicate through official Nova P2P channels for disputes.</li>
+                <li>Nova P2P dispute specialists review evidence impartially according to platform rules.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ReportIssue = () => {
+  useEffect(() => {
+    document.title = "Report an Issue - NovaP2P";
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
+          <div className="border-b border-gray-100 pb-8 mb-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 border border-red-100 text-red-600 font-medium text-xs mb-4">
+              <AlertCircle size={14} /> Security & Bug Reporting
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">Report an Issue</h1>
+            <h2 className="text-xl font-semibold text-gray-600 mb-4">Report an Issue or Security Concern</h2>
+            <p className="text-lg text-gray-600 leading-relaxed">
+              Help us keep Nova P2P secure and reliable. Use this page to report bugs, technical glitches, security vulnerabilities, suspicious traders, or fraud attempts.
+            </p>
+          </div>
+
+          <div className="space-y-8">
+            {/* Types of Issues You Can Report */}
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Types of Issues You Can Report</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-slate-50/70 p-6 rounded-2xl border border-gray-100">
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 text-primary flex items-center justify-center mb-4 font-bold">
+                    1
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-3">Technical Bugs & Glitches</h3>
+                  <ul className="space-y-2 text-sm text-gray-600 list-disc pl-4">
+                    <li>Website errors, broken links, or UI display issues.</li>
+                    <li>Wallet balance or transaction status syncing delays.</li>
+                    <li>Mobile browser or notification issues.</li>
+                  </ul>
+                </div>
+
+                <div className="bg-slate-50/70 p-6 rounded-2xl border border-gray-100">
+                  <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center mb-4 font-bold">
+                    2
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-3">Fraud & Scam Attempts</h3>
+                  <ul className="space-y-2 text-sm text-gray-600 list-disc pl-4">
+                    <li>Counterparties asking you to trade or pay outside Nova P2P.</li>
+                    <li>Fake payment receipts, SMS or forged confirmation screenshots.</li>
+                    <li>Impersonation of Nova P2P staff or official support.</li>
+                    <li>Phishing websites or suspicious links.</li>
+                  </ul>
+                </div>
+
+                <div className="bg-slate-50/70 p-6 rounded-2xl border border-gray-100">
+                  <div className="w-10 h-10 rounded-lg bg-red-50 text-red-600 flex items-center justify-center mb-4 font-bold">
+                    3
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-3">Account & Security Concerns</h3>
+                  <ul className="space-y-2 text-sm text-gray-600 list-disc pl-4">
+                    <li>Suspicious activity on your account.</li>
+                    <li>Unauthorized login notifications.</li>
+                    <li>Security vulnerability disclosure.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* How to Report */}
+            <div className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">How to Report</h2>
+              <p className="text-gray-600 mb-4">Email our security and quality team:</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-gray-200">
+                  <span className="text-xs uppercase font-semibold text-gray-400 block mb-1">Technical & General Bugs</span>
+                  <a href="mailto:support@novap2p.com" className="text-primary font-medium hover:underline text-sm break-all">
+                    support@novap2p.com
+                  </a>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-200">
+                  <span className="text-xs uppercase font-semibold text-gray-400 block mb-1">Fraud & Scam Reports</span>
+                  <div className="text-sm font-medium text-gray-900">
+                    <a href="mailto:security@novap2p.com" className="text-primary hover:underline block break-all">security@novap2p.com</a>
+                    <span className="text-xs text-gray-400 block">or</span>
+                    <a href="mailto:support@novap2p.com" className="text-primary hover:underline block break-all">support@novap2p.com</a>
+                  </div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-200">
+                  <span className="text-xs uppercase font-semibold text-gray-400 block mb-1">Security Vulnerabilities</span>
+                  <a href="mailto:security@novap2p.com" className="text-primary font-medium hover:underline text-sm break-all">
+                    security@novap2p.com
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* What to Include */}
+            <div className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">What to Include</h2>
+              <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                <li>A clear summary of the issue</li>
+                <li>Device, browser, and operating system used</li>
+                <li>Exact steps to reproduce the problem</li>
+                <li>Screenshots, screen recordings, or error codes</li>
+                <li>Associated Order IDs or user details (if reporting a trader)</li>
+              </ul>
+            </div>
+
+            {/* Response Time */}
+            <div className="p-6 rounded-2xl bg-blue-50 border border-blue-100 flex items-start gap-4">
+              <ShieldCheck className="text-primary shrink-0 mt-0.5" size={24} />
+              <div>
+                <h3 className="text-base font-bold text-gray-900 mb-1">Response Time</h3>
+                <p className="text-gray-700 text-sm leading-relaxed">
+                  Our team reviews critical security and fraud reports promptly. General bug reports are investigated during platform maintenance cycles.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PromotionalPopup = () => {
+  const [isOpen, setIsOpen] = useState(true);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  if (!isOpen) return null;
+
+  return (
+    <AnimatePresence>
+      <div 
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm transition-opacity"
+        onClick={() => setIsOpen(false)}
+      >
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.92, y: 16 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.92, y: 16 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
+          className="relative max-w-4xl w-full my-auto rounded-2xl overflow-visible shadow-2xl bg-slate-900 border border-slate-700/60"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Small Cross Icon */}
+          <button
+            onClick={() => setIsOpen(false)}
+            aria-label="Close promotional banner"
+            className="absolute -top-3 -right-3 md:-top-4 md:-right-4 w-9 h-9 rounded-full bg-white text-gray-800 hover:text-black hover:bg-gray-100 flex items-center justify-center shadow-xl border border-gray-300 z-20 cursor-pointer transition-transform hover:scale-110 active:scale-95"
+          >
+            <X size={18} className="stroke-[2.5]" />
+          </button>
+
+          {/* Promotional Image */}
+          <div className="relative rounded-2xl overflow-hidden bg-slate-950">
+            <a 
+              href="https://app.novap2p.com/register" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="block cursor-pointer focus:outline-none"
+            >
+              <img
+                src="/assets/promotional-banner.svg"
+                alt="NovaP2P 3-Month Merchant Trading Competition"
+                className="w-full h-auto block rounded-2xl object-contain hover:opacity-95 transition-opacity"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.src.endsWith('/assets/promotional-banner.svg')) {
+                    target.src = '/assets/promotional-banner.svg';
+                  }
+                }}
+              />
+            </a>
+          </div>
+        </motion.div>
+      </div>
+    </AnimatePresence>
   );
 };
 
@@ -1786,11 +2562,20 @@ export default function App() {
     <BrowserRouter>
       <div className="min-h-screen bg-white font-sans selection:bg-primary/20 selection:text-primary">
         <Navbar />
+        <PromotionalPopup />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/about" element={<AboutUs />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/merchant" element={<Merchant />} />
+          <Route path="/risk-disclosure" element={<RiskDisclosure />} />
+          <Route path="/help-center" element={<HelpCenter />} />
+          <Route path="/faq" element={<HelpCenter />} />
+          <Route path="/help" element={<HelpCenter />} />
+          <Route path="/contact-support" element={<ContactSupport />} />
+          <Route path="/support" element={<ContactSupport />} />
+          <Route path="/dispute-support" element={<DisputeSupport />} />
+          <Route path="/report-issue" element={<ReportIssue />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/terms-of-service" element={<TermsOfService />} />
           <Route path="/cookie-policy" element={<CookiePolicy />} />
