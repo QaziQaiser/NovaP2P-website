@@ -178,7 +178,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({ className = '', source
             {(!serviceId || !templateId || !publicKey) && (
               <div className="p-3 bg-amber-50 border border-amber-100 text-amber-800 rounded-xl text-xs flex items-center gap-2">
                 <span className="inline-flex h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
-                <span><strong>Developer Notice:</strong> EmailJS configuration variables are not set. The form will run in simulation mode. Check the setup guide at the bottom of the page!</span>
+                <span><strong>Developer Notice:</strong> EmailJS configuration variables are not set. The form will run in simulation mode.</span>
               </div>
             )}
 

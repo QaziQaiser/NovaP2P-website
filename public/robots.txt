@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://novap2p.com/sitemap.xml
+Host: https://novap2p.com

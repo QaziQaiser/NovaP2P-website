@@ -34,3 +34,76 @@ html {
 .text-glow {
   text-shadow: 0 0 10px rgba(79, 125, 243, 0.6);
 }
+
+/* LI.FI Swap Widget Mobile Responsiveness */
+#widget-app-expanded-container,
+div[id^="widget-app-expanded-container"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  justify-content: center !important;
+}
+
+#widget-relative-container,
+div[id^="widget-relative-container"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  margin: 0 auto !important;
+}
+
+#widget-scrollable-container,
+div[id^="widget-scrollable-container"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 640px) {
+  #widget-relative-container,
+  div[id^="widget-relative-container"] {
+    border-radius: 18px !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Compact PageContainer padding on mobile so content never overflows */
+  div[id^="widget-relative-container"] .MuiContainer-root,
+  div[id^="widget-scrollable-container"] > div {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  /* Scale SelectTokenButton header and text on mobile screens */
+  div[id^="widget-relative-container"] [class*="MuiCardHeader-root"] {
+    padding: 8px 6px !important;
+  }
+
+  div[id^="widget-relative-container"] [class*="MuiCardHeader-title"] {
+    width: auto !important;
+    max-width: 65px !important;
+    min-width: 0 !important;
+    font-size: 14px !important;
+  }
+
+  div[id^="widget-relative-container"] [class*="MuiCardHeader-subheader"] {
+    width: auto !important;
+    max-width: 65px !important;
+    min-width: 0 !important;
+    font-size: 11px !important;
+  }
+
+  div[id^="widget-relative-container"] [class*="MuiCardContent-root"] {
+    padding: 6px 4px !important;
+  }
+
+  div[id^="widget-relative-container"] [data-testid="widget-reverse-tokens-button"] {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+  }
+}

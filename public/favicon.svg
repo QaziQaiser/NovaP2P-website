@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="novaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F7DF3"/>
+      <stop offset="100%" stop-color="#2856DE"/>
+    </linearGradient>
+  </defs>
+  <!-- Background Squircle -->
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#novaGrad)"/>
+  
+  <!-- Symmetric Exchange Arrows (ArrowRightLeft) -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top arrow pointing right -->
+    <path d="M 136 204 L 376 204" />
+    <path d="M 324 152 L 376 204 L 324 256" />
+    
+    <!-- Bottom arrow pointing left -->
+    <path d="M 376 308 L 136 308" />
+    <path d="M 188 256 L 136 308 L 188 360" />
+  </g>
+</svg>

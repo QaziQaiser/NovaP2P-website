@@ -7,15 +7,26 @@ import {
   Globe, ChevronDown, Menu, X, Mail, Twitter, 
   MessageCircle, Github, ArrowRightLeft, CreditCard,
   Facebook, Instagram, Send, Phone, MapPin, MessageSquare,
-  HelpCircle, LifeBuoy, ShieldAlert
+  HelpCircle, LifeBuoy, ShieldAlert, Target, Award, Sparkles, 
+  Building2, UserCheck, TrendingUp, Check, Linkedin
 } from 'lucide-react';
 import { ContactForm } from './components/ContactForm';
 import emailjs from '@emailjs/browser';
+import { LiFiSwapWidget } from './components/swap/LiFiSwapWidget';
+import { WalletProvider, useWallet } from './context/WalletContext';
+import { GenesisCampaignBanner } from './components/campaign/GenesisCampaignBanner';
+import { CampaignDetailsModal } from './components/campaign/CampaignDetailsModal';
+import { GenesisRewardsDashboard } from './components/campaign/GenesisRewardsDashboard';
+import { RewardClaimModal } from './components/campaign/RewardClaimModal';
+import { SwapAdminDashboard } from './components/admin/SwapAdminDashboard';
+import { NovaSwapSection } from './components/swap/NovaSwapSection';
+import { swapCampaignApi, CampaignData, MilestoneItem, UserDashboardData } from './services/swapCampaignApi';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const { account, isConnected, connectWallet } = useWallet();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -27,9 +38,12 @@ const Navbar = () => {
 
   const navLinks = [
     { name: 'Home', href: '/#home' },
-    { name: 'How It Works', href: '/#how-it-works' },
-    { name: 'Features', href: '/#features' },
-    { name: 'Security', href: '/#security' },
+    { name: 'Swap', href: '/#swap' },
+    { name: 'Rewards', href: '/#rewards' },
+    { name: 'About Us', href: '/about' },
+    { name: 'Merchant', href: '/merchant' },
+    { name: 'Fee Structure', href: '/fee-structure' },
+    { name: 'Contact Us', href: '/contact' },
     { name: 'FAQ', href: '/#faq' },
   ];
 
@@ -48,22 +62,56 @@ const Navbar = () => {
           
           <div className="hidden md:flex items-center space-x-8">
             {navLinks.map((link) => (
-              <a 
-                key={link.name} 
-                href={link.href} 
+              link.href.startsWith('/') && !link.href.startsWith('/#') ? (
+                <Link
+                  key={link.name}
+                  to={link.href}
+                  className="text-gray-600 hover:text-primary font-medium transition-colors"
+                >
+                  {link.name}
+                </Link>
+              ) : (
+                <a 
+                  key={link.name} 
+                  href={link.href} 
+                  onClick={(e) => {
+                    if (link.href.startsWith('/#') && window.location.pathname === '/') {
+                      e.preventDefault();
+                      const id = link.href.replace('/#', '');
+                      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+                      window.history.pushState(null, '', link.href);
+                    }
+                  }}
+                  className="text-gray-600 hover:text-primary font-medium transition-colors"
+                >
+                  {link.name}
+                </a>
+              )
+            ))}
+            {isConnected && account ? (
+              <a
+                href="/#rewards"
                 onClick={(e) => {
-                  if (link.href.startsWith('/#') && window.location.pathname === '/') {
+                  if (window.location.pathname === '/') {
                     e.preventDefault();
-                    const id = link.href.replace('/#', '');
-                    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-                    window.history.pushState(null, '', link.href);
+                    document.getElementById('rewards')?.scrollIntoView({ behavior: 'smooth' });
                   }
                 }}
-                className="text-gray-600 hover:text-primary font-medium transition-colors"
+                className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900 text-white font-mono text-xs border border-slate-700 shadow-sm hover:border-primary transition-all cursor-pointer"
               >
-                {link.name}
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>{account.slice(0, 6)}...{account.slice(-4)}</span>
               </a>
-            ))}
+            ) : (
+              <button
+                type="button"
+                onClick={connectWallet}
+                className="flex items-center gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer"
+              >
+                <Wallet size={14} />
+                <span>Connect Wallet</span>
+              </button>
+            )}
             <a 
               href="https://app.novap2p.com/register" 
               className="bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-full font-medium transition-colors shadow-lg shadow-primary/30"
@@ -91,24 +139,35 @@ const Navbar = () => {
           >
             <div className="px-4 pt-2 pb-6 space-y-1 shadow-lg">
               {navLinks.map((link) => (
-                <a 
-                  key={link.name} 
-                  href={link.href} 
-                  onClick={(e) => {
-                    setMobileMenuOpen(false);
-                    if (link.href.startsWith('/#') && window.location.pathname === '/') {
-                      e.preventDefault();
-                      const id = link.href.replace('/#', '');
-                      setTimeout(() => {
-                        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-                        window.history.pushState(null, '', link.href);
-                      }, 300);
-                    }
-                  }}
-                  className="block px-3 py-3 text-base font-medium text-gray-700 hover:text-primary hover:bg-gray-50 rounded-md"
-                >
-                  {link.name}
-                </a>
+                link.href.startsWith('/') && !link.href.startsWith('/#') ? (
+                  <Link
+                    key={link.name}
+                    to={link.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-3 py-3 text-base font-medium text-gray-700 hover:text-primary hover:bg-gray-50 rounded-md"
+                  >
+                    {link.name}
+                  </Link>
+                ) : (
+                  <a 
+                    key={link.name} 
+                    href={link.href} 
+                    onClick={(e) => {
+                      setMobileMenuOpen(false);
+                      if (link.href.startsWith('/#') && window.location.pathname === '/') {
+                        e.preventDefault();
+                        const id = link.href.replace('/#', '');
+                        setTimeout(() => {
+                          document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+                          window.history.pushState(null, '', link.href);
+                        }, 300);
+                      }
+                    }}
+                    className="block px-3 py-3 text-base font-medium text-gray-700 hover:text-primary hover:bg-gray-50 rounded-md"
+                  >
+                    {link.name}
+                  </a>
+                )
               ))}
               <a 
                 href="https://app.novap2p.com/register" 
@@ -127,7 +186,7 @@ const Navbar = () => {
 
 const Hero = () => {
   return (
-    <section id="home" className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
+    <section id="home" className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-x-clip">
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
       <div className="absolute left-0 right-0 top-0 -z-10 m-auto h-[310px] w-[310px] rounded-full bg-primary opacity-20 blur-[100px]"></div>
       
@@ -175,85 +234,8 @@ const Hero = () => {
           </motion.div>
         </div>
 
-        <motion.div 
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.5 }}
-          className="mt-20 relative max-w-5xl mx-auto"
-        >
-          <div className="absolute -inset-1 bg-gradient-to-r from-primary to-accent rounded-2xl blur opacity-30"></div>
-          <div className="relative bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden flex flex-col md:flex-row">
-            {/* Mock Dashboard UI */}
-            <div className="w-full md:w-2/3 p-6 border-b md:border-b-0 md:border-r border-gray-100 bg-gray-50/50">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="font-semibold text-gray-800">Recent Offers</h3>
-                <div className="flex gap-2">
-                  <span className="px-3 py-1 bg-white border border-gray-200 rounded-full text-xs font-medium">Buy USDT</span>
-                  <span className="px-3 py-1 bg-white border border-gray-200 rounded-full text-xs font-medium text-gray-500">Sell USDT</span>
-                </div>
-              </div>
-              
-              <div className="space-y-3">
-                {[
-                  { id: 1, price: '1365.10 NGN' },
-                  { id: 2, price: '123.50 BDT' },
-                  { id: 3, price: '95.31 INR' }
-                ].map((trader) => (
-                  <div key={trader.id} className="bg-white p-4 rounded-xl border border-gray-100 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow cursor-pointer">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center font-bold text-primary">
-                        U{trader.id}
-                      </div>
-                      <div>
-                        <div className="font-medium text-sm">Trader{trader.id}99</div>
-                        <div className="text-xs text-gray-500 flex items-center gap-1">
-                          <CheckCircle2 size={12} className="text-accent" /> 99% completion
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-gray-800">{trader.price}</div>
-                      <div className="text-xs text-gray-500">Limits: $50 - $500</div>
-                    </div>
-                    <button className="px-4 py-2 bg-accent/10 text-accent hover:bg-accent hover:text-white rounded-lg text-sm font-semibold transition-colors">
-                      Buy
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            {/* Mock Escrow UI */}
-            <div className="w-full md:w-1/3 p-6 bg-white flex flex-col justify-center">
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Lock className="text-primary" size={28} />
-                </div>
-                <h3 className="font-bold text-lg text-gray-800">Escrow Active</h3>
-                <p className="text-sm text-gray-500">Funds are safely locked</p>
-              </div>
-              
-              <div className="bg-gray-50 rounded-xl p-4 mb-4">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-500">Amount</span>
-                  <span className="font-semibold">100.00 USDT</span>
-                </div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-500">Price</span>
-                  <span className="font-semibold">95.31 INR</span>
-                </div>
-                <div className="flex justify-between text-sm pt-2 border-t border-gray-200">
-                  <span className="text-gray-500">Total to Pay</span>
-                  <span className="font-bold text-primary">9,538.55 INR</span>
-                </div>
-              </div>
-              
-              <button className="w-full py-3 bg-gray-900 text-white rounded-xl font-medium text-sm">
-                I have paid
-              </button>
-            </div>
-          </div>
-        </motion.div>
+        {/* NovaP2P Swap Section with Genesis Campaign & Rewards Dashboard */}
+        <NovaSwapSection />
       </div>
     </section>
   );
@@ -917,8 +899,7 @@ const FAQ = () => {
     { q: "What is P2P trading?", a: "Peer-to-peer (P2P) trading allows users to buy and sell USDT directly with each other without a central exchange acting as an intermediary." },
     { q: "Is NovaP2P safe?", a: "Yes. NovaP2P uses a secure escrow system that locks the USDT during a trade until the seller confirms receipt of payment, protecting both parties." },
     { q: "What cryptocurrencies will be supported?", a: "At launch, NovaP2P will primarily focus on USDT (Tether) to provide a stable trading environment. More assets will be added in later phases." },
-    { q: "How does the escrow system work?", a: "When a trade starts, the seller's USDT is locked in our smart contract escrow. It is only released to the buyer once the seller confirms they have received the fiat payment." },
-    { q: "When will NovaP2P launch?", a: "We are currently in the final stages of platform development. Join our waitlist to be notified about our upcoming Closed Beta launch." }
+    { q: "How does the escrow system work?", a: "When a trade starts, the seller's USDT is locked in our smart contract escrow. It is only released to the buyer once the seller confirms they have received the fiat payment." }
   ];
 
   const [openIdx, setOpenIdx] = useState<number | null>(0);
@@ -1149,7 +1130,7 @@ const Merchant = () => {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   useEffect(() => {
-    document.title = "Apply for Merchant - NovaP2P";
+    document.title = "Verified Merchant Program — NovaP2P | 0% Maker Fees";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1365,7 +1346,7 @@ const Merchant = () => {
 
 const PrivacyPolicy = () => {
   useEffect(() => {
-    document.title = "Privacy Policy - NovaP2P";
+    document.title = "Privacy Policy — NovaP2P | User Data Protection";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1404,7 +1385,7 @@ const PrivacyPolicy = () => {
 
 const TermsOfService = () => {
   useEffect(() => {
-    document.title = "Terms of Service - NovaP2P";
+    document.title = "Terms of Service — NovaP2P | User Agreement";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1439,7 +1420,7 @@ const TermsOfService = () => {
 
 const CookiePolicy = () => {
   useEffect(() => {
-    document.title = "Cookie Policy - NovaP2P";
+    document.title = "Cookie Policy — NovaP2P | Transparency & Privacy";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1476,12 +1457,9 @@ const CookiePolicy = () => {
 
 const Contact = () => {
   useEffect(() => {
-    document.title = "Contact Us - NovaP2P";
+    document.title = "Contact Us — NovaP2P | 24/7 Dedicated Support";
     window.scrollTo(0, 0);
   }, []);
-
-  const [emailJSHelpOpen, setEmailJSHelpOpen] = useState(false);
-  const [dnsHelpOpen, setDnsHelpOpen] = useState(false);
 
   return (
     <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
@@ -1515,143 +1493,8 @@ const Contact = () => {
         </div>
 
         {/* The Direct EmailJS Contact Form */}
-        <div className="mb-16">
+        <div>
           <ContactForm source="Main Support Channel" />
-        </div>
-
-        {/* Collapsible Integration and Deliverability Guides for Admin */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-bold text-gray-900 border-l-4 border-primary pl-3 mb-6">
-            NovaP2P Admin Support & Deliverability Center
-          </h2>
-
-          {/* Card 1: EmailJS Integration Details */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <button
-              onClick={() => setEmailJSHelpOpen(!emailJSHelpOpen)}
-              className="w-full px-6 py-5 text-left font-bold text-gray-800 flex justify-between items-center hover:bg-gray-50/50 transition-colors select-none"
-            >
-              <span className="flex items-center gap-2">
-                <span>📝</span> Step-by-Step EmailJS Setup Guide (No Backend Needed)
-              </span>
-              <span className={`text-xl text-gray-400 transform transition-transform duration-200 ${emailJSHelpOpen ? 'rotate-180' : ''}`}>
-                ▼
-              </span>
-            </button>
-            <AnimatePresence>
-              {emailJSHelpOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden border-t border-gray-50"
-                >
-                  <div className="p-6 text-sm text-gray-650 space-y-4 bg-gray-50/30">
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">1. Create EmailJS Account</h4>
-                      <p>Sign up for free at <a href="https://www.emailjs.com/" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">emailjs.com</a>. The free tier includes 200 free emails monthly.</p>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">2. Add Email Service & Get Service ID</h4>
-                      <p>Go to your dashboard &rarr; <strong>Email Services</strong> &rarr; Add Service. Select your email (Gmail, Outlook, custom domains via Google Workspace/IMAP) and connect it. Copy your generated <strong>Service ID</strong>.</p>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">3. Create Email Template & Get Template ID</h4>
-                      <p>Go to <strong>Email Templates</strong> &rarr; Create New Template. Design your layout with variable fields:</p>
-                      <ul className="list-disc pl-5 mt-1 text-xs font-mono bg-white p-3 border border-gray-100 rounded-lg text-gray-700 space-y-1">
-                        <li>{"Subject: {{subject}}"}</li>
-                        <li>{"Name: {{from_name}}"}</li>
-                        <li>{"Email: {{from_email}}"}</li>
-                        <li>{"Origin: {{form_source}}"}</li>
-                        <li>{"Message: {{message}}"}</li>
-                      </ul>
-                      <p className="mt-2 text-xs">Save the template, and copy the assigned <strong>Template ID</strong>.</p>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">4. Copy Public Key</h4>
-                      <p>Go to <strong>Account</strong> (or API Keys) in the sidebar of EmailJS and copy the <strong>Public Key</strong>.</p>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-1.5">5. Wire into Environment Variables</h4>
-                      <p>Add these environment variables to your Cloudflare hosting parameters or native `.env` (development) or `.env.production` files:</p>
-                      <pre className="p-3.5 bg-gray-900 text-green-400 font-mono text-xs rounded-xl overflow-x-auto space-y-0.5 mt-2">
-                        {`VITE_EMAILJS_SERVICE_ID=your_emailjs_service_id_here\n`}
-                        {`VITE_EMAILJS_TEMPLATE_ID=your_emailjs_template_id_here\n`}
-                        {`VITE_EMAILJS_PUBLIC_KEY=your_emailjs_public_key_here`}
-                      </pre>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Card 2: Professional Email Deliverability (Cloudflare DNS: SPF, DKIM, DMARC) */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <button
-              onClick={() => setDnsHelpOpen(!dnsHelpOpen)}
-              className="w-full px-6 py-5 text-left font-bold text-gray-800 flex justify-between items-center hover:bg-gray-50/50 transition-colors select-none"
-            >
-              <span className="flex items-center gap-2">
-                <span>🛡️</span> DNS Deliverability Guide: Avoid Spam (SPF, DKIM, DMARC)
-              </span>
-              <span className={`text-xl text-gray-400 transform transition-transform duration-200 ${dnsHelpOpen ? 'rotate-180' : ''}`}>
-                ▼
-              </span>
-            </button>
-            <AnimatePresence>
-              {dnsHelpOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden border-t border-gray-50"
-                >
-                  <div className="p-6 text-sm text-gray-655 space-y-5 bg-gray-50/30">
-                    <p className="text-gray-600">
-                      To ensure emails from <strong className="text-gray-950">support@novap2p.com</strong> land directly in your and your customer's <strong>Inbox</strong> (never the spam folder), you must configure your SPF, DKIM, and DMARC parameters in Cloudflare DNS for the <code className="bg-white px-1.5 py-0.5 text-xs text-primary font-semibold border rounded">novap2p.com</code> domain. Here are the exact TXT records you need:
-                    </p>
-
-                    <div className="space-y-4">
-                      {/* SPF Record */}
-                      <div className="bg-white p-4 rounded-xl border border-gray-100">
-                        <span className="inline-block text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md mb-2">1. SPF (Sender Policy Framework) Record</span>
-                        <p className="text-xs text-gray-500 mb-2">Authorizes email providers (Google/EmailJS) to send mail representing your domain.</p>
-                        <div className="grid grid-cols-4 gap-2 text-xs font-mono bg-gray-50 p-2.5 rounded-lg">
-                          <span className="text-gray-400 font-semibold">Type:</span> <span className="col-span-3 text-gray-800">TXT</span>
-                          <span className="text-gray-400 font-semibold">Name:</span> <span className="col-span-3 text-gray-800">@</span>
-                          <span className="text-gray-400 font-semibold">Value:</span> <span className="col-span-3 text-gray-900 select-all font-bold">v=spf1 include:mailgun.org include:sendgrid.net include:_spf.google.com ~all</span>
-                        </div>
-                      </div>
-
-                      {/* DKIM Record */}
-                      <div className="bg-white p-4 rounded-xl border border-gray-100">
-                        <span className="inline-block text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md mb-2">2. DKIM (DomainKeys Identified Mail) Record</span>
-                        <p className="text-xs text-gray-500 mb-2">Digitally signs sent emails verifying they were not intercepted or modified in transit.</p>
-                        <p className="text-xs text-gray-600 mb-2">Generate this record directly inside your mail provider (Google Workspace, Zoho Mail, etc.) and save as a TXT entry. Example:</p>
-                        <div className="grid grid-cols-4 gap-2 text-xs font-mono bg-gray-50 p-2.5 rounded-lg">
-                          <span className="text-gray-400 font-semibold">Type:</span> <span className="col-span-3 text-gray-800">TXT</span>
-                          <span className="text-gray-400 font-semibold">Name:</span> <span className="col-span-3 text-gray-800">google._domainkey</span>
-                          <span className="text-gray-400 font-semibold">Value:</span> <span className="col-span-3 text-gray-900 truncate">v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AM...</span>
-                        </div>
-                      </div>
-
-                      {/* DMARC Record */}
-                      <div className="bg-white p-4 rounded-xl border border-gray-100">
-                        <span className="inline-block text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md mb-2">3. DMARC (Domain-based Message Authentication Reporting) Record</span>
-                        <p className="text-xs text-gray-500 mb-2">Instructs recipient servers to quarantine/reject emails claiming to be from you that fail SPF/DKIM.</p>
-                        <div className="grid grid-cols-4 gap-2 text-xs font-mono bg-gray-50 p-2.5 rounded-lg">
-                          <span className="text-gray-400 font-semibold">Type:</span> <span className="col-span-3 text-gray-800">TXT</span>
-                          <span className="text-gray-400 font-semibold">Name:</span> <span className="col-span-3 text-gray-800">_dmarc</span>
-                          <span className="text-gray-400 font-semibold">Value:</span> <span className="col-span-3 text-gray-900 select-all font-medium">v=DMARC1; p=quarantine; pct=100; rua=mailto:dmarc-reports@novap2p.com;</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
         </div>
 
       </div>
@@ -1661,32 +1504,650 @@ const Contact = () => {
 
 const AboutUs = () => {
   useEffect(() => {
-    document.title = "About Us - NovaP2P";
+    document.title = "About Us — NovaP2P | Trusted Peer-to-Peer Trading Platform";
     window.scrollTo(0, 0);
   }, []);
 
+  const commitments = [
+    {
+      title: "User Protection",
+      description:
+        "We aim to strengthen user protection through clear trading procedures, appropriate verification, accessible support, and effective dispute-handling processes.",
+      icon: <ShieldCheck className="w-6 h-6 text-primary" />,
+      tag: "Safeguards",
+      bgGradient: "from-blue-500/10 via-primary/5 to-transparent",
+      iconBg: "bg-blue-50 text-primary border-blue-100",
+    },
+    {
+      title: "Combating Fraud",
+      description:
+        "We aim to reduce exposure to scams, payment fraud, impersonation, and other forms of fraudulent activity through responsible platform practices and continuous improvements in risk management.",
+      icon: <ShieldAlert className="w-6 h-6 text-amber-600" />,
+      tag: "Risk Prevention",
+      bgGradient: "from-amber-500/10 via-orange-500/5 to-transparent",
+      iconBg: "bg-amber-50 text-amber-600 border-amber-100",
+    },
+    {
+      title: "Transparency and Accountability",
+      description:
+        "We believe that transparent transaction records, clear platform rules, and accountable trading practices are essential to building confidence among users and merchants.",
+      icon: <Eye className="w-6 h-6 text-emerald-600" />,
+      tag: "Integrity",
+      bgGradient: "from-emerald-500/10 via-green-500/5 to-transparent",
+      iconBg: "bg-emerald-50 text-emerald-600 border-emerald-100",
+    },
+    {
+      title: "Responsible Financial Practices",
+      description:
+        "We aim to support appropriate identity verification, record-keeping, and anti-money-laundering controls in accordance with applicable requirements.",
+      icon: <Scale className="w-6 h-6 text-purple-600" />,
+      tag: "Compliance & AML",
+      bgGradient: "from-purple-500/10 via-indigo-500/5 to-transparent",
+      iconBg: "bg-purple-50 text-purple-600 border-purple-100",
+    },
+    {
+      title: "Continuous Improvement",
+      description:
+        "We are committed to improving our processes, strengthening our safeguards, and responding responsibly to the evolving needs of our users and the digital asset industry.",
+      icon: <TrendingUp className="w-6 h-6 text-cyan-600" />,
+      tag: "Evolution",
+      bgGradient: "from-cyan-500/10 via-blue-500/5 to-transparent",
+      iconBg: "bg-cyan-50 text-cyan-600 border-cyan-100",
+    },
+  ];
+
+  const teamDisciplines = [
+    { title: "Platform Development", desc: "Building secure escrow protocols, seamless trading systems, and robust infrastructure." },
+    { title: "Operations", desc: "Overseeing liquidity, merchant support, and streamlined trade flows." },
+    { title: "Legal & Compliance", desc: "Ensuring regulatory compliance, identity verification, and anti-money-laundering controls." },
+    { title: "Risk Management", desc: "Continuous monitoring, dispute prevention, and threat detection." },
+    { title: "Customer Support", desc: "Accessible, empathetic, and responsive assistance for users and merchants." },
+  ];
+
   return (
-    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
-          <h1 className="text-4xl font-bold text-gray-900 mb-8">About NovaP2P</h1>
-          <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
-            <p className="text-lg">NovaP2P is a technology platform designed to provide a secure and transparent peer-to-peer digital asset marketplace. The platform enables users to buy and sell digital assets directly with one another through a simple and reliable trading environment.</p>
-            <p>Our mission is to build a trusted digital marketplace where individuals can interact, trade, and exchange digital assets efficiently. NovaP2P focuses on providing modern technology infrastructure that supports fast transactions, transparent trading processes, and strong platform security.</p>
-            <p>The platform operates using an escrow-based mechanism that helps protect both parties involved in a transaction. When a trade is initiated, digital assets are temporarily held within the platform until the trade conditions are fulfilled and both parties confirm completion.</p>
-            <p>NovaP2P is committed to maintaining a safe and responsible trading environment. To support platform integrity, the system implements identity verification procedures and transaction monitoring mechanisms that help reduce fraudulent activity and enhance user protection.</p>
-            <p>Our goal is to create a reliable peer-to-peer ecosystem powered by technology, where users can interact confidently while maintaining transparency and operational efficiency.</p>
-            <p>NovaP2P continues to evolve with the aim of improving user experience, strengthening platform security, and building a sustainable digital marketplace for the future.</p>
+    <div className="min-h-screen bg-white">
+      {/* 1. HERO SECTION */}
+      <section className="relative pt-32 pb-20 md:pt-40 md:pb-28 bg-gradient-to-b from-slate-50 via-white to-slate-50 border-b border-gray-100 overflow-hidden">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:28px_28px]"></div>
+        <div className="absolute left-1/2 top-10 -translate-x-1/2 -z-0 h-[380px] w-[650px] rounded-full bg-primary/10 blur-[120px] pointer-events-none"></div>
+
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="text-center max-w-3xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-sm mb-6 shadow-xs"
+            >
+              <Sparkles size={16} />
+              <span>About Nova P2P</span>
+            </motion.div>
+
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+              className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-gray-900 tracking-tight leading-[1.15] mb-6"
+            >
+              Building a More Transparent &amp;{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-600">
+                Accountable P2P
+              </span>{' '}
+              Platform
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+              className="text-lg sm:text-xl text-gray-600 leading-relaxed mb-6"
+            >
+              Nova P2P is a peer-to-peer digital asset trading platform designed to connect buyers and sellers in a structured digital trading environment.
+            </motion.p>
+
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.25 }}
+              className="text-base sm:text-lg text-gray-600 leading-relaxed mb-10"
+            >
+              We aim to make P2P trading more transparent, accessible, and reliable by focusing on clear trading processes, responsible platform practices, and a better user experience.
+            </motion.p>
+          </div>
+
+          {/* Market Status & Core Belief Banner */}
+          <motion.div
+            initial={{ opacity: 0, y: 25 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6"
+          >
+            {/* Active Service Market */}
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:border-primary/30 transition-all duration-300 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform"></div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-xl">
+                  🇳🇬
+                </div>
+                <div>
+                  <span className="text-xs font-semibold tracking-wider uppercase text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100">
+                    Active Service Market
+                  </span>
+                  <h3 className="text-lg font-bold text-gray-900 mt-1">Focused on Nigeria</h3>
+                </div>
+              </div>
+              <p className="text-gray-600 text-sm sm:text-base leading-relaxed">
+                Currently, Nova P2P provides services in Nigeria, a market with significant participation in digital asset trading. We are focused on developing a platform that responds to the needs of users and merchants while continuing to improve our services as the market evolves.
+              </p>
+            </div>
+
+            {/* Core Principle Card */}
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:border-primary/30 transition-all duration-300 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform"></div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-primary">
+                  <Award size={20} />
+                </div>
+                <div>
+                  <span className="text-xs font-semibold tracking-wider uppercase text-primary bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-100">
+                    Our Philosophy
+                  </span>
+                  <h3 className="text-lg font-bold text-gray-900 mt-1">Trust &amp; Sustainable Growth</h3>
+                </div>
+              </div>
+              <p className="text-gray-600 text-sm sm:text-base leading-relaxed">
+                At Nova P2P, we believe that the future of digital finance depends on trust, accountability, and responsible innovation. Our ambition is to build a platform that grows sustainably and earns the confidence of the people who use it.
+              </p>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* 2. OUR MISSION & COMMITMENTS */}
+      <section className="py-20 md:py-28 bg-white relative">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-sm mb-4"
+            >
+              <Target size={16} />
+              <span>Core Commitments</span>
+            </motion.div>
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.1 }}
+              className="text-3xl md:text-4xl font-bold text-gray-900 mb-6"
+            >
+              Our Mission &amp; Commitments
+            </motion.h2>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.15 }}
+              className="text-lg text-gray-600 leading-relaxed mb-4"
+            >
+              Our mission is to help create a more transparent, trustworthy, and accountable peer-to-peer digital asset trading environment.
+            </motion.p>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.2 }}
+              className="text-base text-gray-500 leading-relaxed"
+            >
+              We believe that users should be able to participate in P2P trading with clearer processes, better information, and appropriate safeguards.
+            </motion.p>
+          </div>
+
+          {/* 5 Commitments Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+            {commitments.map((commitment, idx) => (
+              <motion.div
+                key={commitment.title}
+                initial={{ opacity: 0, y: 25 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: idx * 0.1 }}
+                className={`bg-white rounded-3xl p-7 border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative flex flex-col justify-between overflow-hidden group`}
+              >
+                <div className={`absolute top-0 right-0 w-36 h-36 bg-gradient-to-br ${commitment.bgGradient} rounded-bl-full pointer-events-none group-hover:scale-125 transition-transform duration-500`}></div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-5">
+                    <div className={`w-12 h-12 rounded-2xl ${commitment.iconBg} border flex items-center justify-center shadow-xs`}>
+                      {commitment.icon}
+                    </div>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 px-3 py-1 rounded-full border border-gray-100">
+                      {commitment.tag}
+                    </span>
+                  </div>
+
+                  <h3 className="text-xl font-bold text-gray-900 mb-3 group-hover:text-primary transition-colors">
+                    {commitment.title}
+                  </h3>
+
+                  <p className="text-gray-600 text-sm sm:text-base leading-relaxed">
+                    {commitment.description}
+                  </p>
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-gray-50 flex items-center gap-2 text-xs font-medium text-gray-400">
+                  <Check size={14} className="text-primary" />
+                  <span>Verified Commitment</span>
+                </div>
+              </motion.div>
+            ))}
+
+            {/* Final Highlight Card in Grid */}
+            <motion.div
+              initial={{ opacity: 0, y: 25 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.5 }}
+              className="bg-gradient-to-br from-primary to-blue-600 text-white rounded-3xl p-7 shadow-lg flex flex-col justify-between relative overflow-hidden md:col-span-2 lg:col-span-1"
+            >
+              <div className="absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center mb-5 text-white">
+                  <Sparkles size={22} />
+                </div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-blue-200 bg-white/10 px-3 py-1 rounded-full border border-white/10 inline-block mb-3">
+                  Trust is Earned
+                </span>
+                <h3 className="text-xl font-bold text-white mb-3">
+                  Responsible By Design
+                </h3>
+                <p className="text-blue-100 text-sm sm:text-base leading-relaxed">
+                  Our mission is to contribute to a P2P ecosystem where trust is earned through responsible practices, not simply promised through words.
+                </p>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-white/15 text-xs text-blue-200">
+                Nova P2P Ecosystem Standard
+              </div>
+            </motion.div>
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* 3. OUR VISION FOR NIGERIA */}
+      <section className="py-20 md:py-28 bg-slate-50 border-y border-gray-100 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:24px_24px] opacity-70"></div>
+
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 font-medium text-sm mb-4"
+            >
+              <span>🇳🇬</span>
+              <span>Our Vision for Nigeria</span>
+            </motion.div>
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.1 }}
+              className="text-3xl md:text-4xl font-bold text-gray-900 mb-6"
+            >
+              Fostering a Safer Digital Finance Landscape in Nigeria
+            </motion.h2>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.15 }}
+              className="text-lg text-gray-600 leading-relaxed"
+            >
+              Nigeria is Nova P2P's current service market and an important part of our vision for the future of peer-to-peer digital finance.
+            </motion.p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+            {/* Dynamic Community & Challenges */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5 }}
+              className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col justify-between"
+            >
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center mb-6">
+                  <ShieldAlert size={22} />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-4">
+                  Acknowledging Market Realities
+                </h3>
+                <p className="text-gray-600 leading-relaxed text-base">
+                  Nigeria has a dynamic digital asset community, with users seeking accessible ways to participate in the market. However, concerns about scams, payment disputes, and fraudulent trading practices highlight the importance of trust, transparency, and responsible platform operations.
+                </p>
+              </div>
+              <div className="mt-6 pt-4 border-t border-gray-100 text-sm font-semibold text-amber-700 flex items-center gap-2">
+                <span>Building resilience against fraud</span>
+              </div>
+            </motion.div>
+
+            {/* Reliable Trading Environment */}
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5 }}
+              className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col justify-between"
+            >
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center mb-6">
+                  <ShieldCheck size={22} />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-4">
+                  Encouraging Responsible Trading
+                </h3>
+                <p className="text-gray-600 leading-relaxed text-base">
+                  Our vision is to contribute to a more reliable P2P trading environment in Nigeria by encouraging responsible trading, improving transaction transparency, and strengthening the processes that support user confidence.
+                </p>
+              </div>
+              <div className="mt-6 pt-4 border-t border-gray-100 text-sm font-semibold text-emerald-700 flex items-center gap-2">
+                <span>Reinforcing trader confidence</span>
+              </div>
+            </motion.div>
+
+            {/* Clear Safeguards & Dispute Handling */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+              className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col justify-between"
+            >
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 text-primary flex items-center justify-center mb-6">
+                  <Scale size={22} />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-4">
+                  Clear Procedures &amp; Accessible Dispute Handling
+                </h3>
+                <p className="text-gray-600 leading-relaxed text-base">
+                  We aim to create an environment where buyers and sellers can interact through clearer trading procedures, appropriate safeguards, and accessible dispute-handling mechanisms.
+                </p>
+              </div>
+              <div className="mt-6 pt-4 border-t border-gray-100 text-sm font-semibold text-primary flex items-center gap-2">
+                <span>Fair dispute resolution</span>
+              </div>
+            </motion.div>
+
+            {/* Regulatory & Stakeholder Engagement */}
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+              className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col justify-between"
+            >
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center mb-6">
+                  <Building2 size={22} />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-4">
+                  Constructive Regulatory Compliance
+                </h3>
+                <p className="text-gray-600 leading-relaxed text-base">
+                  We also recognize the importance of operating responsibly within applicable Nigerian laws and regulatory requirements. We aim to engage constructively with relevant stakeholders as the digital asset ecosystem develops.
+                </p>
+              </div>
+              <div className="mt-6 pt-4 border-t border-gray-100 text-sm font-semibold text-purple-700 flex items-center gap-2">
+                <span>Compliant &amp; constructive cooperation</span>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Ambition Banner */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="bg-slate-900 text-white rounded-3xl p-8 md:p-12 shadow-xl relative overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-primary/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="relative z-10 max-w-4xl">
+              <span className="text-xs font-semibold uppercase tracking-wider text-primary bg-primary/20 border border-primary/30 px-3.5 py-1 rounded-full mb-4 inline-block">
+                Long-Term Commitment
+              </span>
+              <h3 className="text-2xl md:text-3xl font-bold text-white mb-4 leading-snug">
+                Our long-term ambition is to support a P2P market where legitimate users and merchants can participate with greater confidence, financial activity is more accountable, and fraud risks are taken seriously.
+              </h3>
+              <p className="text-lg text-slate-300 font-medium italic border-l-2 border-primary pl-4 mt-6">
+                &ldquo;Our vision for Nigeria is not simply to facilitate digital asset trades. It is to help build a more trustworthy and transparent P2P trading ecosystem.&rdquo;
+              </p>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* 4. MEET OUR FOUNDER & TEAM */}
+      <section className="py-20 md:py-28 bg-white relative">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-sm mb-4"
+            >
+              <Users size={16} />
+              <span>Leadership &amp; People</span>
+            </motion.div>
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.1 }}
+              className="text-3xl md:text-4xl font-bold text-gray-900 mb-6"
+            >
+              Meet Our Founder &amp; Team
+            </motion.h2>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.15 }}
+              className="text-lg text-gray-600 leading-relaxed"
+            >
+              Nova P2P is driven by a long-term ambition to improve the peer-to-peer digital asset trading experience through responsible innovation, transparency, and a commitment to continuous development.
+            </motion.p>
+          </div>
+
+          {/* Founder Spotlight Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 25 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="bg-gradient-to-br from-slate-50 via-white to-blue-50/40 rounded-3xl p-8 md:p-12 border border-gray-200/80 shadow-sm mb-16 relative overflow-hidden"
+          >
+            <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 items-start">
+              {/* Founder Portrait Photo & Socials */}
+              <div className="flex flex-col items-center text-center shrink-0 mx-auto lg:mx-0">
+                <div className="relative group mb-5">
+                  <div className="w-48 h-56 sm:w-56 sm:h-64 md:w-60 md:h-72 rounded-3xl overflow-hidden shadow-xl shadow-primary/15 border-4 border-white ring-1 ring-gray-200/80 bg-slate-100 relative">
+                    <img
+                      src="/assets/images/mohammad-shakir.jpg"
+                      alt="Muhammad Shakir — Founder & CEO of Nova P2P"
+                      className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.src.endsWith('/assets/mohammad-shakir.jpg')) {
+                          target.src = '/assets/mohammad-shakir.jpg';
+                        }
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/30 via-transparent to-transparent opacity-60 pointer-events-none"></div>
+                  </div>
+                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white border border-gray-200 shadow-md text-primary text-xs font-semibold whitespace-nowrap">
+                    <CheckCircle2 size={13} className="text-primary fill-blue-50" />
+                    <span>Founder &amp; CEO</span>
+                  </div>
+                </div>
+
+                {/* Founder Social Media Channels */}
+                <div className="flex items-center justify-center gap-2.5 mt-2">
+                  <a
+                    href="https://www.linkedin.com/in/muhammad-shakir-058466255/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Muhammad Shakir on LinkedIn"
+                    title="Connect on LinkedIn"
+                    className="w-10 h-10 rounded-xl bg-white border border-gray-200 shadow-xs flex items-center justify-center text-gray-500 hover:text-[#0A66C2] hover:border-[#0A66C2]/40 hover:bg-blue-50/50 hover:shadow-md transition-all duration-200 group/link"
+                  >
+                    <Linkedin size={18} className="transition-transform group-hover/link:scale-110" />
+                  </a>
+                  <a
+                    href="https://x.com/ShakirNova"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Muhammad Shakir on X (Twitter)"
+                    title="Follow on X (Twitter)"
+                    className="w-10 h-10 rounded-xl bg-white border border-gray-200 shadow-xs flex items-center justify-center text-gray-700 hover:text-black hover:border-black/40 hover:bg-gray-100 hover:shadow-md transition-all duration-200 group/x"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" className="w-4 h-4 fill-current transition-transform group-hover/x:scale-110">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path>
+                    </svg>
+                  </a>
+                </div>
+              </div>
+
+              {/* Founder Details */}
+              <div className="flex-1">
+                <div className="mb-4">
+                  <h3 className="text-2xl md:text-3xl font-extrabold text-gray-900">
+                    Muhammad Shakir
+                  </h3>
+                  <p className="text-base font-semibold text-primary mt-1">
+                    Founder &amp; CEO
+                  </p>
+                </div>
+
+                <div className="space-y-4 text-gray-600 text-base md:text-lg leading-relaxed">
+                  <p>
+                    Muhammad Shakir has been actively involved in the cryptocurrency and peer-to-peer trading space since 2017. With years of hands-on experience in P2P markets, he has developed a deep understanding of the challenges traders face.
+                  </p>
+                  <p>
+                    He founded NovaP2P with a clear focus on building a secure, escrow-protected platform that prioritizes user protection and simplicity. Currently leading early operations in Nigeria, he is committed to creating a trusted environment for traders.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Our Team Section */}
+          <motion.div
+            initial={{ opacity: 0, y: 25 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="bg-white rounded-3xl p-8 md:p-12 border border-gray-100 shadow-sm"
+          >
+            <div className="max-w-3xl mb-10">
+              <span className="text-xs font-semibold uppercase tracking-wider text-primary bg-blue-50 px-3 py-1 rounded-full border border-blue-100 mb-3 inline-block">
+                Multidisciplinary Excellence
+              </span>
+              <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
+                Our Team
+              </h3>
+              <p className="text-gray-600 text-base md:text-lg leading-relaxed mb-4">
+                Building a reliable digital finance platform requires collaboration, technical expertise, operational discipline, and a commitment to users.
+              </p>
+              <p className="text-gray-600 text-base md:text-lg leading-relaxed mb-4">
+                Nova P2P aims to work with qualified professionals who can contribute to platform development, operations, legal and compliance matters, risk management, and customer support.
+              </p>
+              <p className="text-gray-600 text-base md:text-lg leading-relaxed">
+                As the company develops, we intend to strengthen our capabilities and build a team that shares our commitment to responsible innovation and trustworthy digital finance.
+              </p>
+            </div>
+
+            {/* Team Disciplines Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-10">
+              {teamDisciplines.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="p-5 rounded-2xl bg-gray-50 border border-gray-100 hover:border-primary/20 hover:bg-blue-50/30 transition-all duration-200"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-primary"></div>
+                    <h4 className="font-bold text-gray-900 text-base">{item.title}</h4>
+                  </div>
+                  <p className="text-sm text-gray-500 leading-relaxed">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Team Philosophy Callout */}
+            <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50/50 border border-blue-100 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white shadow-xs text-primary flex items-center justify-center shrink-0">
+                  <UserCheck size={20} />
+                </div>
+                <p className="text-gray-800 font-medium text-base sm:text-lg italic">
+                  &ldquo;We believe that a strong platform is built not only through technology, but also through the people, principles, and practices behind it.&rdquo;
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* 5. CALL TO ACTION BANNER */}
+      <section className="py-16 md:py-24 bg-gray-50 border-t border-gray-100">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <div className="bg-gradient-to-br from-secondary via-slate-900 to-secondary text-white rounded-3xl p-8 sm:p-12 md:p-16 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-80 h-80 bg-primary/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="relative z-10 max-w-2xl mx-auto">
+              <h2 className="text-3xl sm:text-4xl font-extrabold mb-4 leading-tight">
+                Experience Safer, More Accountable P2P Trading
+              </h2>
+              <p className="text-gray-300 text-base sm:text-lg mb-8 leading-relaxed">
+                Connect with verified traders, buy &amp; sell securely in escrow, and participate with confidence.
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <a
+                  href="https://app.novap2p.com/register"
+                  className="w-full sm:w-auto px-8 py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-semibold text-base transition-all shadow-lg shadow-primary/30 flex items-center justify-center gap-2"
+                >
+                  Start Trading <ArrowRight size={18} />
+                </a>
+                <Link
+                  to="/merchant"
+                  className="w-full sm:w-auto px-8 py-4 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl font-semibold text-base transition-all flex items-center justify-center"
+                >
+                  Apply as Merchant
+                </Link>
+                <Link
+                  to="/contact"
+                  className="w-full sm:w-auto px-6 py-4 text-gray-300 hover:text-white font-medium text-base transition-all"
+                >
+                  Contact Us
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 };
 
 const AmlKycPolicy = () => {
   useEffect(() => {
-    document.title = "AML & KYC Policy - NovaP2P";
+    document.title = "AML & KYC Policy — NovaP2P | Compliance & Verification";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1725,7 +2186,7 @@ const AmlKycPolicy = () => {
 
 const FeeStructure = () => {
   useEffect(() => {
-    document.title = "Fee Structure - NovaP2P";
+    document.title = "Fee Structure — NovaP2P | Transparent 0% Maker Fees";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1776,7 +2237,7 @@ const FeeStructure = () => {
 
 const RiskDisclosure = () => {
   useEffect(() => {
-    document.title = "Risk Disclosure - NovaP2P";
+    document.title = "Risk Disclosure — NovaP2P | Trading Risks & Safeguards";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1865,7 +2326,7 @@ const RiskDisclosure = () => {
 
 const HelpCenter = () => {
   useEffect(() => {
-    document.title = "Help Center / FAQs - NovaP2P";
+    document.title = "Help Center & FAQs — NovaP2P | User Support Guide";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2100,7 +2561,7 @@ const HelpCenter = () => {
 
 const ContactSupport = () => {
   useEffect(() => {
-    document.title = "Contact Support - NovaP2P";
+    document.title = "Contact Support — NovaP2P | 24/7 Dedicated Assistance";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2235,7 +2696,7 @@ const ContactSupport = () => {
 
 const DisputeSupport = () => {
   useEffect(() => {
-    document.title = "Dispute Support - NovaP2P";
+    document.title = "Dispute Support — NovaP2P | Fair Trade Resolution";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2352,7 +2813,7 @@ const DisputeSupport = () => {
 
 const ReportIssue = () => {
   useEffect(() => {
-    document.title = "Report an Issue - NovaP2P";
+    document.title = "Report an Issue — NovaP2P | Security & Bug Reporting";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2419,28 +2880,27 @@ const ReportIssue = () => {
             {/* How to Report */}
             <div className="bg-slate-50/70 p-6 md:p-8 rounded-2xl border border-gray-100">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">How to Report</h2>
-              <p className="text-gray-600 mb-4">Email our security and quality team:</p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white p-4 rounded-xl border border-gray-200">
-                  <span className="text-xs uppercase font-semibold text-gray-400 block mb-1">Technical & General Bugs</span>
-                  <a href="mailto:support@novap2p.com" className="text-primary font-medium hover:underline text-sm break-all">
-                    support@novap2p.com
-                  </a>
-                </div>
-                <div className="bg-white p-4 rounded-xl border border-gray-200">
-                  <span className="text-xs uppercase font-semibold text-gray-400 block mb-1">Fraud & Scam Reports</span>
-                  <div className="text-sm font-medium text-gray-900">
-                    <a href="mailto:security@novap2p.com" className="text-primary hover:underline block break-all">security@novap2p.com</a>
-                    <span className="text-xs text-gray-400 block">or</span>
-                    <a href="mailto:support@novap2p.com" className="text-primary hover:underline block break-all">support@novap2p.com</a>
+              <p className="text-gray-600 mb-4">Email our official support team directly:</p>
+              <div className="bg-white p-5 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 text-primary flex items-center justify-center shrink-0">
+                    <Mail size={20} />
+                  </div>
+                  <div>
+                    <span className="text-xs uppercase font-semibold text-gray-400 block mb-0.5">
+                      Direct Support & Issue Reporting
+                    </span>
+                    <a href="mailto:support@novap2p.com" className="text-primary font-bold hover:underline text-base sm:text-lg break-all">
+                      support@novap2p.com
+                    </a>
                   </div>
                 </div>
-                <div className="bg-white p-4 rounded-xl border border-gray-200">
-                  <span className="text-xs uppercase font-semibold text-gray-400 block mb-1">Security Vulnerabilities</span>
-                  <a href="mailto:security@novap2p.com" className="text-primary font-medium hover:underline text-sm break-all">
-                    security@novap2p.com
-                  </a>
-                </div>
+                <a
+                  href="mailto:support@novap2p.com"
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white font-medium hover:bg-primary-dark transition-colors text-sm w-fit"
+                >
+                  Send Email
+                </a>
               </div>
             </div>
 
@@ -2518,7 +2978,7 @@ const PromotionalPopup = () => {
               className="block cursor-pointer focus:outline-none"
             >
               <img
-                src="/assets/promotional-banner.svg"
+                src="/assets/promotional-banner.jpeg"
                 alt="NovaP2P 3-Month Merchant Trading Competition"
                 className="w-full h-auto block rounded-2xl object-contain hover:opacity-95 transition-opacity"
                 onError={(e) => {
@@ -2538,7 +2998,7 @@ const PromotionalPopup = () => {
 
 const Home = () => {
   useEffect(() => {
-    document.title = "NovaP2P";
+    document.title = "NovaP2P — Trusted Peer-to-Peer Crypto Trading & Escrow Platform";
   }, []);
 
   return (
@@ -2557,33 +3017,53 @@ const Home = () => {
   );
 };
 
+const AnalyticsTracker = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).gtag) {
+      (window as any).gtag('config', 'G-N8MKBS9JK3', {
+        page_path: location.pathname + location.search,
+        page_title: document.title,
+      });
+    }
+  }, [location]);
+
+  return null;
+};
+
 export default function App() {
   return (
-    <BrowserRouter>
-      <div className="min-h-screen bg-white font-sans selection:bg-primary/20 selection:text-primary">
-        <Navbar />
-        <PromotionalPopup />
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/about" element={<AboutUs />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/merchant" element={<Merchant />} />
-          <Route path="/risk-disclosure" element={<RiskDisclosure />} />
-          <Route path="/help-center" element={<HelpCenter />} />
-          <Route path="/faq" element={<HelpCenter />} />
-          <Route path="/help" element={<HelpCenter />} />
-          <Route path="/contact-support" element={<ContactSupport />} />
-          <Route path="/support" element={<ContactSupport />} />
-          <Route path="/dispute-support" element={<DisputeSupport />} />
-          <Route path="/report-issue" element={<ReportIssue />} />
-          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-          <Route path="/terms-of-service" element={<TermsOfService />} />
-          <Route path="/cookie-policy" element={<CookiePolicy />} />
-          <Route path="/aml-kyc-policy" element={<AmlKycPolicy />} />
-          <Route path="/fee-structure" element={<FeeStructure />} />
-        </Routes>
-        <Footer />
-      </div>
-    </BrowserRouter>
+    <WalletProvider>
+      <BrowserRouter>
+        <AnalyticsTracker />
+        <div className="min-h-screen bg-white font-sans selection:bg-primary/20 selection:text-primary">
+          <Navbar />
+          <PromotionalPopup />
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/about" element={<AboutUs />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/merchant" element={<Merchant />} />
+            <Route path="/risk-disclosure" element={<RiskDisclosure />} />
+            <Route path="/help-center" element={<HelpCenter />} />
+            <Route path="/faq" element={<HelpCenter />} />
+            <Route path="/help" element={<HelpCenter />} />
+            <Route path="/contact-support" element={<ContactSupport />} />
+            <Route path="/support" element={<ContactSupport />} />
+            <Route path="/dispute-support" element={<DisputeSupport />} />
+            <Route path="/report-issue" element={<ReportIssue />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms-of-service" element={<TermsOfService />} />
+            <Route path="/cookie-policy" element={<CookiePolicy />} />
+            <Route path="/aml-kyc-policy" element={<AmlKycPolicy />} />
+            <Route path="/fee-structure" element={<FeeStructure />} />
+            <Route path="/swap-admin" element={<SwapAdminDashboard />} />
+            <Route path="*" element={<Home />} />
+          </Routes>
+          <Footer />
+        </div>
+      </BrowserRouter>
+    </WalletProvider>
   );
 }
