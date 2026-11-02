@@ -39,7 +39,6 @@ const Navbar = () => {
   const navLinks = [
     { name: 'Home', href: '/#home' },
     { name: 'Swap', href: '/#swap' },
-    { name: 'Rewards', href: '/#rewards' },
     { name: 'About Us', href: '/about' },
     { name: 'Merchant', href: '/merchant' },
     { name: 'Fee Structure', href: '/fee-structure' },
@@ -88,30 +87,6 @@ const Navbar = () => {
                 </a>
               )
             ))}
-            {isConnected && account ? (
-              <a
-                href="/#rewards"
-                onClick={(e) => {
-                  if (window.location.pathname === '/') {
-                    e.preventDefault();
-                    document.getElementById('rewards')?.scrollIntoView({ behavior: 'smooth' });
-                  }
-                }}
-                className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900 text-white font-mono text-xs border border-slate-700 shadow-sm hover:border-primary transition-all cursor-pointer"
-              >
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>{account.slice(0, 6)}...{account.slice(-4)}</span>
-              </a>
-            ) : (
-              <button
-                type="button"
-                onClick={connectWallet}
-                className="flex items-center gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer"
-              >
-                <Wallet size={14} />
-                <span>Connect Wallet</span>
-              </button>
-            )}
             <a 
               href="https://app.novap2p.com/register" 
               className="bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-full font-medium transition-colors shadow-lg shadow-primary/30"
