@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Sparkles, Wallet, ShieldCheck, AlertCircle, Loader2, CheckCircle2, Gift, Users } from 'lucide-react';
 import { LiFiSwapWidget } from './LiFiSwapWidget';
 import { GenesisCampaignBanner } from '../campaign/GenesisCampaignBanner';
+import { GenesisRewardsPreviewCard } from '../campaign/GenesisRewardsPreviewCard';
 import { CampaignDetailsModal } from '../campaign/CampaignDetailsModal';
 import { GenesisRewardsDashboard } from '../campaign/GenesisRewardsDashboard';
 import { RewardClaimModal } from '../campaign/RewardClaimModal';
@@ -196,15 +197,21 @@ export const NovaSwapSection: React.FC = () => {
         <LiFiSwapWidget onSwapSuccess={handleSwapSuccess} />
       </motion.div>
 
-      {/* 3. BELOW WIDGET: REWARDS DASHBOARD ONLY WHEN CONNECTED */}
-      {isConnected && userDashboard && (
+      {/* 3. BELOW WIDGET: REWARDS AREA */}
+      {/* State A (Disconnected): Show Genesis Rewards Showcase Card */}
+      {!isConnected ? (
+        <GenesisRewardsPreviewCard onOpenDetails={() => setIsDetailsModalOpen(true)} />
+      ) : (
+        /* State B (Connected): Show Detailed Dashboard with 3 Cards */
         <div id="rewards" className="w-full scroll-mt-24">
           <GenesisRewardsDashboard
             dashboardData={userDashboard}
+            walletAddress={account}
             isLoading={isLoadingDashboard}
             onRefresh={refreshUserDashboard}
             onOpenClaimModal={(reward) => setClaimModalReward(reward)}
             onDisconnectWallet={disconnectWallet}
+            onOpenDetails={() => setIsDetailsModalOpen(true)}
           />
         </div>
       )}

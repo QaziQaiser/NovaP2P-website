@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { X, Gift, ShieldCheck, Users, CheckCircle, AlertCircle, Calendar, DollarSign, Award, ExternalLink } from 'lucide-react';
 import { CampaignData, MilestoneItem } from '../../services/swapCampaignApi';
 
@@ -15,6 +15,28 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
   campaign,
   milestones,
 }) => {
+  // Prevent background scrolling when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const originalStyle = window.getComputedStyle(document.body).overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalStyle;
+      };
+    }
+  }, [isOpen]);
+
+  // Close on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const minSwap = campaign?.minSwapUSD ?? 10.0;
@@ -29,24 +51,27 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
     : 'Dec 31, 2026';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto"
+      onClick={onClose}
+    >
       {/* Modal Box */}
       <div 
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl text-slate-100 p-6 sm:p-8"
+        className="relative w-full max-w-2xl max-h-[85vh] sm:max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl text-slate-100 p-5 sm:p-8 my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-full bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
+          className="absolute top-4 right-4 sm:top-5 sm:right-5 p-2 rounded-full bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer z-10 shadow-lg border border-slate-700"
           aria-label="Close modal"
         >
           <X size={20} />
         </button>
 
         {/* Modal Header */}
-        <div className="flex items-center gap-3.5 mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-purple-500/30 flex items-center justify-center text-2xl shadow-inner">
+        <div className="flex items-center gap-3.5 mb-6 pr-8">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-purple-500/30 flex items-center justify-center text-2xl shadow-inner shrink-0">
             🎁
           </div>
           <div>
@@ -199,4 +224,3 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
     </div>
   );
 };
-
