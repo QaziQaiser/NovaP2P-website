@@ -1,20 +1,15 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# NovaP2P Website & Swap
 
-# Run and deploy your AI Studio app
+Official website for NovaP2P featuring multi-chain swap integration powered by LI.FI and the Nova Swap Genesis Campaign.
 
-This contains everything you need to run your app locally.
+## Tech Stack
+- **Frontend:** React, Vite, Tailwind CSS, Motion
+- **Web3 / DEX:** LI.FI Swap Widget, Wagmi, Viem, Ethers
+- **Backend:** Node.js, Express, Better-SQLite3
+- **Chains Supported:** Ethereum (1), BNB Smart Chain (56), Polygon (137), Arbitrum (42161), Optimism (10), Base (8453)
 
-View your app in AI Studio: https://ai.studio/apps/dfe89ee1-7f05-4273-8aeb-d69a32dbdb97
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Deployment on Hostinger Web App
+1. Runtime: **Node.js 20+**
+2. Build Command: `npm run build`
+3. Start Command: `npm start`
+4. Port: `3000`
