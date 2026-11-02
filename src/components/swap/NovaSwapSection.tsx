@@ -196,95 +196,9 @@ export const NovaSwapSection: React.FC = () => {
         <LiFiSwapWidget onSwapSuccess={handleSwapSuccess} />
       </motion.div>
 
-      {/* 3. BELOW WIDGET: REWARDS DASHBOARD / VERIFICATION AREA */}
-      <div id="rewards" className="w-full scroll-mt-24">
-        {!isConnected ? (
-          /* BEFORE WALLET CONNECT: 4 Sleek feature badges matching Nova design */
-          <div className="w-full max-w-4xl mx-auto px-4 mt-8">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-white/80 border border-gray-200/80 shadow-sm backdrop-blur-sm">
-                <div className="w-8 h-8 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-600 shrink-0">
-                  <Sparkles size={16} />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-gray-900">50% Cashback</div>
-                  <div className="text-[10px] text-gray-500">on Nova Swap fees</div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-white/80 border border-gray-200/80 shadow-sm backdrop-blur-sm">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 shrink-0">
-                  <Gift size={16} />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-gray-900">Milestone Bonuses</div>
-                  <div className="text-[10px] text-gray-500">$100, $500, $1,000</div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-white/80 border border-gray-200/80 shadow-sm backdrop-blur-sm">
-                <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-600 shrink-0">
-                  <Users size={16} />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-gray-900">Referral Rewards</div>
-                  <div className="text-[10px] text-gray-500">$0.50 per user</div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-white/80 border border-gray-200/80 shadow-sm backdrop-blur-sm">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 shrink-0">
-                  <ShieldCheck size={16} />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-gray-900">Secure & Reliable</div>
-                  <div className="text-[10px] text-gray-500">Non-custodial swaps</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : !userDashboard ? (
-          /* AFTER WALLET CONNECT BUT BEFORE SIGNATURE VERIFICATION */
-          <div className="w-full max-w-[480px] sm:max-w-[500px] mx-auto px-4 mt-6">
-            <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-b from-[#151D33] to-[#0D1322] border border-purple-500/30 shadow-xl text-center text-white">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto mb-3">
-                <ShieldCheck size={26} />
-              </div>
-              <h3 className="text-base font-bold text-white">Initialize Genesis Rewards</h3>
-              <p className="text-xs text-slate-300 max-w-sm mx-auto mt-1 mb-4 leading-relaxed">
-                Wallet connected: <span className="font-mono text-emerald-400 font-bold">{account?.slice(0, 6)}...{account?.slice(-4)}</span>.
-                Sign a free, gasless verification message to activate your personal rewards dashboard and unique referral link.
-              </p>
-
-              {verificationError && (
-                <div className="mb-4 p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-300 flex items-center justify-center gap-2 max-w-md mx-auto">
-                  <AlertCircle size={15} className="shrink-0 text-red-400" />
-                  <span>{verificationError}</span>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleVerifyWalletOwnership}
-                disabled={isVerifying}
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 transition-all cursor-pointer disabled:opacity-50"
-              >
-                {isVerifying ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" />
-                    <span>Signing in Wallet...</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck size={16} />
-                    <span>Sign to Unlock Rewards</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* AFTER WALLET CONNECT & VERIFICATION: FULL GENESIS REWARDS DASHBOARD */
+      {/* 3. BELOW WIDGET: REWARDS DASHBOARD ONLY WHEN CONNECTED */}
+      {isConnected && userDashboard && (
+        <div id="rewards" className="w-full scroll-mt-24">
           <GenesisRewardsDashboard
             dashboardData={userDashboard}
             isLoading={isLoadingDashboard}
@@ -292,8 +206,8 @@ export const NovaSwapSection: React.FC = () => {
             onOpenClaimModal={(reward) => setClaimModalReward(reward)}
             onDisconnectWallet={disconnectWallet}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {/* 4. CAMPAIGN DETAILS MODAL */}
       <CampaignDetailsModal
