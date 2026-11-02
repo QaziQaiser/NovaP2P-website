@@ -1,4 +1,4 @@
-name: Deploy to Hostinger
+name: Build and Deploy
 
 on:
   push:
@@ -18,10 +18,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build project
         run: npm run build
@@ -30,13 +29,9 @@ jobs:
           VITE_VELORA_PARTNER: "nova-p2p"
           VITE_WALLETCONNECT_PROJECT_ID: "5432e3507d41270bee46b7b85bbc2ef8"
 
-      # Optional: Auto-upload dist/ to Hostinger via FTP
-      # To enable this, add FTP_SERVER, FTP_USERNAME, FTP_PASSWORD to your GitHub Repository Secrets
       - name: Deploy to Hostinger via FTP
-        if: "${{ env.FTP_SERVER != '' }}"
+        if: "${{ secrets.FTP_SERVER != '' }}"
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
