@@ -66,37 +66,50 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setChainId(numericChainId);
   }, []);
 
-  // Check initial connection
+  // Check initial connection and continuously monitor wallet changes
   useEffect(() => {
     const eth = getEthereumObject();
     if (!eth) return;
 
-    eth.request({ method: 'eth_accounts' })
-      .then(async (accounts: string[]) => {
-        if (accounts.length > 0) {
-          setAccount(accounts[0]);
-          const bp = new BrowserProvider(eth);
-          setProvider(bp);
-          const s = await bp.getSigner();
-          setSigner(s);
-          const network = await bp.getNetwork();
-          setChainId(Number(network.chainId));
+    const checkConnection = async () => {
+      try {
+        const accounts = await eth.request({ method: 'eth_accounts' });
+        if (accounts && accounts.length > 0) {
+          if (!account || accounts[0].toLowerCase() !== account.toLowerCase()) {
+            setAccount(accounts[0]);
+            const bp = new BrowserProvider(eth);
+            setProvider(bp);
+            const s = await bp.getSigner();
+            setSigner(s);
+            const network = await bp.getNetwork();
+            setChainId(Number(network.chainId));
+          }
+        } else if (account && (!accounts || accounts.length === 0)) {
+          setAccount(null);
+          setSigner(null);
         }
-      })
-      .catch((err: any) => {
-        console.error('Error checking existing wallet connection:', err);
-      });
+      } catch (err: any) {
+        console.error('Error checking wallet connection:', err);
+      }
+    };
+
+    // Run initial check
+    checkConnection();
+
+    // Poll periodically to catch connections made inside external widgets/modals
+    const pollInterval = setInterval(checkConnection, 1200);
 
     eth.on('accountsChanged', handleAccountsChanged);
     eth.on('chainChanged', handleChainChanged);
 
     return () => {
+      clearInterval(pollInterval);
       if (eth.removeListener) {
         eth.removeListener('accountsChanged', handleAccountsChanged);
         eth.removeListener('chainChanged', handleChainChanged);
       }
     };
-  }, [handleAccountsChanged, handleChainChanged]);
+  }, [account, handleAccountsChanged, handleChainChanged]);
 
   const connectWallet = async () => {
     const eth = getEthereumObject();

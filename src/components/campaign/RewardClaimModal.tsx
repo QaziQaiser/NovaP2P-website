@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { X, Gift, ShieldAlert, CheckCircle2, Loader2, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { X, Gift, CheckCircle, AlertCircle, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 import { swapCampaignApi } from '../../services/swapCampaignApi';
 
 interface RewardClaimModalProps {
@@ -20,30 +21,31 @@ export const RewardClaimModal: React.FC<RewardClaimModalProps> = ({
   reward,
   onClaimSuccess,
 }) => {
-  const [payoutAddress, setPayoutAddress] = useState(reward?.walletAddress || '');
-  const [preferredNetwork, setPreferredNetwork] = useState('BNB Smart Chain');
+  const [mounted, setMounted] = useState(false);
+  const [preferredNetwork, setPreferredNetwork] = useState('BNB Smart Chain (BEP-20)');
   const [preferredToken, setPreferredToken] = useState('USDT');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  React.useEffect(() => {
-    if (reward) {
-      setPayoutAddress(reward.walletAddress);
-      setError(null);
-      setIsSuccess(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      const originalStyle = window.getComputedStyle(document.body).overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalStyle;
+      };
     }
-  }, [reward]);
+  }, [isOpen]);
 
-  if (!isOpen || !reward) return null;
+  if (!isOpen || !reward || !mounted) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmitClaim = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!payoutAddress || !payoutAddress.startsWith('0x') || payoutAddress.length !== 42) {
-      setError('Please provide a valid EVM wallet address (0x...)');
-      return;
-    }
-
     try {
       setIsSubmitting(true);
       setError(null);
@@ -51,29 +53,37 @@ export const RewardClaimModal: React.FC<RewardClaimModalProps> = ({
       await swapCampaignApi.requestRewardClaim({
         walletAddress: reward.walletAddress,
         rewardId: reward.id,
-        payoutAddress: payoutAddress.trim(),
+        payoutAddress: reward.walletAddress,
         preferredNetwork,
         preferredToken,
       });
 
       setIsSuccess(true);
-      onClaimSuccess();
+      setTimeout(() => {
+        onClaimSuccess();
+        setIsSuccess(false);
+        onClose();
+      }, 2500);
     } catch (err: any) {
-      setError(err.message || 'Failed to submit reward claim');
+      setError(err.message || 'Failed to submit reward request');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-150 overflow-y-auto">
+  const modalContent = (
+    <div 
+      className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150 overflow-y-auto"
+      onClick={onClose}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999999 }}
+    >
       <div 
         className="relative w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl p-6 sm:p-7 text-white my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white transition-colors"
+          className="absolute top-5 right-5 p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white transition-colors z-20 cursor-pointer"
         >
           <X size={18} />
         </button>
@@ -85,94 +95,97 @@ export const RewardClaimModal: React.FC<RewardClaimModalProps> = ({
                 🎁
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white">Request Reward Payout</h3>
-                <p className="text-xs text-purple-300 font-medium">
-                  {reward.title} • <span className="text-emerald-400 font-bold">+${reward.amountUSD.toFixed(2)} USD</span>
+                <h3 className="text-xl font-bold text-white">
+                  Request Reward Payout
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {reward.title}
                 </p>
               </div>
             </div>
 
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/30 mb-5 flex items-center justify-between">
+              <div>
+                <div className="text-xs text-emerald-400 font-semibold uppercase tracking-wider">
+                  Reward Value
+                </div>
+                <div className="text-2xl font-extrabold text-white mt-0.5">
+                  ${reward.amountUSD.toFixed(2)} USD
+                </div>
+              </div>
+              <span className="text-xs font-bold text-emerald-300 bg-emerald-950/60 px-3 py-1 rounded-full border border-emerald-800">
+                100% Eligible
+              </span>
+            </div>
+
             {error && (
-              <div className="mb-4 p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-300 flex items-center gap-2">
-                <ShieldAlert size={16} className="shrink-0 text-red-400" />
+              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2 mb-4">
+                <AlertCircle size={16} className="shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+            <form onSubmit={handleSubmitClaim} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Receiving EVM Wallet Address
+                  Receiving Wallet Address
                 </label>
                 <input
                   type="text"
-                  value={payoutAddress}
-                  onChange={(e) => setPayoutAddress(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white font-mono text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  placeholder="0x..."
-                  required
+                  disabled
+                  value={reward.walletAddress}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-400 font-mono text-xs cursor-not-allowed"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Ensure you control the private keys for this address.
-                </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Preferred Network
-                  </label>
-                  <select
-                    value={preferredNetwork}
-                    onChange={(e) => setPreferredNetwork(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-xs focus:outline-none focus:border-primary"
-                  >
-                    <option value="BNB Smart Chain">BNB Smart Chain (Fast & Low Gas)</option>
-                    <option value="Polygon">Polygon (POS)</option>
-                    <option value="Arbitrum">Arbitrum One</option>
-                    <option value="Optimism">Optimism</option>
-                    <option value="Base">Base</option>
-                    <option value="Ethereum">Ethereum Mainnet</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Preferred Token
-                  </label>
-                  <select
-                    value={preferredToken}
-                    onChange={(e) => setPreferredToken(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-xs focus:outline-none focus:border-primary"
-                  >
-                    <option value="USDT">USDT (Tether USD)</option>
-                    <option value="USDC">USDC (USD Coin)</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Preferred Payout Network
+                </label>
+                <select
+                  value={preferredNetwork}
+                  onChange={(e) => setPreferredNetwork(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-primary"
+                >
+                  <option value="BNB Smart Chain (BEP-20)">BNB Smart Chain (BEP-20) – Fast & Low Gas</option>
+                  <option value="Polygon (PoS)">Polygon (PoS) – Fast</option>
+                  <option value="Arbitrum One">Arbitrum One</option>
+                  <option value="Base">Base</option>
+                  <option value="Ethereum Mainnet (ERC-20)">Ethereum Mainnet (ERC-20)</option>
+                </select>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-800/50 border border-slate-700/50 text-[11px] text-slate-400 space-y-1">
-                <p className="text-slate-300 font-semibold flex items-center gap-1.5">
-                  <CheckCircle2 size={13} className="text-emerald-400" />
-                  Manual Approval & On-Chain Payout Policy
-                </p>
-                <p>
-                  Nova administrators review eligible swap hashes to prevent Sybil attacks. Once approved, rewards are transferred on-chain directly to your address, and you will see the verifiable transaction hash on your dashboard.
-                </p>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Preferred Reward Token
+                </label>
+                <select
+                  value={preferredToken}
+                  onChange={(e) => setPreferredToken(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-primary"
+                >
+                  <option value="USDT">USDT (Tether USD)</option>
+                  <option value="USDC">USDC (USD Coin)</option>
+                </select>
               </div>
 
-              <div className="pt-2 flex justify-end gap-3">
+              <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/50 text-[11px] text-slate-400 flex items-center gap-2">
+                <ShieldCheck size={14} className="text-amber-400 shrink-0" />
+                <span>Nova admins manually verify on-chain swaps before broadcasting payout.</span>
+              </div>
+
+              <div className="pt-2 flex gap-3">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition-colors cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-primary hover:bg-primary-dark disabled:opacity-50 text-white font-semibold text-xs shadow-lg shadow-primary/30 transition-all cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {isSubmitting ? (
                     <>
@@ -181,7 +194,7 @@ export const RewardClaimModal: React.FC<RewardClaimModalProps> = ({
                     </>
                   ) : (
                     <>
-                      <span>Submit Request</span>
+                      <span>Submit Claim</span>
                       <ArrowRight size={14} />
                     </>
                   )}
@@ -190,24 +203,21 @@ export const RewardClaimModal: React.FC<RewardClaimModalProps> = ({
             </form>
           </div>
         ) : (
-          <div className="py-4 text-center">
-            <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto mb-4">
-              <CheckCircle2 size={36} />
+          <div className="text-center py-6">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-4 animate-in zoom-in-50">
+              <CheckCircle size={32} />
             </div>
-            <h3 className="text-xl font-bold text-white mb-1">Request Submitted!</h3>
-            <p className="text-sm text-slate-300 max-w-sm mx-auto mb-6">
-              Your claim for <strong>${reward.amountUSD.toFixed(2)} USD</strong> is now <span className="text-amber-400 font-semibold">Under Review</span>. Nova admin will review your swap transactions and transfer the funds on-chain.
+            <h3 className="text-xl font-bold text-white mb-1">
+              Reward Request Submitted!
+            </h3>
+            <p className="text-xs text-slate-300 max-w-xs mx-auto">
+              Your claim for <strong>${reward.amountUSD.toFixed(2)} USD</strong> has entered pending review. Your dashboard will update once on-chain payment is confirmed.
             </p>
-            <button
-              onClick={onClose}
-              className="px-6 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white font-semibold text-xs transition-all cursor-pointer"
-            >
-              Back to Dashboard
-            </button>
           </div>
         )}
       </div>
     </div>
   );
-};
 
+  return createPortal(modalContent, document.body);
+};

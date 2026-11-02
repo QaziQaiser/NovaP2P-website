@@ -17,6 +17,11 @@ import {
 
 export const NovaSwapSection: React.FC = () => {
   const { account, chainId, isConnected, connectWallet, disconnectWallet, signMessage } = useWallet();
+  const [detectedWallet, setDetectedWallet] = useState<string | null>(null);
+
+  // Sync wallet from either WalletContext or direct LI.FI injected provider
+  const effectiveAccount = account || detectedWallet;
+  const isWalletConnected = isConnected || !!effectiveAccount;
 
   // Campaign state
   const [campaign, setCampaign] = useState<CampaignData | null>(null);
@@ -73,14 +78,14 @@ export const NovaSwapSection: React.FC = () => {
 
   // 2. Fetch User Dashboard whenever connected account changes
   const refreshUserDashboard = useCallback(async () => {
-    if (!account) {
+    if (!effectiveAccount) {
       setUserDashboard(null);
       return;
     }
 
     try {
       setIsLoadingDashboard(true);
-      const data = await swapCampaignApi.getUserDashboard(account);
+      const data = await swapCampaignApi.getUserDashboard(effectiveAccount);
       setUserDashboard(data);
     } catch {
       // 404 indicates user has not verified wallet ownership yet
@@ -88,7 +93,7 @@ export const NovaSwapSection: React.FC = () => {
     } finally {
       setIsLoadingDashboard(false);
     }
-  }, [account]);
+  }, [effectiveAccount]);
 
   useEffect(() => {
     refreshUserDashboard();
@@ -194,23 +199,29 @@ export const NovaSwapSection: React.FC = () => {
         {/* Subtle ambient gradient glow in background */}
         <div className="absolute w-full max-w-[600px] h-[400px] sm:h-[550px] bg-gradient-to-tr from-blue-200/40 via-purple-100/30 to-orange-100/40 rounded-full blur-3xl -z-10 pointer-events-none" />
 
-        <LiFiSwapWidget onSwapSuccess={handleSwapSuccess} />
+        <LiFiSwapWidget onSwapSuccess={handleSwapSuccess} onWalletChange={setDetectedWallet} />
       </motion.div>
 
       {/* 3. BELOW WIDGET: REWARDS AREA */}
       {/* State A (Disconnected): Show Genesis Rewards Showcase Card */}
-      {!isConnected ? (
-        <GenesisRewardsPreviewCard onOpenDetails={() => setIsDetailsModalOpen(true)} />
+      {!isWalletConnected ? (
+        <GenesisRewardsPreviewCard
+          onOpenDetails={() => setIsDetailsModalOpen(true)}
+          onConnectWallet={connectWallet}
+        />
       ) : (
         /* State B (Connected): Show Detailed Dashboard with 3 Cards */
         <div id="rewards" className="w-full scroll-mt-24">
           <GenesisRewardsDashboard
             dashboardData={userDashboard}
-            walletAddress={account}
+            walletAddress={effectiveAccount}
             isLoading={isLoadingDashboard}
             onRefresh={refreshUserDashboard}
             onOpenClaimModal={(reward) => setClaimModalReward(reward)}
-            onDisconnectWallet={disconnectWallet}
+            onDisconnectWallet={() => {
+              setDetectedWallet(null);
+              disconnectWallet();
+            }}
             onOpenDetails={() => setIsDetailsModalOpen(true)}
           />
         </div>

@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
-import { X, Gift, ShieldCheck, Users, CheckCircle, AlertCircle, Calendar, DollarSign, Award, ExternalLink } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { X, Gift, ShieldCheck, Users, CheckCircle, AlertCircle, Calendar, DollarSign, Award } from 'lucide-react';
 import { CampaignData, MilestoneItem } from '../../services/swapCampaignApi';
 
 interface CampaignDetailsModalProps {
@@ -15,6 +16,12 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
   campaign,
   milestones,
 }) => {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Prevent background scrolling when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -37,7 +44,7 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
     }
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const minSwap = campaign?.minSwapUSD ?? 10.0;
   const refReward = campaign?.referralRewardUSD ?? 0.50;
@@ -50,10 +57,11 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
     ? new Date(campaign.endDate).toLocaleDateString(undefined, { dateStyle: 'medium' })
     : 'Dec 31, 2026';
 
-  return (
+  const modalContent = (
     <div 
-      className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto"
+      className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto"
       onClick={onClose}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999999 }}
     >
       {/* Modal Box */}
       <div 
@@ -63,7 +71,7 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 sm:top-5 sm:right-5 p-2 rounded-full bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer z-10 shadow-lg border border-slate-700"
+          className="absolute top-4 right-4 sm:top-5 sm:right-5 p-2 rounded-full bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer z-20 shadow-lg border border-slate-700"
           aria-label="Close modal"
         >
           <X size={20} />
@@ -223,4 +231,6 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };

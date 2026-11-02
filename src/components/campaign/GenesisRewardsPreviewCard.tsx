@@ -3,10 +3,12 @@ import { Users, TrendingUp, Sparkles, RefreshCw, UserPlus } from 'lucide-react';
 
 interface GenesisRewardsPreviewCardProps {
   onOpenDetails?: () => void;
+  onConnectWallet?: () => void;
 }
 
 export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps> = ({
   onOpenDetails,
+  onConnectWallet,
 }) => {
   return (
     <div className="w-full max-w-4xl mx-auto px-4 mt-6 sm:mt-8 animate-in fade-in duration-300">
@@ -92,3 +94,4 @@ export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps>
     </div>
   );
 };
+

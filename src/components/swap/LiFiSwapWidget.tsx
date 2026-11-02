@@ -8,10 +8,32 @@ const WALLET_CONNECT_PROJECT_ID =
 
 interface LiFiSwapWidgetProps {
   onSwapSuccess?: (txData: any) => void;
+  onWalletChange?: (walletAddress: string | null) => void;
 }
 
-export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess }) => {
+export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, onWalletChange }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Monitor connected wallet to sync with parent rewards dashboard
+  useEffect(() => {
+    if (!onWalletChange) return;
+    const checkEth = async () => {
+      if (typeof window === 'undefined') return;
+      try {
+        if ((window as any).ethereum) {
+          const accs = await (window as any).ethereum.request({ method: 'eth_accounts' });
+          if (accs && accs.length > 0) {
+            onWalletChange(accs[0]);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+    const t = setInterval(checkEth, 1200);
+    checkEth();
+    return () => clearInterval(t);
+  }, [onWalletChange]);
 
   // Prevent internal widget routing/focus from causing the host webpage to scroll to top
   useEffect(() => {
