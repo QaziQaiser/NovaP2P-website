@@ -45,7 +45,7 @@ function callApi(method: string, path: string, body: any = {}, headers: any = {}
 
 async function runTestSuite() {
   console.log('============================================================');
-  console.log('STARTING NOVA SWAP GENESIS CAMPAIGN TEST SUITE (IN-MEMORY)');
+  console.log('STARTING NOVA SWAP GENESIS CAMPAIGN TEST SUITE (UPDATED SPEC)');
   console.log('============================================================\n');
 
   initDb();
@@ -72,7 +72,8 @@ async function runTestSuite() {
     assert(campRes.status === 200, 'Public campaign endpoint returns 200 OK');
     assert(campRes.body.campaign.slug === 'genesis', 'Genesis campaign slug is active', campRes.body?.campaign?.slug);
     assert(campRes.body.milestones.length >= 3, 'Configured milestones loaded dynamically from DB', `Count: ${campRes.body?.milestones?.length}`);
-    assert(campRes.body.campaign.cashbackEnabled === false, 'Cashback is disabled by default as requested');
+    assert(campRes.body.campaign.cashbackEnabled === true, '5% Cashback is actively enabled');
+    assert(campRes.body.campaign.cashbackPercentage === 5.0, 'Cashback rate is 5.0%');
 
     // TEST 2: Wallet Generation & Cryptographic Verification
     console.log('\n--- 2. Testing Wallet Cryptographic Verification ---');
@@ -136,8 +137,8 @@ async function runTestSuite() {
     });
     assert(subMinRes.status === 400, 'Swap below minimum threshold ($5 < $10) rejected');
 
-    // TEST 7: Eligible Swap Transaction Submission & Cumulative Volume
-    console.log('\n--- 7. Testing Swap Submission & Volume Update ---');
+    // TEST 7: Eligible Swap Transaction Submission & Cumulative Volume & 5% Cashback
+    console.log('\n--- 7. Testing Swap Submission, 5% Cashback & Volume Update ---');
     const txHash1 = '0x' + crypto.randomUUID().replace(/-/g, '') + '11';
     const swap1Res = await callApi('POST', '/submit-transaction', {
       walletAddress: referredWallet.address,
@@ -145,14 +146,19 @@ async function runTestSuite() {
       txHash: txHash1,
       fromToken: { symbol: 'USDC', address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d' },
       toToken: { symbol: 'USDT', address: '0x55d398326f99059fF775485246999027B3197955' },
-      fromAmount: '120.00',
-      toAmount: '119.85',
-      volumeUSD: 120.0, // Meets Milestone 1 ($100) and Referral Qualification ($100)
+      fromAmount: '150.00',
+      toAmount: '149.85',
+      volumeUSD: 150.0, // Qualifies referral ($100 min)
       lifiRouteId: 'route_test_001',
     });
     assert(swap1Res.status === 200, 'Eligible swap transaction verified and credited');
-    assert(swap1Res.body.totalVolumeUSD === 120.0, 'Cumulative volume matches $120.00', `Got: ${swap1Res.body.totalVolumeUSD}`);
-    assert(swap1Res.body.newlyUnlockedMilestones.includes('Milestone 1'), 'Milestone 1 unlocked automatically upon meeting threshold');
+    assert(swap1Res.body.totalVolumeUSD === 150.0, 'Cumulative volume matches $150.00', `Got: ${swap1Res.body.totalVolumeUSD}`);
+
+    // Verify 5% cashback recorded in swap_cashback_ledger
+    // On $150 volume, Nova fee (1.5%) = $2.25. 5% cashback on fee = $0.1125
+    const cashbackEntry = db.prepare('SELECT cashback_amount_usd FROM swap_cashback_ledger WHERE wallet_address = ?')
+      .get(referredWallet.address.toLowerCase()) as any;
+    assert(Boolean(cashbackEntry && cashbackEntry.cashback_amount_usd > 0), '5% cashback credited to swap_cashback_ledger on Nova fee', `Cashback: ${cashbackEntry?.cashback_amount_usd}`);
 
     // TEST 8: Duplicate Transaction Prevention
     console.log('\n--- 8. Testing Duplicate Tx Hash Guard ---');
@@ -160,25 +166,43 @@ async function runTestSuite() {
       walletAddress: referredWallet.address,
       chainId: 56,
       txHash: txHash1, // Same hash and chain
-      volumeUSD: 120.0,
+      volumeUSD: 150.0,
     });
     assert(dupRes.status === 409, 'Duplicate transaction hash rejected with 409 Conflict');
 
-    // TEST 9: Referral Milestone Qualified for Referrer
-    console.log('\n--- 9. Testing Automatic Referral Reward Credit ---');
+    // TEST 9: Referral Milestone Qualified for Referrer ($0.10 USDT)
+    console.log('\n--- 9. Testing Automatic Referral Reward Credit ($0.10 USDT) ---');
     const referrerDashRes = await callApi('GET', `/user/${referrerWallet.address}`);
     assert(referrerDashRes.body.referralStats.qualifiedReferralsCount === 1, 'Referrer credited with 1 qualified referral');
-    assert(referrerDashRes.body.referralStats.earnedRewardsUSD >= 0.50, 'Referrer credited with referral bonus reward ($0.50)');
+    assert(referrerDashRes.body.referralStats.earnedRewardsUSD === 0.10, 'Referrer credited with $0.10 referral bonus reward', `Got: ${referrerDashRes.body.referralStats.earnedRewardsUSD}`);
 
-    // TEST 10: User Dashboard Data & Milestone Status
-    console.log('\n--- 10. Testing User Dashboard Data Structure ---');
+    // TEST 10: Milestone 1 Unlocks at $10,000 Volume ($25 USDT Reward)
+    console.log('\n--- 10. Testing Milestone 1 Unlock at $10,000 Volume ---');
+    const txHash2 = '0x' + crypto.randomUUID().replace(/-/g, '') + '22';
+    const swap2Res = await callApi('POST', '/submit-transaction', {
+      walletAddress: referredWallet.address,
+      chainId: 56,
+      txHash: txHash2,
+      volumeUSD: 9850.0, // Total = 150 + 9850 = 10,000
+    });
+    assert(swap2Res.status === 200, 'Subsequent swap verified');
+    assert(swap2Res.body.totalVolumeUSD === 10000.0, 'Total volume reached exactly $10,000.00');
+    assert(swap2Res.body.newlyUnlockedMilestones.includes('Milestone 1'), 'Milestone 1 unlocked automatically upon reaching $10,000');
+
+    // TEST 11: User Dashboard Reflects Milestone 1 & Rewards
+    console.log('\n--- 11. Testing User Dashboard Data Structure ---');
     const userDashRes = await callApi('GET', `/user/${referredWallet.address}`);
     const ms1 = userDashRes.body.milestones.find((m: any) => m.milestoneNumber === 1);
     assert(ms1.isCompleted === true, 'Milestone 1 marked completed in user dashboard');
-    assert(ms1.status === 'unlocked', 'Milestone 1 status is unlocked and ready to request', ms1.status);
+    assert(ms1.status === 'unlocked', 'Milestone 1 status is unlocked', ms1.status);
+    assert(ms1.rewardAmountUSD === 25.0, 'Milestone 1 reward is $25.00 USDT');
 
-    // TEST 11: Reward Claim Submission
-    console.log('\n--- 11. Testing Reward Claim Submission ---');
+    // Check $500 claim activation progress
+    assert(userDashRes.body.claimStats.claimThresholdUSD === 500.0, 'Claim activation threshold is $500');
+    assert(userDashRes.body.claimStats.totalAccumulatedRewardsUSD >= 25.0, 'Accumulated rewards include Milestone 1 ($25) + Cashback', `Got: ${userDashRes.body.claimStats.totalAccumulatedRewardsUSD}`);
+
+    // TEST 12: Reward Claim Submission
+    console.log('\n--- 12. Testing Reward Claim Submission ---');
     const rewardRecord = db.prepare('SELECT id FROM swap_rewards WHERE user_id = ? AND milestone_id = ?')
       .get(userDashRes.body.user.id, ms1.id) as any;
 
@@ -186,14 +210,14 @@ async function runTestSuite() {
       walletAddress: referredWallet.address,
       rewardId: rewardRecord.id,
       payoutAddress: referredWallet.address,
-      preferredNetwork: 'BNB Smart Chain',
+      preferredNetwork: 'BNB Smart Chain (BEP-20)',
       preferredToken: 'USDT',
     });
     assert(claimRes.status === 200, 'Reward claim submitted successfully');
     assert(claimRes.body.status === 'pending', 'Claim status initialized as pending review');
 
-    // TEST 12: Admin Claim Review & Manual Payout
-    console.log('\n--- 12. Testing Admin Review & Payout Execution ---');
+    // TEST 13: Admin Claim Review & Manual Payout
+    console.log('\n--- 13. Testing Admin Review & Payout Execution ---');
     // Approve claim
     const approveRes = await callApi('POST', `/admin/claims/${claimRes.body.claimId}/review`, { action: 'approve' }, { 'x-admin-key': ADMIN_KEY });
     assert(approveRes.status === 200, 'Admin approved reward claim');
@@ -201,22 +225,22 @@ async function runTestSuite() {
     // Mark as paid
     const payoutTxHash = '0x' + crypto.randomUUID().replace(/-/g, '') + '99';
     const payRes = await callApi('POST', `/admin/claims/${claimRes.body.claimId}/pay`, {
-      payoutNetwork: 'BNB Smart Chain',
+      payoutNetwork: 'BNB Smart Chain (BEP-20)',
       payoutToken: 'USDT',
       payoutTxHash,
       notes: 'Transferred via Nova Treasury Wallet',
     }, { 'x-admin-key': ADMIN_KEY });
     assert(payRes.status === 200, 'Admin marked claim as paid with transaction hash');
 
-    // TEST 13: User Dashboard Reflects Paid Status with Tx Hash
-    console.log('\n--- 13. Testing Dashboard Paid Status & Explorer Link ---');
+    // TEST 14: User Dashboard Reflects Paid Status with Tx Hash
+    console.log('\n--- 14. Testing Dashboard Paid Status & Explorer Link ---');
     const paidDashRes = await callApi('GET', `/user/${referredWallet.address}`);
     const paidMs1 = paidDashRes.body.milestones.find((m: any) => m.milestoneNumber === 1);
     assert(paidMs1.status === 'paid', 'User dashboard reflects Paid status');
     assert(paidMs1.rewardRecord.payoutTxHash === payoutTxHash, 'Payout transaction hash attached');
 
-    // TEST 14: Admin CSV Exports
-    console.log('\n--- 14. Testing Admin CSV Export ---');
+    // TEST 15: Admin CSV Exports
+    console.log('\n--- 15. Testing Admin CSV Export ---');
     const exportRes = await callApi('GET', '/admin/export/users', {}, { 'x-admin-key': ADMIN_KEY });
     assert(exportRes.status === 200 && typeof exportRes.body === 'string' && exportRes.body.includes('wallet_address'), 'Users CSV export generated with headers');
 

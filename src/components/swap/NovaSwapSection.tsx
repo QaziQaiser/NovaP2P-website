@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Sparkles, Wallet, ShieldCheck, AlertCircle, Loader2, CheckCircle2, Gift, Users } from 'lucide-react';
 import { LiFiSwapWidget } from './LiFiSwapWidget';
-import { GenesisCampaignBanner } from '../campaign/GenesisCampaignBanner';
 import { GenesisRewardsPreviewCard } from '../campaign/GenesisRewardsPreviewCard';
 import { CampaignDetailsModal } from '../campaign/CampaignDetailsModal';
 import { GenesisRewardsDashboard } from '../campaign/GenesisRewardsDashboard';
@@ -182,14 +181,7 @@ export const NovaSwapSection: React.FC = () => {
         </div>
       )}
 
-      {/* 1. GENESIS CAMPAIGN MARKETING BANNER */}
-      {/* Must remain VISUALLY IDENTICAL and in the same location before and after wallet connection */}
-      <GenesisCampaignBanner
-        campaign={campaign}
-        onOpenDetails={() => setIsDetailsModalOpen(true)}
-      />
-
-      {/* 2. LI.FI SWAP WIDGET */}
+      {/* LI.FI SWAP WIDGET */}
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}

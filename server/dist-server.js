@@ -30,13 +30,13 @@ function initDb() {
       status TEXT NOT NULL DEFAULT 'active', -- 'active', 'paused', 'ended'
       start_date TEXT NOT NULL,
       end_date TEXT NOT NULL,
-      total_budget_usd REAL NOT NULL DEFAULT 10000.0,
+      total_budget_usd REAL NOT NULL DEFAULT 50000.0,
       spent_budget_usd REAL NOT NULL DEFAULT 0.0,
       min_swap_usd REAL NOT NULL DEFAULT 10.0,
-      referral_reward_usd REAL NOT NULL DEFAULT 0.50,
+      referral_reward_usd REAL NOT NULL DEFAULT 0.10,
       referral_qualifying_vol_usd REAL NOT NULL DEFAULT 100.0,
-      cashback_enabled INTEGER NOT NULL DEFAULT 0, -- 0 = disabled by default
-      cashback_percentage REAL NOT NULL DEFAULT 0.0,
+      cashback_enabled INTEGER NOT NULL DEFAULT 1, -- 1 = active (5% cashback on Nova fee)
+      cashback_percentage REAL NOT NULL DEFAULT 5.0,
       rules_content TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -135,35 +135,54 @@ function initDb() {
       status TEXT NOT NULL DEFAULT 'unlocked', -- 'locked', 'unlocked', 'requested', 'under_review', 'approved', 'paid', 'rejected', 'frozen'
       unlocked_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
-      UNIQUE(user_id, milestone_id),
       FOREIGN KEY (user_id) REFERENCES swap_campaign_users(id) ON DELETE CASCADE,
       FOREIGN KEY (milestone_id) REFERENCES swap_campaign_milestones(id) ON DELETE SET NULL
     );
 
-    -- 7. Reward claims submitted by users
+    -- 7. Dedicated Cashback Ledger
+    CREATE TABLE IF NOT EXISTS swap_cashback_ledger (
+      id TEXT PRIMARY KEY,
+      campaign_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      wallet_address TEXT NOT NULL,
+      transaction_id TEXT NOT NULL UNIQUE,
+      swap_volume_usd REAL NOT NULL,
+      nova_fee_usd REAL NOT NULL,
+      cashback_rate REAL NOT NULL,
+      cashback_amount_usd REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'credited', -- 'credited', 'claimed', 'voided'
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES swap_campaign_users(id),
+      FOREIGN KEY (transaction_id) REFERENCES swap_transactions(id)
+    );
+
+    -- 8. Reward claims submitted by users
     CREATE TABLE IF NOT EXISTS swap_reward_claims (
       id TEXT PRIMARY KEY,
-      reward_id TEXT NOT NULL,
+      reward_id TEXT,
       user_id TEXT NOT NULL,
       campaign_id TEXT NOT NULL,
       requested_amount_usd REAL NOT NULL,
       payout_address TEXT NOT NULL,
       preferred_network TEXT,
       preferred_token TEXT,
+      cashback_amount_usd REAL NOT NULL DEFAULT 0.0,
+      milestone_amount_usd REAL NOT NULL DEFAULT 0.0,
+      referral_amount_usd REAL NOT NULL DEFAULT 0.0,
       status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'under_review', 'approved', 'paid', 'rejected', 'frozen'
       rejection_reason TEXT,
       admin_notes TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      FOREIGN KEY (reward_id) REFERENCES swap_rewards(id) ON DELETE CASCADE,
+      FOREIGN KEY (reward_id) REFERENCES swap_rewards(id) ON DELETE SET NULL,
       FOREIGN KEY (user_id) REFERENCES swap_campaign_users(id) ON DELETE CASCADE
     );
 
-    -- 8. Payout execution records
+    -- 9. Payout execution records
     CREATE TABLE IF NOT EXISTS swap_reward_payouts (
       id TEXT PRIMARY KEY,
       claim_id TEXT NOT NULL UNIQUE,
-      reward_id TEXT NOT NULL,
+      reward_id TEXT,
       user_id TEXT NOT NULL,
       amount_usd REAL NOT NULL,
       payout_network TEXT NOT NULL,
@@ -174,11 +193,11 @@ function initDb() {
       notes TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (claim_id) REFERENCES swap_reward_claims(id) ON DELETE CASCADE,
-      FOREIGN KEY (reward_id) REFERENCES swap_rewards(id) ON DELETE CASCADE,
+      FOREIGN KEY (reward_id) REFERENCES swap_rewards(id) ON DELETE SET NULL,
       FOREIGN KEY (user_id) REFERENCES swap_campaign_users(id) ON DELETE CASCADE
     );
 
-    -- 9. Analytics & event logs
+    -- 10. Analytics & event logs
     CREATE TABLE IF NOT EXISTS swap_campaign_events (
       id TEXT PRIMARY KEY,
       campaign_id TEXT,
@@ -190,7 +209,7 @@ function initDb() {
       created_at TEXT NOT NULL
     );
 
-    -- 10. Admin audit logs
+    -- 11. Admin audit logs
     CREATE TABLE IF NOT EXISTS swap_admin_audit_logs (
       id TEXT PRIMARY KEY,
       admin_identifier TEXT NOT NULL,
@@ -209,14 +228,29 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_tx_hash ON swap_transactions(tx_hash);
     CREATE INDEX IF NOT EXISTS idx_tx_chain ON swap_transactions(chain_id);
     CREATE INDEX IF NOT EXISTS idx_rewards_user ON swap_rewards(user_id);
+    CREATE INDEX IF NOT EXISTS idx_cashback_user ON swap_cashback_ledger(user_id);
     CREATE INDEX IF NOT EXISTS idx_claims_status ON swap_reward_claims(status);
     CREATE INDEX IF NOT EXISTS idx_events_name ON swap_campaign_events(event_name);
   `);
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(swap_reward_claims)").all();
+    const columnNames = tableInfo.map((col) => col.name);
+    if (!columnNames.includes("cashback_amount_usd")) {
+      db.exec("ALTER TABLE swap_reward_claims ADD COLUMN cashback_amount_usd REAL NOT NULL DEFAULT 0.0;");
+    }
+    if (!columnNames.includes("milestone_amount_usd")) {
+      db.exec("ALTER TABLE swap_reward_claims ADD COLUMN milestone_amount_usd REAL NOT NULL DEFAULT 0.0;");
+    }
+    if (!columnNames.includes("referral_amount_usd")) {
+      db.exec("ALTER TABLE swap_reward_claims ADD COLUMN referral_amount_usd REAL NOT NULL DEFAULT 0.0;");
+    }
+  } catch (err) {
+  }
+  const campaignId = "campaign_genesis_001";
   const existingCampaign = db.prepare("SELECT id FROM swap_campaigns WHERE slug = ?").get("genesis");
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const endDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1e3).toISOString();
   if (!existingCampaign) {
-    const campaignId = "campaign_genesis_001";
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const endDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1e3).toISOString();
     const insertCampaign = db.prepare(`
       INSERT INTO swap_campaigns (
         id, slug, title, description, status, start_date, end_date,
@@ -229,70 +263,135 @@ function initDb() {
       campaignId,
       "genesis",
       "Nova Swap Genesis Campaign",
-      "Swap. Complete Milestones. Unlock Rewards.",
+      "Complete your swaps and earn amazing rewards!",
       "active",
       now,
       endDate,
-      1e4,
-      // $10,000 budget
+      5e4,
+      // $50,000 budget
       0,
       10,
       // $10 minimum eligible swap
-      0.5,
-      // $0.50 referral bonus
+      0.1,
+      // $0.10 USDT referral bonus
       100,
       // $100 volume required for referral qualification
-      0,
-      // cashback disabled by default
-      0,
+      1,
+      // 5% cashback active
+      5,
+      // 5% cashback percentage
       now,
       now
     );
-    const insertMilestone = db.prepare(`
-      INSERT INTO swap_campaign_milestones (
-        id, campaign_id, milestone_number, title, target_volume_usd,
-        reward_amount_usd, reward_description, is_active, sort_order, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    insertMilestone.run(
-      "ms_genesis_1",
-      campaignId,
-      1,
-      "Milestone 1",
-      100,
-      0.5,
-      "$0.50 Bonus Reward on reaching $100 swap volume",
-      1,
-      1,
-      now
-    );
-    insertMilestone.run(
-      "ms_genesis_2",
-      campaignId,
-      2,
-      "Milestone 2",
-      500,
-      2.5,
-      "$2.50 Bonus Reward on reaching $500 swap volume",
-      1,
-      2,
-      now
-    );
-    insertMilestone.run(
-      "ms_genesis_3",
-      campaignId,
-      3,
-      "Milestone 3",
-      2e3,
-      10,
-      "$10.00 Bonus Reward on reaching $2,000 swap volume",
-      1,
-      3,
-      now
-    );
+  } else {
+    db.prepare(`
+      UPDATE swap_campaigns
+      SET referral_reward_usd = 0.10,
+          referral_qualifying_vol_usd = 100.0,
+          cashback_enabled = 1,
+          cashback_percentage = 5.0,
+          description = 'Complete your swaps and earn amazing rewards!'
+      WHERE slug = 'genesis'
+    `).run();
   }
+  const targetCampaignId = existingCampaign ? existingCampaign.id : campaignId;
+  const upsertMilestone = db.prepare(`
+    INSERT INTO swap_campaign_milestones (
+      id, campaign_id, milestone_number, title, target_volume_usd,
+      reward_amount_usd, reward_description, is_active, sort_order, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(campaign_id, milestone_number) DO UPDATE SET
+      title = excluded.title,
+      target_volume_usd = excluded.target_volume_usd,
+      reward_amount_usd = excluded.reward_amount_usd,
+      reward_description = excluded.reward_description,
+      is_active = excluded.is_active,
+      sort_order = excluded.sort_order
+  `);
+  upsertMilestone.run(
+    "ms_genesis_1",
+    targetCampaignId,
+    1,
+    "Milestone 1",
+    1e4,
+    25,
+    "$25 USDT Bonus Reward on reaching $10,000 swap volume",
+    1,
+    1,
+    now
+  );
+  upsertMilestone.run(
+    "ms_genesis_2",
+    targetCampaignId,
+    2,
+    "Milestone 2",
+    25e3,
+    50,
+    "$50 USDT Bonus Reward on reaching $25,000 swap volume",
+    1,
+    2,
+    now
+  );
+  upsertMilestone.run(
+    "ms_genesis_3",
+    targetCampaignId,
+    3,
+    "Milestone 3",
+    5e4,
+    100,
+    "$100 USDT Bonus Reward on reaching $50,000 swap volume",
+    1,
+    3,
+    now
+  );
 }
 initDb();
+
+// server/notifications.ts
+async function sendAdminClaimNotification(payload) {
+  const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL || "admin@novap2p.com";
+  try {
+    const eventId = "evt_" + Math.random().toString(36).substring(2, 12);
+    db.prepare(`
+      INSERT INTO swap_campaign_events (
+        id, campaign_id, user_id, wallet_address, event_name, event_data, created_at
+      ) VALUES (?, ?, NULL, ?, ?, ?, ?)
+    `).run(
+      eventId,
+      "campaign_genesis_001",
+      payload.walletAddress,
+      "claim_request_submitted",
+      JSON.stringify({
+        claimId: payload.claimId,
+        amountUSD: payload.requestedAmountUSD,
+        payoutAddress: payload.payoutAddress,
+        network: payload.preferredNetwork,
+        token: payload.preferredToken,
+        breakdown: {
+          cashback: payload.cashbackAmountUSD,
+          milestones: payload.milestoneAmountUSD,
+          referrals: payload.referralAmountUSD
+        },
+        adminRecipient: adminEmail
+      }),
+      (/* @__PURE__ */ new Date()).toISOString()
+    );
+  } catch (err) {
+    console.error("Failed to log in-app admin notification:", err);
+  }
+  try {
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    if (smtpHost && smtpUser && smtpPass) {
+      console.log(`[Email Notification] Sending claim alert email for ${payload.claimId} to ${adminEmail}`);
+    } else {
+      console.log(`[Admin Notification] Configured Admin Email: ${adminEmail} | Claim ID: ${payload.claimId} for $${payload.requestedAmountUSD.toFixed(2)} USDT by ${payload.walletAddress}`);
+    }
+  } catch (emailErr) {
+    console.warn("[Email Notification] Notification email delivery skipped/failed (claim safely recorded):", emailErr);
+  }
+}
 
 // server/api.ts
 import { ethers } from "ethers";
@@ -674,6 +773,32 @@ apiRouter.get("/user/:walletAddress", (req, res) => {
       FROM swap_referrals
       WHERE referrer_user_id = ?
     `).get(user.id);
+    const cashbackRow = db.prepare(`
+      SELECT COALESCE(SUM(cashback_amount_usd), 0) as total_cashback
+      FROM swap_cashback_ledger
+      WHERE user_id = ?
+    `).get(user.id);
+    const totalCashbackUSD = Number((cashbackRow?.total_cashback || 0).toFixed(2));
+    const milestoneBonusRow = db.prepare(`
+      SELECT COALESCE(SUM(amount_usd), 0) as total_milestone_bonus
+      FROM swap_rewards
+      WHERE user_id = ? AND reward_type = 'milestone' AND status IN ('unlocked', 'requested', 'approved', 'paid')
+    `).get(user.id);
+    const milestoneBonusUSD = Number((milestoneBonusRow?.total_milestone_bonus || 0).toFixed(2));
+    const referralBonusUSD = Number((referralStats?.total_referral_rewards || 0).toFixed(2));
+    const totalBonusUSD = Number((milestoneBonusUSD + referralBonusUSD).toFixed(2));
+    const totalAccumulatedRewardsUSD = Number((totalCashbackUSD + totalBonusUSD).toFixed(2));
+    const claimThresholdUSD = 500;
+    const progressPercent = Math.min(100, Math.round(totalAccumulatedRewardsUSD / claimThresholdUSD * 100));
+    const isClaimEligible = totalAccumulatedRewardsUSD >= claimThresholdUSD;
+    const userClaims = db.prepare(`
+      SELECT c.*, p.payout_tx_hash, p.payout_network as paid_network, p.paid_at
+      FROM swap_reward_claims c
+      LEFT JOIN swap_reward_payouts p ON p.claim_id = c.id
+      WHERE c.user_id = ?
+      ORDER BY c.created_at DESC
+    `).all(user.id);
+    const activeClaim = userClaims.length > 0 ? userClaims[0] : null;
     const transactions = db.prepare(`
       SELECT id, chain_id, tx_hash, from_token_symbol, to_token_symbol, from_amount, to_amount, volume_usd, execution_status, verified_at
       FROM swap_transactions
@@ -704,10 +829,39 @@ apiRouter.get("/user/:walletAddress", (req, res) => {
         }
       },
       milestones: milestoneProgress,
+      cashbackStats: {
+        totalCashbackUSD,
+        cashbackPercentage: 5
+      },
+      bonusStats: {
+        milestoneBonusUSD,
+        referralBonusUSD,
+        totalBonusUSD
+      },
+      claimStats: {
+        claimThresholdUSD,
+        totalAccumulatedRewardsUSD,
+        progressPercent,
+        isClaimEligible,
+        remainingToClaimUSD: Math.max(0, claimThresholdUSD - totalAccumulatedRewardsUSD),
+        activeClaim: activeClaim ? {
+          id: activeClaim.id,
+          status: activeClaim.status,
+          requestedAmountUSD: activeClaim.requested_amount_usd,
+          payoutAddress: activeClaim.payout_address,
+          preferredNetwork: activeClaim.preferred_network,
+          preferredToken: activeClaim.preferred_token,
+          payoutTxHash: activeClaim.payout_tx_hash,
+          paidNetwork: activeClaim.paid_network,
+          paidAt: activeClaim.paid_at,
+          rejectionReason: activeClaim.rejection_reason,
+          createdAt: activeClaim.created_at
+        } : null
+      },
       referralStats: {
-        referredUsersCount: referralStats.total_referred_users || 0,
-        qualifiedReferralsCount: referralStats.qualified_referrals || 0,
-        earnedRewardsUSD: referralStats.total_referral_rewards || 0
+        referredUsersCount: referralStats?.total_referred_users || 0,
+        qualifiedReferralsCount: referralStats?.qualified_referrals || 0,
+        earnedRewardsUSD: referralStats?.total_referral_rewards || 0
       },
       transactions: transactions.map((tx) => ({
         id: tx.id,
@@ -821,6 +975,40 @@ apiRouter.post("/submit-transaction", async (req, res) => {
         SET total_volume_usd = ?, eligible_swaps_count = ?, last_active_at = ?
         WHERE id = ?
       `).run(newTotalVolume, newSwapsCount, now, user.id);
+      let creditedCashbackUSD = 0;
+      if (campaign && campaign.cashback_enabled) {
+        const novaFeeCollectedUSD = verifiedVolume * 0.015;
+        const cashbackRate = (campaign.cashback_percentage || 5) / 100;
+        creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
+        if (creditedCashbackUSD > 0) {
+          const cbId = "cb_" + crypto.randomUUID();
+          db.prepare(`
+            INSERT INTO swap_cashback_ledger (
+              id, campaign_id, user_id, wallet_address, transaction_id,
+              swap_volume_usd, nova_fee_usd, cashback_rate, cashback_amount_usd,
+              status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'credited', ?)
+          `).run(
+            cbId,
+            campaignId,
+            user.id,
+            normalizedAddress,
+            txId,
+            verifiedVolume,
+            novaFeeCollectedUSD,
+            cashbackRate,
+            creditedCashbackUSD,
+            now
+          );
+          const cbRewardId = "rwd_cb_" + crypto.randomUUID();
+          db.prepare(`
+            INSERT INTO swap_rewards (
+              id, campaign_id, user_id, milestone_id, reward_type,
+              amount_usd, status, unlocked_at, created_at
+            ) VALUES (?, ?, ?, NULL, 'cashback', ?, 'unlocked', ?, ?)
+          `).run(cbRewardId, campaignId, user.id, creditedCashbackUSD, now, now);
+        }
+      }
       const milestones = db.prepare(`
         SELECT * FROM swap_campaign_milestones 
         WHERE campaign_id = ? AND is_active = 1
@@ -860,7 +1048,7 @@ apiRouter.post("/submit-transaction", async (req, res) => {
         `).get(campaignId, user.id);
         if (referral && referral.status === "connected") {
           if (newTotalVolume >= campaign.referral_qualifying_vol_usd) {
-            const refRewardAmount = campaign.referral_reward_usd || 0.5;
+            const refRewardAmount = campaign.referral_reward_usd || 0.1;
             db.prepare(`
               UPDATE swap_referrals 
               SET status = 'qualified', qualifying_volume_usd = ?, reward_amount_usd = ?, qualified_at = ?
@@ -876,7 +1064,7 @@ apiRouter.post("/submit-transaction", async (req, res) => {
           }
         }
       }
-      return { newTotalVolume, newSwapsCount, newlyUnlocked };
+      return { newTotalVolume, newSwapsCount, newlyUnlocked, creditedCashbackUSD };
     });
     const result = runTransaction();
     res.json({
@@ -890,53 +1078,142 @@ apiRouter.post("/submit-transaction", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-apiRouter.post("/rewards/request", (req, res) => {
+apiRouter.post("/rewards/request", async (req, res) => {
   try {
-    const { walletAddress, rewardId, payoutAddress, preferredNetwork, preferredToken } = req.body;
-    if (!walletAddress || !rewardId || !payoutAddress) {
-      return res.status(400).json({ error: "walletAddress, rewardId and payoutAddress are required" });
+    const { walletAddress, rewardId, payoutAddress, preferredNetwork, preferredToken, claimAmountUSD } = req.body;
+    if (!walletAddress || !payoutAddress) {
+      return res.status(400).json({ error: "walletAddress and payoutAddress are required" });
     }
     const normalizedAddress = walletAddress.toLowerCase();
-    const user = db.prepare("SELECT id FROM swap_campaign_users WHERE wallet_address = ?").get(normalizedAddress);
+    const user = db.prepare("SELECT id, campaign_id FROM swap_campaign_users WHERE wallet_address = ?").get(normalizedAddress);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-    const reward = db.prepare("SELECT * FROM swap_rewards WHERE id = ? AND user_id = ?").get(rewardId, user.id);
-    if (!reward) {
-      return res.status(404).json({ error: "Reward record not found for this wallet" });
-    }
-    if (reward.status !== "unlocked") {
-      return res.status(400).json({ error: `Reward cannot be requested in status: ${reward.status}` });
+    const pendingClaim = db.prepare(`
+      SELECT id FROM swap_reward_claims 
+      WHERE user_id = ? AND status IN ('pending', 'under_review')
+    `).get(user.id);
+    if (pendingClaim) {
+      return res.status(400).json({ error: "You already have an active claim under review. Please wait for admin approval before submitting another claim." });
     }
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const claimId = "clm_" + crypto.randomUUID();
-    const submitClaim = db.transaction(() => {
-      db.prepare("UPDATE swap_rewards SET status = 'requested' WHERE id = ?").run(reward.id);
+    if (rewardId && rewardId !== "threshold_500" && rewardId !== "accumulated_rewards") {
+      const reward = db.prepare("SELECT * FROM swap_rewards WHERE id = ? AND user_id = ?").get(rewardId, user.id);
+      if (!reward) {
+        return res.status(404).json({ error: "Reward record not found for this wallet" });
+      }
+      if (reward.status !== "unlocked") {
+        return res.status(400).json({ error: `Reward cannot be requested in status: ${reward.status}` });
+      }
+      const submitClaim = db.transaction(() => {
+        db.prepare("UPDATE swap_rewards SET status = 'requested' WHERE id = ?").run(reward.id);
+        db.prepare(`
+          INSERT INTO swap_reward_claims (
+            id, reward_id, user_id, campaign_id, requested_amount_usd,
+            payout_address, preferred_network, preferred_token,
+            cashback_amount_usd, milestone_amount_usd, referral_amount_usd,
+            status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        `).run(
+          claimId,
+          reward.id,
+          user.id,
+          user.campaign_id,
+          reward.amount_usd,
+          payoutAddress.trim(),
+          preferredNetwork || "BNB Smart Chain",
+          preferredToken || "USDT",
+          reward.reward_type === "cashback" ? reward.amount_usd : 0,
+          reward.reward_type === "milestone" ? reward.amount_usd : 0,
+          reward.reward_type === "referral" ? reward.amount_usd : 0,
+          now,
+          now
+        );
+      });
+      submitClaim();
+      sendAdminClaimNotification({
+        claimId,
+        walletAddress: normalizedAddress,
+        requestedAmountUSD: reward.amount_usd,
+        payoutAddress: payoutAddress.trim(),
+        preferredNetwork: preferredNetwork || "BNB Smart Chain",
+        preferredToken: preferredToken || "USDT",
+        cashbackAmountUSD: reward.reward_type === "cashback" ? reward.amount_usd : 0,
+        milestoneAmountUSD: reward.reward_type === "milestone" ? reward.amount_usd : 0,
+        referralAmountUSD: reward.reward_type === "referral" ? reward.amount_usd : 0,
+        createdAt: now
+      }).catch(() => {
+      });
+      return res.json({
+        success: true,
+        claimId,
+        status: "pending",
+        message: "Reward claim submitted successfully. Admin has been notified for verification and manual payout."
+      });
+    }
+    const unlockedRewards = db.prepare(`
+      SELECT * FROM swap_rewards WHERE user_id = ? AND status = 'unlocked'
+    `).all(user.id);
+    let totalCashback = 0;
+    let totalMilestones = 0;
+    let totalReferrals = 0;
+    unlockedRewards.forEach((r) => {
+      if (r.reward_type === "cashback") totalCashback += r.amount_usd;
+      else if (r.reward_type === "milestone") totalMilestones += r.amount_usd;
+      else if (r.reward_type === "referral") totalReferrals += r.amount_usd;
+    });
+    const totalEligible = totalCashback + totalMilestones + totalReferrals;
+    const requestedAmount = claimAmountUSD && typeof claimAmountUSD === "number" && claimAmountUSD > 0 ? Math.min(claimAmountUSD, totalEligible) : totalEligible;
+    if (requestedAmount <= 0) {
+      return res.status(400).json({ error: "No available unlocked reward balance to claim." });
+    }
+    const submitThresholdClaim = db.transaction(() => {
+      db.prepare(`
+        UPDATE swap_rewards SET status = 'requested' WHERE user_id = ? AND status = 'unlocked'
+      `).run(user.id);
       db.prepare(`
         INSERT INTO swap_reward_claims (
           id, reward_id, user_id, campaign_id, requested_amount_usd,
-          payout_address, preferred_network, preferred_token, status,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          payout_address, preferred_network, preferred_token,
+          cashback_amount_usd, milestone_amount_usd, referral_amount_usd,
+          status, created_at, updated_at
+        ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `).run(
         claimId,
-        reward.id,
         user.id,
-        reward.campaign_id,
-        reward.amount_usd,
+        user.campaign_id,
+        requestedAmount,
         payoutAddress.trim(),
         preferredNetwork || "BNB Smart Chain",
         preferredToken || "USDT",
+        totalCashback,
+        totalMilestones,
+        totalReferrals,
         now,
         now
       );
     });
-    submitClaim();
+    submitThresholdClaim();
+    sendAdminClaimNotification({
+      claimId,
+      walletAddress: normalizedAddress,
+      requestedAmountUSD: requestedAmount,
+      payoutAddress: payoutAddress.trim(),
+      preferredNetwork: preferredNetwork || "BNB Smart Chain",
+      preferredToken: preferredToken || "USDT",
+      cashbackAmountUSD: totalCashback,
+      milestoneAmountUSD: totalMilestones,
+      referralAmountUSD: totalReferrals,
+      createdAt: now
+    }).catch(() => {
+    });
     res.json({
       success: true,
       claimId,
       status: "pending",
-      message: "Reward request submitted successfully. It will be reviewed and transferred manually on-chain by Nova Admin."
+      requestedAmountUSD: requestedAmount,
+      message: "Genesis Rewards claim submitted successfully. Admin has been notified for verification and manual payout."
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

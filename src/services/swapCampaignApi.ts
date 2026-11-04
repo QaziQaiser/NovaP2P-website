@@ -70,6 +70,35 @@ export interface UserDashboardData {
       paidAt?: string;
     } | null;
   }>;
+  cashbackStats?: {
+    totalCashbackUSD: number;
+    cashbackPercentage: number;
+  };
+  bonusStats?: {
+    milestoneBonusUSD: number;
+    referralBonusUSD: number;
+    totalBonusUSD: number;
+  };
+  claimStats?: {
+    claimThresholdUSD: number;
+    totalAccumulatedRewardsUSD: number;
+    progressPercent: number;
+    isClaimEligible: boolean;
+    remainingToClaimUSD: number;
+    activeClaim?: {
+      id: string;
+      status: string;
+      requestedAmountUSD: number;
+      payoutAddress: string;
+      preferredNetwork: string;
+      preferredToken: string;
+      payoutTxHash?: string;
+      paidNetwork?: string;
+      paidAt?: string;
+      rejectionReason?: string;
+      createdAt: string;
+    } | null;
+  };
   referralStats: {
     referredUsersCount: number;
     qualifiedReferralsCount: number;
@@ -184,13 +213,14 @@ export const swapCampaignApi = {
     return res.json();
   },
 
-  // Submit claim for unlocked reward
+  // Submit claim for unlocked reward or $500 threshold
   async requestRewardClaim(payload: {
     walletAddress: string;
-    rewardId: string;
+    rewardId?: string;
     payoutAddress: string;
     preferredNetwork?: string;
     preferredToken?: string;
+    claimAmountUSD?: number;
   }): Promise<{ success: boolean; claimId: string; message: string }> {
     const res = await fetch(`${API_BASE}/rewards/request`, {
       method: 'POST',

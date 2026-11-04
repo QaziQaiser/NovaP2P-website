@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { db } from './db.ts';
+import { sendAdminClaimNotification } from './notifications.ts';
 import { ethers } from 'ethers';
 import crypto from 'crypto';
 
@@ -455,6 +456,47 @@ apiRouter.get('/user/:walletAddress', (req: Request, res: Response) => {
       WHERE referrer_user_id = ?
     `).get(user.id) as any;
 
+    // Cashback calculations from ledger
+    const cashbackRow = db.prepare(`
+      SELECT COALESCE(SUM(cashback_amount_usd), 0) as total_cashback
+      FROM swap_cashback_ledger
+      WHERE user_id = ?
+    `).get(user.id) as any;
+    const totalCashbackUSD = Number((cashbackRow?.total_cashback || 0).toFixed(2));
+
+    // Milestone bonus total
+    const milestoneBonusRow = db.prepare(`
+      SELECT COALESCE(SUM(amount_usd), 0) as total_milestone_bonus
+      FROM swap_rewards
+      WHERE user_id = ? AND reward_type = 'milestone' AND status IN ('unlocked', 'requested', 'approved', 'paid')
+    `).get(user.id) as any;
+    const milestoneBonusUSD = Number((milestoneBonusRow?.total_milestone_bonus || 0).toFixed(2));
+
+    // Referral bonus total ($0.10 USDT per eligible referral)
+    const referralBonusUSD = Number((referralStats?.total_referral_rewards || 0).toFixed(2));
+
+    // Total bonus rewards = milestone bonus + referral bonus
+    const totalBonusUSD = Number((milestoneBonusUSD + referralBonusUSD).toFixed(2));
+
+    // Total accumulated eligible rewards = Cashback + Total Bonuses
+    const totalAccumulatedRewardsUSD = Number((totalCashbackUSD + totalBonusUSD).toFixed(2));
+
+    // Claim stats against $500 activation threshold
+    const claimThresholdUSD = 500.0;
+    const progressPercent = Math.min(100, Math.round((totalAccumulatedRewardsUSD / claimThresholdUSD) * 100));
+    const isClaimEligible = totalAccumulatedRewardsUSD >= claimThresholdUSD;
+
+    // Fetch user claims
+    const userClaims = db.prepare(`
+      SELECT c.*, p.payout_tx_hash, p.payout_network as paid_network, p.paid_at
+      FROM swap_reward_claims c
+      LEFT JOIN swap_reward_payouts p ON p.claim_id = c.id
+      WHERE c.user_id = ?
+      ORDER BY c.created_at DESC
+    `).all(user.id) as any[];
+
+    const activeClaim = userClaims.length > 0 ? userClaims[0] : null;
+
     // Recent verified transactions
     const transactions = db.prepare(`
       SELECT id, chain_id, tx_hash, from_token_symbol, to_token_symbol, from_amount, to_amount, volume_usd, execution_status, verified_at
@@ -487,10 +529,39 @@ apiRouter.get('/user/:walletAddress', (req: Request, res: Response) => {
         },
       },
       milestones: milestoneProgress,
+      cashbackStats: {
+        totalCashbackUSD,
+        cashbackPercentage: 5.0,
+      },
+      bonusStats: {
+        milestoneBonusUSD,
+        referralBonusUSD,
+        totalBonusUSD,
+      },
+      claimStats: {
+        claimThresholdUSD,
+        totalAccumulatedRewardsUSD,
+        progressPercent,
+        isClaimEligible,
+        remainingToClaimUSD: Math.max(0, claimThresholdUSD - totalAccumulatedRewardsUSD),
+        activeClaim: activeClaim ? {
+          id: activeClaim.id,
+          status: activeClaim.status,
+          requestedAmountUSD: activeClaim.requested_amount_usd,
+          payoutAddress: activeClaim.payout_address,
+          preferredNetwork: activeClaim.preferred_network,
+          preferredToken: activeClaim.preferred_token,
+          payoutTxHash: activeClaim.payout_tx_hash,
+          paidNetwork: activeClaim.paid_network,
+          paidAt: activeClaim.paid_at,
+          rejectionReason: activeClaim.rejection_reason,
+          createdAt: activeClaim.created_at,
+        } : null,
+      },
       referralStats: {
-        referredUsersCount: referralStats.total_referred_users || 0,
-        qualifiedReferralsCount: referralStats.qualified_referrals || 0,
-        earnedRewardsUSD: referralStats.total_referral_rewards || 0,
+        referredUsersCount: referralStats?.total_referred_users || 0,
+        qualifiedReferralsCount: referralStats?.qualified_referrals || 0,
+        earnedRewardsUSD: referralStats?.total_referral_rewards || 0,
       },
       transactions: transactions.map((tx: any) => ({
         id: tx.id,
@@ -627,7 +698,46 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
         WHERE id = ?
       `).run(newTotalVolume, newSwapsCount, now, user.id);
 
-      // 3. Unlock eligible milestones
+      // 2b. Calculate and credit active 5% Cashback on Nova Swap fees (1.5% fee collected)
+      let creditedCashbackUSD = 0;
+      if (campaign && campaign.cashback_enabled) {
+        const novaFeeCollectedUSD = verifiedVolume * 0.015; // 1.5% Nova fee
+        const cashbackRate = (campaign.cashback_percentage || 5.0) / 100.0;
+        creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
+
+        if (creditedCashbackUSD > 0) {
+          const cbId = 'cb_' + crypto.randomUUID();
+          db.prepare(`
+            INSERT INTO swap_cashback_ledger (
+              id, campaign_id, user_id, wallet_address, transaction_id,
+              swap_volume_usd, nova_fee_usd, cashback_rate, cashback_amount_usd,
+              status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'credited', ?)
+          `).run(
+            cbId,
+            campaignId,
+            user.id,
+            normalizedAddress,
+            txId,
+            verifiedVolume,
+            novaFeeCollectedUSD,
+            cashbackRate,
+            creditedCashbackUSD,
+            now
+          );
+
+          // Also record in rewards table as cashback reward
+          const cbRewardId = 'rwd_cb_' + crypto.randomUUID();
+          db.prepare(`
+            INSERT INTO swap_rewards (
+              id, campaign_id, user_id, milestone_id, reward_type,
+              amount_usd, status, unlocked_at, created_at
+            ) VALUES (?, ?, ?, NULL, 'cashback', ?, 'unlocked', ?, ?)
+          `).run(cbRewardId, campaignId, user.id, creditedCashbackUSD, now, now);
+        }
+      }
+
+      // 3. Unlock eligible milestones (one-time reward each)
       const milestones = db.prepare(`
         SELECT * FROM swap_campaign_milestones 
         WHERE campaign_id = ? AND is_active = 1
@@ -665,7 +775,7 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
         }
       });
 
-      // 4. Check referral qualification for referrer
+      // 4. Check referral qualification for referrer ($0.10 USDT per referral on $100 volume)
       if (user.referred_by_user_id) {
         const referral = db.prepare(`
           SELECT * FROM swap_referrals 
@@ -675,7 +785,7 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
         if (referral && referral.status === 'connected') {
           if (newTotalVolume >= campaign.referral_qualifying_vol_usd) {
             // Qualify referral and grant reward to referrer
-            const refRewardAmount = campaign.referral_reward_usd || 0.50;
+            const refRewardAmount = campaign.referral_reward_usd || 0.10;
             db.prepare(`
               UPDATE swap_referrals 
               SET status = 'qualified', qualifying_volume_usd = ?, reward_amount_usd = ?, qualified_at = ?
@@ -694,7 +804,7 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
         }
       }
 
-      return { newTotalVolume, newSwapsCount, newlyUnlocked };
+      return { newTotalVolume, newSwapsCount, newlyUnlocked, creditedCashbackUSD };
     });
 
     const result = runTransaction();
@@ -712,64 +822,171 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
 });
 
 // 8. Submit reward claim request
-apiRouter.post('/rewards/request', (req: Request, res: Response) => {
+// 8. Submit reward claim request (Supports individual milestone or $500 threshold claim)
+apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
   try {
-    const { walletAddress, rewardId, payoutAddress, preferredNetwork, preferredToken } = req.body;
+    const { walletAddress, rewardId, payoutAddress, preferredNetwork, preferredToken, claimAmountUSD } = req.body;
 
-    if (!walletAddress || !rewardId || !payoutAddress) {
-      return res.status(400).json({ error: 'walletAddress, rewardId and payoutAddress are required' });
+    if (!walletAddress || !payoutAddress) {
+      return res.status(400).json({ error: 'walletAddress and payoutAddress are required' });
     }
 
     const normalizedAddress = walletAddress.toLowerCase();
-    const user = db.prepare('SELECT id FROM swap_campaign_users WHERE wallet_address = ?').get(normalizedAddress) as any;
+    const user = db.prepare('SELECT id, campaign_id FROM swap_campaign_users WHERE wallet_address = ?').get(normalizedAddress) as any;
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const reward = db.prepare('SELECT * FROM swap_rewards WHERE id = ? AND user_id = ?').get(rewardId, user.id) as any;
-    if (!reward) {
-      return res.status(404).json({ error: 'Reward record not found for this wallet' });
-    }
+    // Check if there is already a pending claim
+    const pendingClaim = db.prepare(`
+      SELECT id FROM swap_reward_claims 
+      WHERE user_id = ? AND status IN ('pending', 'under_review')
+    `).get(user.id);
 
-    if (reward.status !== 'unlocked') {
-      return res.status(400).json({ error: `Reward cannot be requested in status: ${reward.status}` });
+    if (pendingClaim) {
+      return res.status(400).json({ error: 'You already have an active claim under review. Please wait for admin approval before submitting another claim.' });
     }
 
     const now = new Date().toISOString();
     const claimId = 'clm_' + crypto.randomUUID();
 
-    const submitClaim = db.transaction(() => {
-      // Update reward status to requested
-      db.prepare("UPDATE swap_rewards SET status = 'requested' WHERE id = ?").run(reward.id);
+    // Check if user is claiming specific reward or accumulated threshold rewards
+    if (rewardId && rewardId !== 'threshold_500' && rewardId !== 'accumulated_rewards') {
+      const reward = db.prepare('SELECT * FROM swap_rewards WHERE id = ? AND user_id = ?').get(rewardId, user.id) as any;
+      if (!reward) {
+        return res.status(404).json({ error: 'Reward record not found for this wallet' });
+      }
 
-      // Create claim record
+      if (reward.status !== 'unlocked') {
+        return res.status(400).json({ error: `Reward cannot be requested in status: ${reward.status}` });
+      }
+
+      const submitClaim = db.transaction(() => {
+        db.prepare("UPDATE swap_rewards SET status = 'requested' WHERE id = ?").run(reward.id);
+
+        db.prepare(`
+          INSERT INTO swap_reward_claims (
+            id, reward_id, user_id, campaign_id, requested_amount_usd,
+            payout_address, preferred_network, preferred_token,
+            cashback_amount_usd, milestone_amount_usd, referral_amount_usd,
+            status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        `).run(
+          claimId,
+          reward.id,
+          user.id,
+          user.campaign_id,
+          reward.amount_usd,
+          payoutAddress.trim(),
+          preferredNetwork || 'BNB Smart Chain',
+          preferredToken || 'USDT',
+          reward.reward_type === 'cashback' ? reward.amount_usd : 0,
+          reward.reward_type === 'milestone' ? reward.amount_usd : 0,
+          reward.reward_type === 'referral' ? reward.amount_usd : 0,
+          now,
+          now
+        );
+      });
+
+      submitClaim();
+
+      // Trigger admin email & in-app notification
+      sendAdminClaimNotification({
+        claimId,
+        walletAddress: normalizedAddress,
+        requestedAmountUSD: reward.amount_usd,
+        payoutAddress: payoutAddress.trim(),
+        preferredNetwork: preferredNetwork || 'BNB Smart Chain',
+        preferredToken: preferredToken || 'USDT',
+        cashbackAmountUSD: reward.reward_type === 'cashback' ? reward.amount_usd : 0,
+        milestoneAmountUSD: reward.reward_type === 'milestone' ? reward.amount_usd : 0,
+        referralAmountUSD: reward.reward_type === 'referral' ? reward.amount_usd : 0,
+        createdAt: now,
+      }).catch(() => {});
+
+      return res.json({
+        success: true,
+        claimId,
+        status: 'pending',
+        message: 'Reward claim submitted successfully. Admin has been notified for verification and manual payout.',
+      });
+    }
+
+    // Otherwise: Claiming accumulated rewards (Threshold claim)
+    const unlockedRewards = db.prepare(`
+      SELECT * FROM swap_rewards WHERE user_id = ? AND status = 'unlocked'
+    `).all(user.id) as any[];
+
+    let totalCashback = 0;
+    let totalMilestones = 0;
+    let totalReferrals = 0;
+
+    unlockedRewards.forEach(r => {
+      if (r.reward_type === 'cashback') totalCashback += r.amount_usd;
+      else if (r.reward_type === 'milestone') totalMilestones += r.amount_usd;
+      else if (r.reward_type === 'referral') totalReferrals += r.amount_usd;
+    });
+
+    const totalEligible = totalCashback + totalMilestones + totalReferrals;
+    const requestedAmount = claimAmountUSD && typeof claimAmountUSD === 'number' && claimAmountUSD > 0
+      ? Math.min(claimAmountUSD, totalEligible)
+      : totalEligible;
+
+    if (requestedAmount <= 0) {
+      return res.status(400).json({ error: 'No available unlocked reward balance to claim.' });
+    }
+
+    const submitThresholdClaim = db.transaction(() => {
+      // Mark unlocked rewards as requested
+      db.prepare(`
+        UPDATE swap_rewards SET status = 'requested' WHERE user_id = ? AND status = 'unlocked'
+      `).run(user.id);
+
       db.prepare(`
         INSERT INTO swap_reward_claims (
           id, reward_id, user_id, campaign_id, requested_amount_usd,
-          payout_address, preferred_network, preferred_token, status,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          payout_address, preferred_network, preferred_token,
+          cashback_amount_usd, milestone_amount_usd, referral_amount_usd,
+          status, created_at, updated_at
+        ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `).run(
         claimId,
-        reward.id,
         user.id,
-        reward.campaign_id,
-        reward.amount_usd,
+        user.campaign_id,
+        requestedAmount,
         payoutAddress.trim(),
         preferredNetwork || 'BNB Smart Chain',
         preferredToken || 'USDT',
+        totalCashback,
+        totalMilestones,
+        totalReferrals,
         now,
         now
       );
     });
 
-    submitClaim();
+    submitThresholdClaim();
+
+    // Trigger admin email & in-app notification
+    sendAdminClaimNotification({
+      claimId,
+      walletAddress: normalizedAddress,
+      requestedAmountUSD: requestedAmount,
+      payoutAddress: payoutAddress.trim(),
+      preferredNetwork: preferredNetwork || 'BNB Smart Chain',
+      preferredToken: preferredToken || 'USDT',
+      cashbackAmountUSD: totalCashback,
+      milestoneAmountUSD: totalMilestones,
+      referralAmountUSD: totalReferrals,
+      createdAt: now,
+    }).catch(() => {});
 
     res.json({
       success: true,
       claimId,
       status: 'pending',
-      message: 'Reward request submitted successfully. It will be reviewed and transferred manually on-chain by Nova Admin.',
+      requestedAmountUSD: requestedAmount,
+      message: 'Genesis Rewards claim submitted successfully. Admin has been notified for verification and manual payout.',
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
