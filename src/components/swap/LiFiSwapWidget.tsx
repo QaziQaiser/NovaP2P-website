@@ -1,6 +1,9 @@
 import React, { useMemo, useEffect, useRef } from 'react';
-import { LiFiWidget, WidgetConfig, widgetEvents, WidgetEvent } from '@lifi/widget';
+import { LiFiWidget, WidgetConfig, widgetEvents, WidgetEvent, ChainType } from '@lifi/widget';
 import { EthereumProvider } from '@lifi/widget-provider-ethereum';
+import { SolanaProvider } from '@lifi/widget-provider-solana';
+import { SuiProvider } from '@lifi/widget-provider-sui';
+import { TronProvider } from '@lifi/widget-provider-tron';
 
 // Reown / WalletConnect Project ID (Verified working project ID)
 const WALLET_CONNECT_PROJECT_ID =
@@ -14,7 +17,118 @@ interface LiFiSwapWidgetProps {
 export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, onWalletChange }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Comprehensive wallet detection to sync with parent rewards dashboard
+  // 1. Prevent programmatic scroll-to-top triggered by LI.FI internal navigation or input focus
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let lastInteractionTime = 0;
+
+    const onWidgetPointer = () => {
+      lastInteractionTime = Date.now();
+    };
+
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('pointerdown', onWidgetPointer, { passive: true });
+      container.addEventListener('mousedown', onWidgetPointer, { passive: true });
+      container.addEventListener('touchstart', onWidgetPointer, { passive: true });
+      container.addEventListener('focusin', onWidgetPointer, { passive: true });
+
+      // Prevent empty anchor clicks (#) from jumping to top of page
+      const handleAnchorClick = (e: MouseEvent) => {
+        const target = e.target as HTMLElement | null;
+        const anchor = target?.closest('a');
+        if (anchor) {
+          const href = anchor.getAttribute('href');
+          if (!href || href === '#' || href === 'javascript:void(0)') {
+            e.preventDefault();
+          }
+        }
+      };
+      container.addEventListener('click', handleAnchorClick, { capture: true });
+    }
+
+    const isWidgetAction = (): boolean => {
+      if (!containerRef.current) return false;
+      const active = document.activeElement;
+      if (active && containerRef.current.contains(active)) return true;
+      if (Date.now() - lastInteractionTime < 1200) return true;
+      const stack = new Error().stack || '';
+      return (
+        stack.includes('@lifi') ||
+        stack.includes('lifi') ||
+        stack.includes('Virtualized') ||
+        stack.includes('useVirtualizer') ||
+        stack.includes('TokenList') ||
+        stack.includes('ChainList')
+      );
+    };
+
+    // Intercept programmatic window.scrollTo calls to top (<= 10) during widget interactions
+    const originalScrollTo = window.scrollTo;
+    window.scrollTo = function (...args: any[]) {
+      const first = args[0];
+      let targetTop: number | undefined;
+      if (typeof first === 'object' && first !== null) {
+        targetTop = first.top;
+      } else if (typeof args[1] === 'number') {
+        targetTop = args[1];
+      }
+
+      if (typeof targetTop === 'number' && targetTop <= 10 && isWidgetAction()) {
+        return; // Suppress programmatic scroll-to-top from widget navigation/focus
+      }
+      return originalScrollTo.apply(window, args as any);
+    };
+
+    // Intercept programmatic window.scroll calls to top (<= 10) during widget interactions
+    const originalScroll = window.scroll;
+    window.scroll = function (...args: any[]) {
+      const first = args[0];
+      let targetTop: number | undefined;
+      if (typeof first === 'object' && first !== null) {
+        targetTop = first.top;
+      } else if (typeof args[1] === 'number') {
+        targetTop = args[1];
+      }
+
+      if (typeof targetTop === 'number' && targetTop <= 10 && isWidgetAction()) {
+        return;
+      }
+      return originalScroll.apply(window, args as any);
+    };
+
+    // Intercept HTMLElement.prototype.focus to prevent browser auto-scroll on inputs inside widget
+    const originalFocus = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function (options?: FocusOptions) {
+      if (containerRef.current && containerRef.current.contains(this)) {
+        return originalFocus.call(this, { ...options, preventScroll: true });
+      }
+      return originalFocus.call(this, options);
+    };
+
+    // Guard Element.prototype.scrollIntoView inside widget so it never scrolls the main window
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (arg?: boolean | ScrollIntoViewOptions) {
+      if (containerRef.current && containerRef.current.contains(this)) {
+        const internalScroll = this.closest('#widget-scrollable-container') || this.parentElement;
+        if (internalScroll && internalScroll !== document.body && internalScroll !== document.documentElement) {
+          return originalScrollIntoView.call(this, arg);
+        }
+        return;
+      }
+      return originalScrollIntoView.call(this, arg);
+    };
+
+    return () => {
+      window.scrollTo = originalScrollTo;
+      window.scroll = originalScroll;
+      HTMLElement.prototype.focus = originalFocus;
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    };
+  }, []);
+
+  // Comprehensive multi-chain wallet detection to sync with parent rewards dashboard
   useEffect(() => {
     if (!onWalletChange) return;
 
@@ -24,7 +138,7 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
     const scanForWalletAddress = async (): Promise<string | null> => {
       if (typeof window === 'undefined') return null;
 
-      // 1. Check window.ethereum directly
+      // 1. Check window.ethereum directly (EVM)
       try {
         const eth = (window as any).ethereum;
         if (eth) {
@@ -48,7 +162,23 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
         }
       } catch {}
 
-      // 2. Check other popular Web3 wallet extensions
+      // 2. Check Solana wallets (Phantom, Solflare)
+      try {
+        const sol = (window as any).phantom?.solana || (window as any).solana;
+        if (sol?.isConnected && sol.publicKey) {
+          return sol.publicKey.toString();
+        }
+      } catch {}
+
+      // 3. Check Tron wallets (TronLink)
+      try {
+        const tron = (window as any).tronWeb;
+        if (tron?.defaultAddress?.base58) {
+          return tron.defaultAddress.base58;
+        }
+      } catch {}
+
+      // 4. Check other popular Web3 wallet extensions
       try {
         const altProviders = [
           (window as any).coinbaseWalletExtension,
@@ -72,21 +202,21 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
         }
       } catch {}
 
-      // 3. Check localStorage for Wagmi store (used internally by LI.FI Ethereum provider)
+      // 5. Check localStorage for Wagmi store or wallet connectors
       try {
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if (key && (key.startsWith('wagmi') || key.startsWith('wc@2:') || key.includes('walletconnect') || key.includes('lifi'))) {
+          if (key && (key.startsWith('wagmi') || key.startsWith('wc@2:') || key.includes('walletconnect') || key.includes('lifi') || key.includes('solana'))) {
             const val = localStorage.getItem(key);
-            if (val && val.includes('0x')) {
-              const match = val.match(/0x[a-fA-F0-9]{40}/);
-              if (match) return match[0].toLowerCase();
+            if (val) {
+              const ethMatch = val.match(/0x[a-fA-F0-9]{40}/);
+              if (ethMatch) return ethMatch[0].toLowerCase();
             }
           }
         }
       } catch {}
 
-      // 4. Check DOM inside LI.FI widget container
+      // 6. Check DOM inside LI.FI widget container
       try {
         if (containerRef.current) {
           const innerText = containerRef.current.innerText || '';
@@ -219,7 +349,7 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
         forceInternalWalletManagement: true,
       },
 
-      // Official LI.FI Ethereum Provider configuration
+      // Multi-Chain Provider configuration: EVM (Ethereum, Arbitrum, Base, Polygon, etc.), Solana (SVM), Sui (MVM), TRON (TVM)
       providers: [
         EthereumProvider({
           walletConnect: {
@@ -250,18 +380,141 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
             },
           },
         }),
+        SolanaProvider(),
+        SuiProvider(),
+        TronProvider(),
       ],
 
-      // Supported Networks:
-      // Ethereum (1), BNB Smart Chain (56), Polygon (137), Arbitrum (42161), Optimism (10), Base (8453)
+      // Universal Multi-Chain Coverage: Enables dynamic discovery and routing across
+      // EVM (Polygon, Avalanche, Arbitrum, Base, BSC, Optimism, Ethereum, Fantom, etc.),
+      // SVM (Solana), TVM (TRON), and MVM (Sui)
       chains: {
-        allow: [1, 56, 137, 42161, 10, 8453],
+        types: {
+          allow: [ChainType.EVM, ChainType.SVM, ChainType.TVM, ChainType.MVM],
+        },
       },
 
-      // Preloaded popular tokens for instant discovery and selection on all enabled chains
-      // All additional tokens are fetched dynamically from LI.FI API
+      // Preloaded popular tokens for instant discovery and selection across all supported ecosystems
+      // All additional tokens are fetched dynamically in real-time from LI.FI API
       tokens: {
         popular: [
+          // Solana (1151111081099710)
+          {
+            chainId: 1151111081099710,
+            address: '11111111111111111111111111111111',
+            symbol: 'SOL',
+            decimals: 9,
+            name: 'Solana',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png',
+          },
+          {
+            chainId: 1151111081099710,
+            address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+            symbol: 'USDC',
+            decimals: 6,
+            name: 'USD Coin',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png',
+          },
+          {
+            chainId: 1151111081099710,
+            address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+            symbol: 'USDT',
+            decimals: 6,
+            name: 'Tether USD',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png',
+          },
+
+          // TRON (728126428)
+          {
+            chainId: 728126428,
+            address: '0x0000000000000000000000000000000000000000',
+            symbol: 'TRX',
+            decimals: 6,
+            name: 'TRON',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/tron/info/logo.png',
+          },
+          {
+            chainId: 728126428,
+            address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+            symbol: 'USDT',
+            decimals: 6,
+            name: 'Tether USD',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png',
+          },
+
+          // Sui (9270000000000000)
+          {
+            chainId: 9270000000000000,
+            address: '0x2::sui::SUI',
+            symbol: 'SUI',
+            decimals: 9,
+            name: 'Sui',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/sui/info/logo.png',
+          },
+
+          // Polygon (137)
+          {
+            chainId: 137,
+            address: '0x0000000000000000000000000000000000000000',
+            symbol: 'POL',
+            decimals: 18,
+            name: 'Polygon Ecosystem Token',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png',
+          },
+          {
+            chainId: 137,
+            address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+            symbol: 'USDT',
+            decimals: 6,
+            name: 'Tether USD',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png',
+          },
+          {
+            chainId: 137,
+            address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+            symbol: 'USDC',
+            decimals: 6,
+            name: 'USD Coin',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png',
+          },
+
+          // Avalanche (43114)
+          {
+            chainId: 43114,
+            address: '0x0000000000000000000000000000000000000000',
+            symbol: 'AVAX',
+            decimals: 18,
+            name: 'Avalanche',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanche/info/logo.png',
+          },
+          {
+            chainId: 43114,
+            address: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7',
+            symbol: 'USDT',
+            decimals: 6,
+            name: 'Tether USD',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png',
+          },
+          {
+            chainId: 43114,
+            address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+            symbol: 'USDC',
+            decimals: 6,
+            name: 'USD Coin',
+            logoURI:
+              'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png',
+          },
           // Ethereum Mainnet (1)
           {
             chainId: 1,

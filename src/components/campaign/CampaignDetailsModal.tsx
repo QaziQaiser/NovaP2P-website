@@ -59,9 +59,9 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
 
   const modalContent = (
     <div 
-      className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto"
+      className="fixed inset-0 z-[2147483647] flex items-center justify-center p-3 sm:p-6 pt-16 sm:pt-6 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto"
       onClick={onClose}
-      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999999 }}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2147483647 }}
     >
       {/* Modal Box */}
       <div 

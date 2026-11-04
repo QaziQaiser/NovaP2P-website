@@ -73,9 +73,9 @@ export const RewardClaimModal: React.FC<RewardClaimModalProps> = ({
 
   const modalContent = (
     <div 
-      className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150 overflow-y-auto"
+      className="fixed inset-0 z-[2147483647] flex items-center justify-center p-4 pt-16 sm:pt-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-150 overflow-y-auto"
       onClick={onClose}
-      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999999 }}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2147483647 }}
     >
       <div 
         className="relative w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl p-6 sm:p-7 text-white my-auto"
