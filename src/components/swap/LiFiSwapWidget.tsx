@@ -14,25 +14,141 @@ interface LiFiSwapWidgetProps {
 export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, onWalletChange }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Monitor connected wallet to sync with parent rewards dashboard
+  // Comprehensive wallet detection to sync with parent rewards dashboard
   useEffect(() => {
     if (!onWalletChange) return;
-    const checkEth = async () => {
-      if (typeof window === 'undefined') return;
+
+    let isDisposed = false;
+    let lastDetectedAddress: string | null = null;
+
+    const scanForWalletAddress = async (): Promise<string | null> => {
+      if (typeof window === 'undefined') return null;
+
+      // 1. Check window.ethereum directly
       try {
-        if ((window as any).ethereum) {
-          const accs = await (window as any).ethereum.request({ method: 'eth_accounts' });
-          if (accs && accs.length > 0) {
-            onWalletChange(accs[0]);
+        const eth = (window as any).ethereum;
+        if (eth) {
+          if (eth.selectedAddress && typeof eth.selectedAddress === 'string' && eth.selectedAddress.startsWith('0x')) {
+            return eth.selectedAddress.toLowerCase();
+          }
+          if (Array.isArray(eth.accounts) && eth.accounts.length > 0 && typeof eth.accounts[0] === 'string') {
+            return eth.accounts[0].toLowerCase();
+          }
+          if (Array.isArray(eth.providers)) {
+            for (const p of eth.providers) {
+              if (p?.selectedAddress && typeof p.selectedAddress === 'string') {
+                return p.selectedAddress.toLowerCase();
+              }
+            }
+          }
+          const accs = await eth.request({ method: 'eth_accounts' });
+          if (accs && Array.isArray(accs) && accs.length > 0 && typeof accs[0] === 'string') {
+            return accs[0].toLowerCase();
           }
         }
-      } catch {
-        // ignore
+      } catch {}
+
+      // 2. Check other popular Web3 wallet extensions
+      try {
+        const altProviders = [
+          (window as any).coinbaseWalletExtension,
+          (window as any).okxwallet,
+          (window as any).trustwallet?.ethereum,
+          (window as any).phantom?.ethereum,
+          (window as any).rabby,
+          (window as any).binancew3w?.ethereum,
+          (window as any).bitkeep?.ethereum,
+        ];
+        for (const p of altProviders) {
+          if (p?.selectedAddress && typeof p.selectedAddress === 'string') {
+            return p.selectedAddress.toLowerCase();
+          }
+          if (p?.request) {
+            try {
+              const accs = await p.request({ method: 'eth_accounts' });
+              if (accs && accs.length > 0) return accs[0].toLowerCase();
+            } catch {}
+          }
+        }
+      } catch {}
+
+      // 3. Check localStorage for Wagmi store (used internally by LI.FI Ethereum provider)
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('wagmi') || key.startsWith('wc@2:') || key.includes('walletconnect') || key.includes('lifi'))) {
+            const val = localStorage.getItem(key);
+            if (val && val.includes('0x')) {
+              const match = val.match(/0x[a-fA-F0-9]{40}/);
+              if (match) return match[0].toLowerCase();
+            }
+          }
+        }
+      } catch {}
+
+      // 4. Check DOM inside LI.FI widget container
+      try {
+        if (containerRef.current) {
+          const innerText = containerRef.current.innerText || '';
+          const match = innerText.match(/0x[a-fA-F0-9]{40}/);
+          if (match) return match[0].toLowerCase();
+
+          const elements = containerRef.current.querySelectorAll('[title*="0x"], [aria-label*="0x"], [data-value*="0x"]');
+          for (let i = 0; i < elements.length; i++) {
+            const el = elements[i];
+            const str = (el.getAttribute('title') || el.getAttribute('aria-label') || el.getAttribute('data-value') || '');
+            const m = str.match(/0x[a-fA-F0-9]{40}/);
+            if (m) return m[0].toLowerCase();
+          }
+        }
+      } catch {}
+
+      return null;
+    };
+
+    const triggerCheck = async () => {
+      if (isDisposed) return;
+      const detected = await scanForWalletAddress();
+      if (detected !== lastDetectedAddress) {
+        lastDetectedAddress = detected;
+        onWalletChange(detected);
       }
     };
-    const t = setInterval(checkEth, 1200);
-    checkEth();
-    return () => clearInterval(t);
+
+    // Run immediately
+    triggerCheck();
+
+    // Fast polling (400ms) to sync immediately upon wallet approval
+    const pollTimer = setInterval(triggerCheck, 400);
+
+    // Mutation observer on widget DOM
+    let observer: MutationObserver | null = null;
+    if (containerRef.current && typeof MutationObserver !== 'undefined') {
+      observer = new MutationObserver(() => {
+        triggerCheck();
+      });
+      observer.observe(containerRef.current, { childList: true, subtree: true, attributes: true });
+    }
+
+    // Storage event listener
+    const handleStorage = () => triggerCheck();
+    window.addEventListener('storage', handleStorage);
+
+    // Ethers / window.ethereum accountsChanged
+    if ((window as any).ethereum?.on) {
+      (window as any).ethereum.on('accountsChanged', (accs: string[]) => {
+        const addr = accs && accs.length > 0 ? accs[0].toLowerCase() : null;
+        lastDetectedAddress = addr;
+        onWalletChange(addr);
+      });
+    }
+
+    return () => {
+      isDisposed = true;
+      clearInterval(pollTimer);
+      if (observer) observer.disconnect();
+      window.removeEventListener('storage', handleStorage);
+    };
   }, [onWalletChange]);
 
   // Prevent internal widget routing/focus from causing the host webpage to scroll to top

@@ -199,7 +199,6 @@ export const NovaSwapSection: React.FC = () => {
       {!isWalletConnected ? (
         <GenesisRewardsPreviewCard
           onOpenDetails={() => setIsDetailsModalOpen(true)}
-          onConnectWallet={connectWallet}
         />
       ) : (
         /* State B (Connected): Show Detailed Dashboard with 3 Cards */

@@ -1,14 +1,12 @@
 import React from 'react';
-import { Users, TrendingUp, Sparkles, RefreshCw, UserPlus, Wallet, ChevronRight } from 'lucide-react';
+import { Users, TrendingUp, Sparkles, RefreshCw, UserPlus, ChevronRight } from 'lucide-react';
 
 interface GenesisRewardsPreviewCardProps {
   onOpenDetails?: () => void;
-  onConnectWallet?: () => void;
 }
 
 export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps> = ({
   onOpenDetails,
-  onConnectWallet,
 }) => {
   return (
     <div className="w-full max-w-4xl mx-auto px-4 mt-6 sm:mt-8 animate-in fade-in duration-300">
@@ -18,7 +16,7 @@ export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps>
         <div className="absolute -top-16 -right-16 w-56 h-56 bg-purple-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-16 -left-16 w-56 h-56 bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Top Header: Trophy + Title & Subtitle */}
+        {/* Top Header: Trophy + Title & Subtitle + Mockup Callout */}
         <div className="relative z-10 flex items-center justify-between gap-4 mb-5 flex-wrap">
           <div className="flex items-center gap-3.5 sm:gap-4">
             {/* Golden Trophy with Star Sparkles */}
@@ -33,9 +31,9 @@ export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps>
 
             <div>
               <h3 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white flex items-center gap-2 flex-wrap">
-                <span>Nova Swap</span>
+                <span>Genesis</span>
                 <span className="bg-gradient-to-r from-purple-400 via-fuchsia-300 to-indigo-300 bg-clip-text text-transparent">
-                  Genesis Rewards
+                  Rewards
                 </span>
               </h3>
               <p className="text-xs sm:text-sm text-slate-300 mt-0.5 font-medium">
@@ -44,16 +42,13 @@ export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps>
             </div>
           </div>
 
-          {/* Quick Action Button for Desktop */}
-          {onConnectWallet && (
-            <button
-              onClick={onConnectWallet}
-              className="hidden sm:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <Wallet size={15} />
-              <span>Connect Wallet</span>
-            </button>
-          )}
+          {/* Detailed Progress Indicator (Mockup [4] Badge) */}
+          <div className="hidden lg:flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-purple-900/50 border border-purple-500/40 text-purple-200 text-xs font-semibold shadow-inner">
+            <span className="w-5 h-5 rounded-full bg-purple-500 text-white flex items-center justify-center font-bold text-[10px]">
+              4
+            </span>
+            <span>Detailed Rewards and Progress (After Wallet Connect)</span>
+          </div>
         </div>
 
         {/* 3 White Milestone Cards */}
@@ -100,32 +95,22 @@ export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps>
         <div className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm text-slate-300 mt-3 text-center px-2">
           <UserPlus size={15} className="text-slate-400 shrink-0" />
           <span>
-            Invite Friends: Earn <strong className="text-yellow-300 font-bold">$0.10 USDT</strong> when your referred user completes at least <strong className="text-yellow-300 font-bold">$100 in eligible volume</strong>.
+            Invite Friends: Earn <strong className="text-yellow-300 font-bold">$0.10 USDT</strong> when your referral completes <strong className="text-yellow-300 font-bold">$100 swap volume</strong>.
           </span>
         </div>
 
-        {/* Mobile Connect Wallet & Details Buttons */}
-        <div className="relative z-10 mt-5 pt-4 border-t border-purple-500/20 flex flex-col sm:flex-row items-center justify-center gap-3">
-          {onConnectWallet && (
-            <button
-              onClick={onConnectWallet}
-              className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer sm:hidden"
-            >
-              <Wallet size={16} />
-              <span>Connect Wallet to Track Genesis Rewards</span>
-            </button>
-          )}
-
-          {onOpenDetails && (
+        {/* View Campaign Details Link */}
+        {onOpenDetails && (
+          <div className="relative z-10 mt-4 pt-3 border-t border-purple-500/20 text-center">
             <button
               onClick={onOpenDetails}
-              className="text-xs text-purple-300 hover:text-white transition-colors flex items-center gap-1 cursor-pointer font-medium py-1"
+              className="text-xs text-purple-300 hover:text-white transition-colors inline-flex items-center gap-1 cursor-pointer font-medium py-1"
             >
               <span>View Campaign Details & Rules</span>
               <ChevronRight size={14} />
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
