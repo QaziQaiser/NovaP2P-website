@@ -359,8 +359,8 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
   // Verified registered integration-string on portal.li.fi is 'nova-p2p'
   const partnerName = import.meta.env.VITE_VELORA_PARTNER || 'nova-p2p';
   const lifiApiKey = import.meta.env.VITE_LIFI_API_KEY;
-  // 1.5% Fee (0.015) active and routed to user's Default EVM wallet on portal.li.fi
-  const lifiFee = import.meta.env.VITE_LIFI_FEE ? parseFloat(import.meta.env.VITE_LIFI_FEE) : 0.015;
+  // 0.5% Fee (0.005) active and routed to user's Default EVM wallet on portal.li.fi
+  const lifiFee = import.meta.env.VITE_LIFI_FEE ? parseFloat(import.meta.env.VITE_LIFI_FEE) : 0.005;
 
   const widgetConfig: WidgetConfig = useMemo(
     () => ({
@@ -599,7 +599,7 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
       // No initial fromAmount so it stays in the clean single exchange card by default.
       // When the user enters an amount, the wide variant automatically opens the routes card.
 
-      // Fee & Commission configuration (1.50% directed to user's partner account 0x9b708d93d1230DA9957F71D07beC6F9a1EE31C12)
+      // Fee & Commission configuration (0.50% directed to user's partner account 0x9b708d93d1230DA9957F71D07beC6F9a1EE31C12)
       // Fully active and verified on portal.li.fi under integrator 'nova-p2p'
       feeConfig: {
         fee: lifiFee,

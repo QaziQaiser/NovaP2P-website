@@ -698,10 +698,10 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
         WHERE id = ?
       `).run(newTotalVolume, newSwapsCount, now, user.id);
 
-      // 2b. Calculate and credit active 5% Cashback on Nova Swap fees (1.5% fee collected)
+      // 2b. Calculate and credit active 5% Cashback on Nova Swap fees (0.5% fee collected)
       let creditedCashbackUSD = 0;
       if (campaign && campaign.cashback_enabled) {
-        const novaFeeCollectedUSD = verifiedVolume * 0.015; // 1.5% Nova fee
+        const novaFeeCollectedUSD = verifiedVolume * 0.005; // 0.5% Nova fee
         const cashbackRate = (campaign.cashback_percentage || 5.0) / 100.0;
         creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
 

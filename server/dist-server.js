@@ -977,7 +977,7 @@ apiRouter.post("/submit-transaction", async (req, res) => {
       `).run(newTotalVolume, newSwapsCount, now, user.id);
       let creditedCashbackUSD = 0;
       if (campaign && campaign.cashback_enabled) {
-        const novaFeeCollectedUSD = verifiedVolume * 0.015;
+        const novaFeeCollectedUSD = verifiedVolume * 5e-3;
         const cashbackRate = (campaign.cashback_percentage || 5) / 100;
         creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
         if (creditedCashbackUSD > 0) {

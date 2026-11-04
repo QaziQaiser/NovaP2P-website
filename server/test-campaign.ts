@@ -155,7 +155,7 @@ async function runTestSuite() {
     assert(swap1Res.body.totalVolumeUSD === 150.0, 'Cumulative volume matches $150.00', `Got: ${swap1Res.body.totalVolumeUSD}`);
 
     // Verify 5% cashback recorded in swap_cashback_ledger
-    // On $150 volume, Nova fee (1.5%) = $2.25. 5% cashback on fee = $0.1125
+    // On $150 volume, Nova fee (0.5%) = $0.75. 5% cashback on fee = $0.0375
     const cashbackEntry = db.prepare('SELECT cashback_amount_usd FROM swap_cashback_ledger WHERE wallet_address = ?')
       .get(referredWallet.address.toLowerCase()) as any;
     assert(Boolean(cashbackEntry && cashbackEntry.cashback_amount_usd > 0), '5% cashback credited to swap_cashback_ledger on Nova fee', `Cashback: ${cashbackEntry?.cashback_amount_usd}`);

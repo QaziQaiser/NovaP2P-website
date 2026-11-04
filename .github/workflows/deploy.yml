@@ -25,7 +25,7 @@ jobs:
       - name: Build project
         run: npm run build
         env:
-          VITE_LIFI_FEE: "0.015"
+          VITE_LIFI_FEE: "0.005"
           VITE_VELORA_PARTNER: "nova-p2p"
           VITE_WALLETCONNECT_PROJECT_ID: "5432e3507d41270bee46b7b85bbc2ef8"
 
