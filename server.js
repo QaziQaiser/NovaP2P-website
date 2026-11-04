@@ -86,12 +86,11 @@ app.get('*', (req, res) => {
   }
 });
 
-// 5. Port & host configuration (Bind to 0.0.0.0 for Hostinger container routing)
+// 5. Port configuration (Standard Hostinger dynamic port binding)
 const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0';
 
-app.listen(Number(PORT), HOST, () => {
-  console.log(`[Nova Server] Production server is LIVE and listening on http://${HOST}:${PORT}`);
+app.listen(PORT, () => {
+  console.log(`[Nova Server] Production server is LIVE and listening on port ${PORT}`);
   console.log(`[Nova Server] Node version: ${process.version}`);
   console.log(`[Nova Server] Environment: ${process.env.NODE_ENV || 'production'}`);
 });
