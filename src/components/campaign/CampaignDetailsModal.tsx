@@ -1,7 +1,88 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Gift, ShieldCheck, Users, CheckCircle, AlertCircle, Calendar, DollarSign, Award } from 'lucide-react';
+import { X, Gift, ShieldCheck, Users, CheckCircle, AlertCircle, Calendar, DollarSign, Award, Search } from 'lucide-react';
 import { CampaignData, MilestoneItem } from '../../services/swapCampaignApi';
+
+// Complete Universal Multi-Chain Coverage (70+ Supported Networks)
+export const SUPPORTED_CAMPAIGN_NETWORKS = [
+  // Top Popular Chains
+  { name: 'Ethereum', id: 1 },
+  { name: 'BNB Smart Chain', id: 56 },
+  { name: 'Polygon', id: 137 },
+  { name: 'Arbitrum One', id: 42161 },
+  { name: 'Optimism', id: 10 },
+  { name: 'Base', id: 8453 },
+  { name: 'Solana', id: 1151111081099710 },
+  { name: 'TRON', id: 728126428 },
+  { name: 'Sui', id: 9270000000000000 },
+  { name: 'Avalanche C-Chain', id: 43114 },
+  { name: 'Fantom Opera', id: 250 },
+
+  // Major Layer 2s & EVM Chains
+  { name: 'Linea', id: 59144 },
+  { name: 'Scroll', id: 534352 },
+  { name: 'Blast', id: 81457 },
+  { name: 'zkSync Era', id: 324 },
+  { name: 'Polygon zkEVM', id: 1101 },
+  { name: 'Mantle', id: 5000 },
+  { name: 'Sei Network', id: 1329 },
+  { name: 'Injective', id: 1776 },
+  { name: 'Gnosis (xDai)', id: 100 },
+  { name: 'Celo', id: 42220 },
+  { name: 'Cronos', id: 25 },
+  { name: 'Moonbeam', id: 1284 },
+  { name: 'Moonriver', id: 1285 },
+  { name: 'BOB (Build on Bitcoin)', id: 288 },
+  { name: 'Rootstock (RSK)', id: 30 },
+  { name: 'Metis Andromeda', id: 1088 },
+  { name: 'Aurora', id: 1313161554 },
+  { name: 'ApeChain', id: 33139 },
+  { name: 'Ink', id: 57073 },
+  { name: 'Sonic (Fantom 2.0)', id: 146 },
+  { name: 'Unichain', id: 130 },
+  { name: 'Mode Network', id: 34443 },
+  { name: 'Boba Network', id: 288 },
+  { name: 'Fuse', id: 122 },
+  { name: 'Telos', id: 40 },
+  { name: 'Velas', id: 106 },
+  { name: 'Fraxtal', id: 252 },
+  { name: 'Immutable zkEVM', id: 13371 },
+  { name: 'Kaia (Klaytn)', id: 8217 },
+  { name: 'opBNB', id: 204 },
+  { name: 'Lisk', id: 1135 },
+  { name: 'Abstract', id: 2741 },
+  { name: 'Berachain', id: 80094 },
+  { name: 'Taiko', id: 167000 },
+  { name: 'Soneium', id: 1868 },
+  { name: 'XDC Network', id: 50 },
+  { name: 'Viction (TomoChain)', id: 88 },
+  { name: 'Flare', id: 14 },
+  { name: 'Ronin', id: 2020 },
+  { name: 'Nibiru', id: 6900 },
+  { name: '0G Newton', id: 16661 },
+  { name: 'Somnia', id: 5031 },
+  { name: 'Arbitrum Nova', id: 42170 },
+  { name: 'Harmony ONE', id: 1666600000 },
+  { name: 'Kava EVM', id: 2222 },
+  { name: 'World Chain', id: 480 },
+  { name: 'Gravity', id: 1625 },
+  { name: 'Hyperliquid EVM', id: 999 },
+  { name: 'Etherlink', id: 42793 },
+  { name: 'LightLink', id: 1890 },
+  { name: 'Oasys', id: 111971151099710 },
+  { name: 'Beam', id: 4337 },
+  { name: 'Fusion', id: 32659 },
+  { name: 'Plume Network', id: 98866 },
+  { name: 'Manta Pacific', id: 169 },
+
+  // Non-EVM & UTXO Ecosystems
+  { name: 'Bitcoin', id: 20000000000001 },
+  { name: 'Dogecoin', id: 20000000000004 },
+  { name: 'Litecoin', id: 20000000000003 },
+  { name: 'Bitcoin Cash', id: 20000000000002 },
+  { name: 'Zcash', id: 20000000000005 },
+  { name: 'Stellar', id: 1201081091099710 },
+];
 
 interface CampaignDetailsModalProps {
   isOpen: boolean;
@@ -17,6 +98,15 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
   milestones,
 }) => {
   const [mounted, setMounted] = useState(false);
+  const [networkSearch, setNetworkSearch] = useState('');
+
+  const filteredNetworks = useMemo(() => {
+    if (!networkSearch.trim()) return SUPPORTED_CAMPAIGN_NETWORKS;
+    const q = networkSearch.toLowerCase().trim();
+    return SUPPORTED_CAMPAIGN_NETWORKS.filter(
+      (c) => c.name.toLowerCase().includes(q) || String(c.id).includes(q)
+    );
+  }, [networkSearch]);
 
   useEffect(() => {
     setMounted(true);
@@ -109,25 +199,48 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
 
           {/* 2. Supported Networks & Minimum Swap */}
           <div>
-            <h3 className="text-base font-semibold text-white flex items-center gap-2 mb-3">
-              <CheckCircle className="text-emerald-400" size={18} />
-              2. Eligibility & Supported Networks
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {[
-                { name: 'Ethereum', id: 1 },
-                { name: 'BNB Smart Chain', id: 56 },
-                { name: 'Polygon', id: 137 },
-                { name: 'Arbitrum', id: 42161 },
-                { name: 'Optimism', id: 10 },
-                { name: 'Base', id: 8453 },
-              ].map((chain) => (
-                <div key={chain.id} className="p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/50 flex items-center justify-between">
-                  <span className="font-medium text-slate-200">{chain.name}</span>
-                  <span className="text-xs text-slate-400 font-mono">ID: {chain.id}</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-3">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <CheckCircle className="text-emerald-400" size={18} />
+                2. Eligibility & Supported Networks ({SUPPORTED_CAMPAIGN_NETWORKS.length}+ Chains)
+              </h3>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold self-start sm:self-auto">
+                Universal Multi-Chain DEX
+              </span>
+            </div>
+
+            {/* Quick Search */}
+            <div className="relative mb-2.5">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <input
+                type="text"
+                placeholder="Search 70+ supported blockchains (e.g. Solana, TRON, Sui, Polygon, Base, Arbitrum)..."
+                value={networkSearch}
+                onChange={(e) => setNetworkSearch(e.target.value)}
+                className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-primary transition-colors"
+              />
+            </div>
+
+            {/* Scrollable Grid of All 70+ Networks */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 sm:max-h-72 overflow-y-auto pr-1">
+              {filteredNetworks.map((chain) => (
+                <div
+                  key={`${chain.name}-${chain.id}`}
+                  className="p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/50 flex items-center justify-between hover:bg-slate-800/70 hover:border-slate-600/70 transition-all"
+                >
+                  <span className="font-medium text-slate-200 text-xs truncate pr-1" title={chain.name}>
+                    {chain.name}
+                  </span>
+                  <span
+                    className="text-[11px] text-slate-400 font-mono shrink-0"
+                    title={`Chain ID: ${chain.id}`}
+                  >
+                    ID: {typeof chain.id === 'number' && chain.id > 10000000000 ? `${String(chain.id).slice(0, 4)}...` : chain.id}
+                  </span>
                 </div>
               ))}
             </div>
+
             <div className="mt-3 text-xs text-slate-400 flex items-center gap-1.5">
               <DollarSign size={14} className="text-emerald-400 shrink-0" />
               <span><strong>Minimum Eligible Swap:</strong> Only swaps with a verified value of at least <strong>${minSwap.toFixed(2)} USD</strong> count towards cumulative volume.</span>
