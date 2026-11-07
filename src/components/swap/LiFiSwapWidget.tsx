@@ -4,10 +4,13 @@ import { EthereumProvider } from '@lifi/widget-provider-ethereum';
 import { SolanaProvider } from '@lifi/widget-provider-solana';
 import { SuiProvider } from '@lifi/widget-provider-sui';
 import { TronProvider } from '@lifi/widget-provider-tron';
-
-// Reown / WalletConnect Project ID (Verified working project ID)
-const WALLET_CONNECT_PROJECT_ID =
-  import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '5432e3507d41270bee46b7b85bbc2ef8';
+import { ChainNetwork } from '@tronweb3/tronwallet-abstract-adapter';
+import {
+  WALLET_CONNECT_PROJECT_ID,
+  APPKIT_METADATA,
+  FEATURED_WALLET_IDS,
+  getAppKit,
+} from '../../config/appkit';
 
 interface LiFiSwapWidgetProps {
   onSwapSuccess?: (txData: any) => void;
@@ -138,7 +141,16 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
     const scanForWalletAddress = async (): Promise<string | null> => {
       if (typeof window === 'undefined') return null;
 
-      // 1. Check window.ethereum directly (EVM)
+      // 1. Check AppKit instance
+      try {
+        const kit = getAppKit();
+        if (kit) {
+          const addr = kit.getAddress();
+          if (addr && typeof addr === 'string') return addr.toLowerCase();
+        }
+      } catch {}
+
+      // 2. Check window.ethereum directly (EVM)
       try {
         const eth = (window as any).ethereum;
         if (eth) {
@@ -360,29 +372,68 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
               themeVariables: {
                 '--wcm-z-index': '99999',
               },
-            },
-            metadata: {
-              name: 'NovaP2P',
-              description: 'NovaP2P Decentralized Exchange',
-              url: typeof window !== 'undefined' ? window.location.origin : 'https://novap2p.com',
-              icons: ['https://novap2p.com/favicon-96x96.png'],
-            },
+              explorerRecommendedWalletIds: FEATURED_WALLET_IDS,
+              featuredWalletIds: FEATURED_WALLET_IDS,
+              mobileWallets: [
+                {
+                  id: 'trust',
+                  name: 'Trust Wallet',
+                  links: {
+                    native: 'trust://',
+                    universal: 'https://link.trustwallet.com',
+                  },
+                },
+                {
+                  id: 'metamask',
+                  name: 'MetaMask',
+                  links: {
+                    native: 'metamask://',
+                    universal: 'https://metamask.app.link',
+                  },
+                },
+                {
+                  id: 'coinbase',
+                  name: 'Coinbase Wallet',
+                  links: {
+                    native: 'cbwallet://',
+                    universal: 'https://go.cb-w.com',
+                  },
+                },
+                {
+                  id: 'phantom',
+                  name: 'Phantom',
+                  links: {
+                    native: 'phantom://',
+                    universal: 'https://phantom.app',
+                  },
+                },
+              ],
+            } as any,
+            metadata: APPKIT_METADATA,
           },
           coinbase: {
-            appName: 'NovaP2P',
+            appName: 'Nova P2P',
             appLogoUrl: 'https://novap2p.com/favicon-96x96.png',
           },
           metaMask: {
             dappMetadata: {
-              name: 'NovaP2P',
-              url: typeof window !== 'undefined' ? window.location.origin : 'https://novap2p.com',
+              name: 'Nova P2P',
+              url: 'https://novap2p.com',
               iconUrl: 'https://novap2p.com/favicon-96x96.png',
             },
           },
         }),
         SolanaProvider(),
         SuiProvider(),
-        TronProvider(),
+        TronProvider({
+          walletConnect: {
+            network: ChainNetwork.Mainnet,
+            options: {
+              projectId: WALLET_CONNECT_PROJECT_ID,
+              metadata: APPKIT_METADATA,
+            },
+          },
+        }),
       ],
 
       // Universal Multi-Chain Coverage: Enables dynamic discovery and routing across

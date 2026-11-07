@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { BrowserProvider, JsonRpcSigner, Contract, formatUnits, parseUnits, MaxUint256 } from 'ethers';
 import { SUPPORTED_CHAINS, DEFAULT_CHAIN_ID } from '../constants/chains';
 import { NATIVE_TOKEN_ADDRESS } from '../constants/tokens';
+import { getAppKit, openAppKitModal } from '../config/appkit';
 
 // Minimal ERC20 ABI for balance and approval
 const ERC20_ABI = [
@@ -111,36 +112,72 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
   }, [account, handleAccountsChanged, handleChainChanged]);
 
-  const connectWallet = async () => {
-    const eth = getEthereumObject();
-    if (!eth) {
-      alert('No Web3 wallet found. Please install MetaMask, Rabby, or Coinbase Wallet to continue.');
-      return;
-    }
+  // Sync wallet state when connected via WalletConnect AppKit / Web3Modal
+  useEffect(() => {
+    const kit = getAppKit();
+    if (!kit) return;
 
     try {
-      setIsConnecting(true);
-      const accounts = await eth.request({ method: 'eth_requestAccounts' });
-      if (accounts && accounts.length > 0) {
-        const bp = new BrowserProvider(eth);
-        const s = await bp.getSigner();
-        const network = await bp.getNetwork();
+      const unsubscribe = kit.subscribeAccount((state) => {
+        if (state?.address) {
+          const lower = state.address.toLowerCase();
+          setAccount(lower);
+          const eth = getEthereumObject();
+          if (eth) {
+            const bp = new BrowserProvider(eth);
+            setProvider(bp);
+            bp.getSigner().then(setSigner).catch(() => {});
+          }
+        }
+      });
 
-        setAccount(accounts[0]);
-        setProvider(bp);
-        setSigner(s);
-        setChainId(Number(network.chainId));
+      return () => {
+        if (typeof unsubscribe === 'function') unsubscribe();
+      };
+    } catch (err) {
+      console.warn('AppKit account subscription error:', err);
+    }
+  }, []);
+
+  const connectWallet = async () => {
+    const eth = getEthereumObject();
+    if (eth) {
+      try {
+        setIsConnecting(true);
+        const accounts = await eth.request({ method: 'eth_requestAccounts' });
+        if (accounts && accounts.length > 0) {
+          const bp = new BrowserProvider(eth);
+          const s = await bp.getSigner();
+          const network = await bp.getNetwork();
+
+          setAccount(accounts[0]);
+          setProvider(bp);
+          setSigner(s);
+          setChainId(Number(network.chainId));
+          return;
+        }
+      } catch (err: any) {
+        console.warn('Direct ethereum request canceled or failed, falling back to AppKit modal:', err);
+      } finally {
+        setIsConnecting(false);
       }
-    } catch (err: any) {
-      console.error('Failed to connect wallet:', err);
-    } finally {
-      setIsConnecting(false);
+    }
+
+    // Modern mobile & multi-chain WalletConnect AppKit modal (Trust Wallet, MetaMask, Coinbase, Phantom, Solana, TRON)
+    try {
+      await openAppKitModal('Connect');
+    } catch (err) {
+      console.error('Failed to open AppKit modal:', err);
     }
   };
 
   const disconnectWallet = () => {
     setAccount(null);
     setSigner(null);
+    try {
+      const kit = getAppKit();
+      kit?.disconnect();
+    } catch {}
   };
 
   const switchNetwork = async (targetChainId: number) => {

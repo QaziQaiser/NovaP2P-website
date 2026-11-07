@@ -27,7 +27,7 @@ jobs:
         env:
           VITE_LIFI_FEE: "0.005"
           VITE_VELORA_PARTNER: "nova-p2p"
-          VITE_WALLETCONNECT_PROJECT_ID: "5432e3507d41270bee46b7b85bbc2ef8"
+          VITE_WALLETCONNECT_PROJECT_ID: "eea4a502863666d6408ffd0969ad7456"
 
       - name: Deploy to Hostinger via FTP
         if: "${{ secrets.FTP_SERVER != '' }}"
