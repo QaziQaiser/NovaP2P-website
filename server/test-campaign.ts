@@ -146,16 +146,16 @@ async function runTestSuite() {
       txHash: txHash1,
       fromToken: { symbol: 'USDC', address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d' },
       toToken: { symbol: 'USDT', address: '0x55d398326f99059fF775485246999027B3197955' },
-      fromAmount: '150.00',
-      toAmount: '149.85',
-      volumeUSD: 150.0, // Qualifies referral ($100 min)
+      fromAmount: '2000.00',
+      toAmount: '1998.00',
+      volumeUSD: 2000.0, // Qualifies referral ($2,000 min)
       lifiRouteId: 'route_test_001',
     });
     assert(swap1Res.status === 200, 'Eligible swap transaction verified and credited');
-    assert(swap1Res.body.totalVolumeUSD === 150.0, 'Cumulative volume matches $150.00', `Got: ${swap1Res.body.totalVolumeUSD}`);
+    assert(swap1Res.body.totalVolumeUSD === 2000.0, 'Cumulative volume matches $2000.00', `Got: ${swap1Res.body.totalVolumeUSD}`);
 
     // Verify 5% cashback recorded in swap_cashback_ledger
-    // On $150 volume, Nova fee (0.5%) = $0.75. 5% cashback on fee = $0.0375
+    // On $2000 volume, Nova fee (0.5%) = $10.00. 5% cashback on fee = $0.50
     const cashbackEntry = db.prepare('SELECT cashback_amount_usd FROM swap_cashback_ledger WHERE wallet_address = ?')
       .get(referredWallet.address.toLowerCase()) as any;
     assert(Boolean(cashbackEntry && cashbackEntry.cashback_amount_usd > 0), '5% cashback credited to swap_cashback_ledger on Nova fee', `Cashback: ${cashbackEntry?.cashback_amount_usd}`);
@@ -166,15 +166,15 @@ async function runTestSuite() {
       walletAddress: referredWallet.address,
       chainId: 56,
       txHash: txHash1, // Same hash and chain
-      volumeUSD: 150.0,
+      volumeUSD: 2000.0,
     });
     assert(dupRes.status === 409, 'Duplicate transaction hash rejected with 409 Conflict');
 
-    // TEST 9: Referral Milestone Qualified for Referrer ($0.10 USDT)
-    console.log('\n--- 9. Testing Automatic Referral Reward Credit ($0.10 USDT) ---');
+    // TEST 9: Referral Milestone Qualified for Referrer ($5.00 USDT)
+    console.log('\n--- 9. Testing Automatic Referral Reward Credit ($5.00 USDT) ---');
     const referrerDashRes = await callApi('GET', `/user/${referrerWallet.address}`);
     assert(referrerDashRes.body.referralStats.qualifiedReferralsCount === 1, 'Referrer credited with 1 qualified referral');
-    assert(referrerDashRes.body.referralStats.earnedRewardsUSD === 0.10, 'Referrer credited with $0.10 referral bonus reward', `Got: ${referrerDashRes.body.referralStats.earnedRewardsUSD}`);
+    assert(referrerDashRes.body.referralStats.earnedRewardsUSD === 5.0, 'Referrer credited with $5.00 referral bonus reward', `Got: ${referrerDashRes.body.referralStats.earnedRewardsUSD}`);
 
     // TEST 10: Milestone 1 Unlocks at $10,000 Volume ($25 USDT Reward)
     console.log('\n--- 10. Testing Milestone 1 Unlock at $10,000 Volume ---');
@@ -183,7 +183,7 @@ async function runTestSuite() {
       walletAddress: referredWallet.address,
       chainId: 56,
       txHash: txHash2,
-      volumeUSD: 9850.0, // Total = 150 + 9850 = 10,000
+      volumeUSD: 8000.0, // Total = 2000 + 8000 = 10,000
     });
     assert(swap2Res.status === 200, 'Subsequent swap verified');
     assert(swap2Res.body.totalVolumeUSD === 10000.0, 'Total volume reached exactly $10,000.00');

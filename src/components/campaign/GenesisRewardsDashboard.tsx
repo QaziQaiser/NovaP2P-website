@@ -442,7 +442,7 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
                 Referral Rewards
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Earn <strong className="text-emerald-400">$0.10 USDT</strong> when your referred friends complete at least <strong className="text-emerald-400">$100 in eligible swap volume</strong>.
+                Earn <strong className="text-emerald-400">$5 USDT</strong> when your referred friends complete at least <strong className="text-emerald-400">$2,000 in eligible swap volume</strong>.
               </p>
 
               {/* Referral Live Stats */}

@@ -95,7 +95,7 @@ export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps>
         <div className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm text-slate-300 mt-3 text-center px-2">
           <UserPlus size={15} className="text-slate-400 shrink-0" />
           <span>
-            Invite Friends: Earn <strong className="text-yellow-300 font-bold">$0.10 USDT</strong> when your referral completes <strong className="text-yellow-300 font-bold">$100 swap volume</strong>.
+            Invite Friends: Earn <strong className="text-yellow-300 font-bold">$5 USDT</strong> when your referral completes <strong className="text-yellow-300 font-bold">$2,000 swap volume</strong>.
           </span>
         </div>
 

@@ -137,8 +137,8 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
   if (!isOpen || !mounted) return null;
 
   const minSwap = campaign?.minSwapUSD ?? 10.0;
-  const refReward = campaign?.referralRewardUSD ?? 0.50;
-  const refQualifyingVol = campaign?.referralQualifyingVolUSD ?? 100.0;
+  const refReward = campaign?.referralRewardUSD ?? 5.00;
+  const refQualifyingVol = campaign?.referralQualifyingVolUSD ?? 2000.0;
 
   const startDateFormatted = campaign?.startDate
     ? new Date(campaign.startDate).toLocaleDateString(undefined, { dateStyle: 'medium' })

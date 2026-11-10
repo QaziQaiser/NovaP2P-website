@@ -107,8 +107,8 @@ export const SwapAdminDashboard: React.FC = () => {
           endDate: overview.campaign?.end_date || '',
           totalBudgetUSD: overview.campaign?.total_budget_usd || 10000,
           minSwapUSD: overview.campaign?.min_swap_usd || 10,
-          referralRewardUSD: overview.campaign?.referral_reward_usd || 0.5,
-          referralQualifyingVolUSD: overview.campaign?.referral_qualifying_vol_usd || 100,
+          referralRewardUSD: overview.campaign?.referral_reward_usd || 5.0,
+          referralQualifyingVolUSD: overview.campaign?.referral_qualifying_vol_usd || 2000,
           cashbackEnabled: Boolean(overview.campaign?.cashback_enabled),
           cashbackPercentage: overview.campaign?.cashback_percentage || 0,
         });

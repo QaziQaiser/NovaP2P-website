@@ -472,7 +472,7 @@ apiRouter.get('/user/:walletAddress', (req: Request, res: Response) => {
     `).get(user.id) as any;
     const milestoneBonusUSD = Number((milestoneBonusRow?.total_milestone_bonus || 0).toFixed(2));
 
-    // Referral bonus total ($0.10 USDT per eligible referral)
+    // Referral bonus total ($5.00 USDT per eligible referral)
     const referralBonusUSD = Number((referralStats?.total_referral_rewards || 0).toFixed(2));
 
     // Total bonus rewards = milestone bonus + referral bonus
@@ -805,7 +805,7 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
         }
       });
 
-      // 4. Check referral qualification for referrer ($0.10 USDT per referral on $100 volume)
+      // 4. Check referral qualification for referrer ($5.00 USDT per referral on $2,000 volume)
       if (user.referred_by_user_id) {
         const referral = db.prepare(`
           SELECT * FROM swap_referrals 
@@ -815,7 +815,7 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
         if (referral && referral.status === 'connected') {
           if (newTotalVolume >= campaign.referral_qualifying_vol_usd) {
             // Qualify referral and grant reward to referrer
-            const refRewardAmount = campaign.referral_reward_usd || 0.10;
+            const refRewardAmount = campaign.referral_reward_usd || 5.0;
             db.prepare(`
               UPDATE swap_referrals 
               SET status = 'qualified', qualifying_volume_usd = ?, reward_amount_usd = ?, qualified_at = ?

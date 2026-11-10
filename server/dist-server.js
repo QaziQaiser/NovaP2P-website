@@ -33,8 +33,8 @@ function initDb() {
       total_budget_usd REAL NOT NULL DEFAULT 50000.0,
       spent_budget_usd REAL NOT NULL DEFAULT 0.0,
       min_swap_usd REAL NOT NULL DEFAULT 10.0,
-      referral_reward_usd REAL NOT NULL DEFAULT 0.10,
-      referral_qualifying_vol_usd REAL NOT NULL DEFAULT 100.0,
+      referral_reward_usd REAL NOT NULL DEFAULT 5.0,
+      referral_qualifying_vol_usd REAL NOT NULL DEFAULT 2000.0,
       cashback_enabled INTEGER NOT NULL DEFAULT 1, -- 1 = active (5% cashback on Nova fee)
       cashback_percentage REAL NOT NULL DEFAULT 5.0,
       rules_content TEXT,
@@ -272,10 +272,10 @@ function initDb() {
       0,
       10,
       // $10 minimum eligible swap
-      0.1,
-      // $0.10 USDT referral bonus
-      100,
-      // $100 volume required for referral qualification
+      5,
+      // $5.00 USDT referral bonus
+      2e3,
+      // $2,000 volume required for referral qualification
       1,
       // 5% cashback active
       5,
@@ -286,8 +286,8 @@ function initDb() {
   } else {
     db.prepare(`
       UPDATE swap_campaigns
-      SET referral_reward_usd = 0.10,
-          referral_qualifying_vol_usd = 100.0,
+      SET referral_reward_usd = 5.0,
+          referral_qualifying_vol_usd = 2000.0,
           cashback_enabled = 1,
           cashback_percentage = 5.0,
           description = 'Complete your swaps and earn amazing rewards!'
@@ -1077,7 +1077,7 @@ apiRouter.post("/submit-transaction", async (req, res) => {
         `).get(campaignId, user.id);
         if (referral && referral.status === "connected") {
           if (newTotalVolume >= campaign.referral_qualifying_vol_usd) {
-            const refRewardAmount = campaign.referral_reward_usd || 0.1;
+            const refRewardAmount = campaign.referral_reward_usd || 5;
             db.prepare(`
               UPDATE swap_referrals 
               SET status = 'qualified', qualifying_volume_usd = ?, reward_amount_usd = ?, qualified_at = ?
