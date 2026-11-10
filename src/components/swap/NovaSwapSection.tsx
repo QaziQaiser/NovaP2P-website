@@ -98,6 +98,94 @@ export const NovaSwapSection: React.FC = () => {
     refreshUserDashboard();
   }, [refreshUserDashboard]);
 
+  // Periodic polling (every 4s) to ensure real-time update of volume, cashback & milestones
+  useEffect(() => {
+    if (!effectiveAccount) return;
+    const pollInterval = setInterval(() => {
+      refreshUserDashboard();
+    }, 4000);
+    return () => clearInterval(pollInterval);
+  }, [effectiveAccount, refreshUserDashboard]);
+
+  // Auto-sync completed swaps from LI.FI widget localStorage storage
+  useEffect(() => {
+    if (!effectiveAccount) return;
+
+    const syncWidgetSwaps = async () => {
+      try {
+        if (typeof window === 'undefined') return;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('widget-routes') || key.includes('routes'))) {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+            const parsed = JSON.parse(raw);
+            const routesObj = parsed?.state?.routes || parsed?.routes || parsed;
+            if (routesObj && typeof routesObj === 'object') {
+              for (const rId of Object.keys(routesObj)) {
+                const item = routesObj[rId];
+                const route = item?.route || item;
+                const status = item?.status;
+                const isDone =
+                  status === 4 ||
+                  (route?.steps && route.steps.every((s: any) => s.execution?.status === 'DONE'));
+                if (isDone && route) {
+                  const syncedKey = `nova_synced_tx_${rId}`;
+                  if (localStorage.getItem(syncedKey)) continue;
+
+                  let txHash = '';
+                  if (route.steps) {
+                    for (const step of route.steps) {
+                      if (step.execution?.actions) {
+                        for (const act of step.execution.actions) {
+                          if (act.txHash) {
+                            txHash = act.txHash;
+                            break;
+                          }
+                          if (act.taskId) {
+                            txHash = act.taskId;
+                            break;
+                          }
+                        }
+                      }
+                      if (txHash) break;
+                    }
+                  }
+                  if (!txHash) txHash = route.id ? `route_${route.id}` : '';
+
+                  const rawVol =
+                    route.fromAmountUSD ||
+                    route.toAmountUSD ||
+                    route.steps?.[0]?.fromAmountUSD ||
+                    route.steps?.[0]?.estimate?.fromAmountUSD;
+                  const volumeUSD = rawVol ? parseFloat(String(rawVol)) : 0;
+
+                  if (volumeUSD >= 10 && txHash) {
+                    try {
+                      await swapCampaignApi.submitTransaction({
+                        walletAddress: effectiveAccount,
+                        chainId: route.fromChainId || route.steps?.[0]?.action?.fromChainId || 1,
+                        txHash,
+                        volumeUSD,
+                        lifiRouteId: route.id,
+                      });
+                      localStorage.setItem(syncedKey, 'true');
+                      await refreshUserDashboard();
+                    } catch {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Auto-sync widget swaps error:', err);
+      }
+    };
+
+    syncWidgetSwaps();
+  }, [effectiveAccount, refreshUserDashboard]);
+
   // 3. Handle Wallet Verification (Sign gasless message)
   const handleVerifyWalletOwnership = async () => {
     if (!account) return;
@@ -122,13 +210,28 @@ export const NovaSwapSection: React.FC = () => {
   // 4. Handle Swap Completed from LI.FI Widget
   const handleSwapSuccess = async (txData: any) => {
     try {
-      const activeAccount = account || txData.walletAddress;
-      if (!activeAccount) return;
+      const activeAccount = effectiveAccount || account || detectedWallet || txData.walletAddress;
+      if (!activeAccount) {
+        console.warn('Swap completed but no active account detected');
+        return;
+      }
 
       const res = await swapCampaignApi.submitTransaction({
         ...txData,
         walletAddress: activeAccount,
       });
+
+      // Save to localStorage as immediate local cache
+      try {
+        const cacheKey = `nova_swaps_${activeAccount.toLowerCase()}`;
+        const prev = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+        prev.push({
+          ...txData,
+          verifiedVolume: res.verifiedVolume,
+          date: new Date().toISOString(),
+        });
+        localStorage.setItem(cacheKey, JSON.stringify(prev));
+      } catch {}
 
       // Refresh dashboard with new volume and unlocked milestones
       await refreshUserDashboard();
@@ -136,7 +239,7 @@ export const NovaSwapSection: React.FC = () => {
       setSwapSuccessNotice(
         `🎉 Verified Swap! +$${res.verifiedVolume.toFixed(2)} USD added to your Genesis Campaign cumulative volume.`
       );
-      setTimeout(() => setSwapSuccessNotice(null), 6000);
+      setTimeout(() => setSwapSuccessNotice(null), 8000);
 
       // Track swap_completed event
       swapCampaignApi.trackEvent('swap_completed', activeAccount, {

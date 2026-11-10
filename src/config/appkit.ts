@@ -93,3 +93,4 @@ export const openAppKitModal = async (view?: 'Connect' | 'Account' | 'Networks' 
     }
   }
 };
+

@@ -900,13 +900,42 @@ apiRouter.post("/submit-transaction", async (req, res) => {
     const normalizedAddress = walletAddress.toLowerCase();
     const normalizedTxHash = txHash.toLowerCase();
     const numericChainId = Number(chainId);
-    if (!ENABLED_CHAINS.includes(numericChainId)) {
-      return res.status(400).json({ error: `Chain ID ${numericChainId} is not an enabled EVM network on Nova` });
+    if (!numericChainId || isNaN(numericChainId) || numericChainId <= 0) {
+      return res.status(400).json({ error: `Invalid Chain ID ${chainId}` });
     }
     const campaignId = "campaign_genesis_001";
-    const user = db.prepare("SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?").get(campaignId, normalizedAddress);
+    let user = db.prepare("SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?").get(campaignId, normalizedAddress);
     if (!user) {
-      return res.status(404).json({ error: "User wallet not registered. Connect wallet first." });
+      let newRefCode = "";
+      while (true) {
+        newRefCode = "NOVA" + crypto.randomBytes(3).toString("hex").toUpperCase();
+        const exists = db.prepare("SELECT id FROM swap_campaign_users WHERE referral_code = ?").get(newRefCode);
+        if (!exists) break;
+      }
+      const userId = "usr_" + crypto.randomUUID();
+      const now2 = (/* @__PURE__ */ new Date()).toISOString();
+      db.prepare(`
+        INSERT INTO swap_campaign_users (
+          id, campaign_id, wallet_address, chain_id, signature, verified_at,
+          referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
+          is_flagged, last_active_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        userId,
+        campaignId,
+        normalizedAddress,
+        numericChainId,
+        "auto_connected",
+        now2,
+        newRefCode,
+        null,
+        0,
+        0,
+        0,
+        now2,
+        now2
+      );
+      user = db.prepare("SELECT * FROM swap_campaign_users WHERE id = ?").get(userId);
     }
     const existingTx = db.prepare("SELECT id FROM swap_transactions WHERE chain_id = ? AND tx_hash = ?").get(numericChainId, normalizedTxHash);
     if (existingTx) {

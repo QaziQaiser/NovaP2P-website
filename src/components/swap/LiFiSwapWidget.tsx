@@ -298,9 +298,23 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
     const handleRouteCompleted = (route: any) => {
       try {
         let txHash = '';
-        if (route.steps) {
+        if (route.steps && Array.isArray(route.steps)) {
           for (const step of route.steps) {
-            if (step.execution?.process) {
+            // 1. LI.FI Widget v4 execution actions
+            if (step.execution?.actions && Array.isArray(step.execution.actions)) {
+              for (const action of step.execution.actions) {
+                if (action.txHash) {
+                  txHash = action.txHash;
+                  break;
+                }
+                if (action.taskId) {
+                  txHash = action.taskId;
+                  break;
+                }
+              }
+            }
+            // 2. LI.FI Widget v3 process fallback
+            if (!txHash && step.execution?.process && Array.isArray(step.execution.process)) {
               for (const proc of step.execution.process) {
                 if (proc.txHash) {
                   txHash = proc.txHash;
@@ -308,19 +322,40 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
                 }
               }
             }
+            // 3. Step execution txHash
+            if (!txHash && step.execution?.txHash) {
+              txHash = step.execution.txHash;
+            }
+            if (!txHash && (step as any).transactionHash) {
+              txHash = (step as any).transactionHash;
+            }
             if (txHash) break;
           }
         }
 
+        // Fallback to route-level properties
+        if (!txHash) {
+          txHash = route.txHash || (route as any).transactionHash || (route.id ? `route_${route.id}` : `tx_${Date.now()}`);
+        }
+
+        const rawVol =
+          route.fromAmountUSD ||
+          route.toAmountUSD ||
+          route.steps?.[0]?.fromAmountUSD ||
+          route.steps?.[0]?.estimate?.fromAmountUSD ||
+          route.steps?.[0]?.action?.fromAmountUSD;
+
+        const volumeUSD = rawVol ? parseFloat(String(rawVol)) : 0;
+
         const txData = {
-          walletAddress: route.fromAddress,
-          chainId: route.fromChainId,
+          walletAddress: route.fromAddress || route.steps?.[0]?.action?.fromAddress,
+          chainId: route.fromChainId || route.steps?.[0]?.action?.fromChainId || 1,
           txHash,
-          fromToken: route.fromToken,
-          toToken: route.toToken,
-          fromAmount: route.fromAmount,
-          toAmount: route.toAmount,
-          volumeUSD: route.fromAmountUSD ? parseFloat(route.fromAmountUSD) : 0,
+          fromToken: route.fromToken || route.steps?.[0]?.action?.fromToken,
+          toToken: route.toToken || route.steps?.[0]?.action?.toToken,
+          fromAmount: route.fromAmount || route.steps?.[0]?.action?.fromAmount,
+          toAmount: route.toAmount || route.steps?.[0]?.action?.toAmount,
+          volumeUSD,
           lifiRouteId: route.id,
           rawRouteData: route,
         };

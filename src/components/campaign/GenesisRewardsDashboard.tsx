@@ -46,11 +46,27 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
 
-  // Real data extraction from backend
-  const userVolume = dashboardData?.user?.totalVolumeUSD ?? 0.0;
+  // Real data extraction from backend with local cache fallback
+  let cachedVolume = 0;
+  try {
+    if (typeof window !== 'undefined' && activeAddress) {
+      const cacheKey = `nova_swaps_${activeAddress.toLowerCase()}`;
+      const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+      if (Array.isArray(cached)) {
+        cachedVolume = cached.reduce(
+          (sum: number, tx: any) => sum + (Number(tx.verifiedVolume) || Number(tx.volumeUSD) || 0),
+          0
+        );
+      }
+    }
+  } catch {}
+
+  const userVolume = Math.max(dashboardData?.user?.totalVolumeUSD ?? 0.0, cachedVolume);
   
-  // Real Cashback from backend ledger
-  const cashbackEarned = dashboardData?.cashbackStats?.totalCashbackUSD ?? 0.0;
+  // Real Cashback from backend ledger (or estimated on cached volume if syncing)
+  const serverCashback = dashboardData?.cashbackStats?.totalCashbackUSD ?? 0.0;
+  const estimatedCashback = cachedVolume > 0 ? Number((cachedVolume * 0.005 * 0.05).toFixed(2)) : 0.0;
+  const cashbackEarned = Math.max(serverCashback, estimatedCashback);
   
   // Real Bonus rewards (milestone bonuses + referral bonuses)
   const milestoneBonus = dashboardData?.bonusStats?.milestoneBonusUSD ?? 0.0;
