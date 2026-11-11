@@ -294,7 +294,11 @@ export const NovaSwapSection: React.FC = () => {
         {/* Subtle ambient gradient glow in background */}
         <div className="absolute w-full max-w-[600px] h-[400px] sm:h-[550px] bg-gradient-to-tr from-blue-200/40 via-purple-100/30 to-orange-100/40 rounded-full blur-3xl -z-10 pointer-events-none" />
 
-        <LiFiSwapWidget onSwapSuccess={handleSwapSuccess} onWalletChange={setDetectedWallet} />
+        <LiFiSwapWidget
+          onSwapSuccess={handleSwapSuccess}
+          onWalletChange={setDetectedWallet}
+          isWalletConnected={isWalletConnected}
+        />
       </motion.div>
 
       {/* 3. BELOW WIDGET: REWARDS AREA */}

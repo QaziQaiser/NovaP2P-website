@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { LiFiWidget, WidgetConfig, widgetEvents, WidgetEvent, ChainType } from '@lifi/widget';
 import { EthereumProvider } from '@lifi/widget-provider-ethereum';
 import { SolanaProvider } from '@lifi/widget-provider-solana';
@@ -15,10 +15,17 @@ import {
 interface LiFiSwapWidgetProps {
   onSwapSuccess?: (txData: any) => void;
   onWalletChange?: (walletAddress: string | null) => void;
+  isWalletConnected?: boolean;
 }
 
-export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, onWalletChange }) => {
+export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
+  onSwapSuccess,
+  onWalletChange,
+  isWalletConnected = false,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [internalConnected, setInternalConnected] = useState<boolean>(false);
+  const hasConnectedWallet = Boolean(isWalletConnected || internalConnected);
 
   // 1. Prevent programmatic scroll-to-top triggered by LI.FI internal navigation or input focus
   useEffect(() => {
@@ -253,6 +260,7 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
       const detected = await scanForWalletAddress();
       if (detected !== lastDetectedAddress) {
         lastDetectedAddress = detected;
+        setInternalConnected(Boolean(detected));
         onWalletChange(detected);
       }
     };
@@ -281,6 +289,7 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
       (window as any).ethereum.on('accountsChanged', (accs: string[]) => {
         const addr = accs && accs.length > 0 ? accs[0].toLowerCase() : null;
         lastDetectedAddress = addr;
+        setInternalConnected(Boolean(addr));
         onWalletChange(addr);
       });
     }
@@ -909,7 +918,11 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
   );
 
   return (
-    <div ref={containerRef} className="w-full max-w-4xl mx-auto flex justify-center items-center px-0">
+    <div
+      ref={containerRef}
+      data-wallet-connected={hasConnectedWallet ? 'true' : 'false'}
+      className="w-full max-w-4xl mx-auto flex justify-center items-center px-4"
+    >
       <style>{`
         /* LiFi Swap Widget Mobile Responsiveness */
         #widget-app-expanded-container,
@@ -938,10 +951,18 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
           box-sizing: border-box !important;
         }
 
-        /* Equalize width (436px) and height on desktop so both cards are 100% equal ("hight width braber") */
+        /* Equalize width and height on desktop */
         @media (min-width: 641px) {
-          #widget-relative-container,
-          div[id^="widget-relative-container"] {
+          /* When wallet is NOT connected: white box is full width matching Genesis box */
+          div[data-wallet-connected="false"] #widget-relative-container,
+          div[data-wallet-connected="false"] div[id^="widget-relative-container"] {
+            width: 100% !important;
+            max-width: 100% !important;
+          }
+
+          /* When wallet is connected: equal 436px width for side-by-side layout with routes card */
+          div[data-wallet-connected="true"] #widget-relative-container,
+          div[data-wallet-connected="true"] div[id^="widget-relative-container"] {
             width: 436px !important;
             max-width: 436px !important;
           }
