@@ -136,7 +136,7 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
 
   if (!isOpen || !mounted) return null;
 
-  const minSwap = campaign?.minSwapUSD ?? 10.0;
+  const minSwap = campaign?.minSwapUSD ?? 1.0;
   const refReward = campaign?.referralRewardUSD ?? 5.00;
   const refQualifyingVol = campaign?.referralQualifyingVolUSD ?? 2000.0;
 

@@ -160,7 +160,7 @@ export const NovaSwapSection: React.FC = () => {
                     route.steps?.[0]?.estimate?.fromAmountUSD;
                   const volumeUSD = rawVol ? parseFloat(String(rawVol)) : 0;
 
-                  if (volumeUSD >= 10 && txHash) {
+                  if (volumeUSD >= 1 && txHash) {
                     try {
                       await swapCampaignApi.submitTransaction({
                         walletAddress: effectiveAccount,

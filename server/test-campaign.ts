@@ -133,9 +133,9 @@ async function runTestSuite() {
       walletAddress: referredWallet.address,
       chainId: 56,
       txHash: '0x' + crypto.randomUUID().replace(/-/g, '') + '01',
-      volumeUSD: 5.0, // Below $10 min
+      volumeUSD: 0.5, // Below $1 min
     });
-    assert(subMinRes.status === 400, 'Swap below minimum threshold ($5 < $10) rejected');
+    assert(subMinRes.status === 400, 'Swap below minimum threshold ($0.50 < $1) rejected');
 
     // TEST 7: Eligible Swap Transaction Submission & Cumulative Volume & 5% Cashback
     console.log('\n--- 7. Testing Swap Submission, 5% Cashback & Volume Update ---');

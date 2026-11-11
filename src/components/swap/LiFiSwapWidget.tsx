@@ -368,10 +368,26 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
       }
     };
 
+    const handleRouteUpdated = (update: any) => {
+      try {
+        const route = update?.route || update;
+        if (route) {
+          const isDone =
+            route.steps?.every((s: any) => s.execution?.status === 'DONE') ||
+            update?.action?.status === 'DONE';
+          if (isDone) {
+            handleRouteCompleted(route);
+          }
+        }
+      } catch {}
+    };
+
     widgetEvents.on(WidgetEvent.RouteExecutionCompleted, handleRouteCompleted);
+    widgetEvents.on(WidgetEvent.RouteExecutionUpdated, handleRouteUpdated);
 
     return () => {
       widgetEvents.off(WidgetEvent.RouteExecutionCompleted, handleRouteCompleted);
+      widgetEvents.off(WidgetEvent.RouteExecutionUpdated, handleRouteUpdated);
     };
   }, [onSwapSuccess]);
   // Verified registered integration-string on portal.li.fi is 'nova-p2p'

@@ -32,7 +32,7 @@ export function initDb() {
       end_date TEXT NOT NULL,
       total_budget_usd REAL NOT NULL DEFAULT 50000.0,
       spent_budget_usd REAL NOT NULL DEFAULT 0.0,
-      min_swap_usd REAL NOT NULL DEFAULT 10.0,
+      min_swap_usd REAL NOT NULL DEFAULT 1.0,
       referral_reward_usd REAL NOT NULL DEFAULT 5.0,
       referral_qualifying_vol_usd REAL NOT NULL DEFAULT 2000.0,
       cashback_enabled INTEGER NOT NULL DEFAULT 1, -- 1 = active (5% cashback on Nova fee)
@@ -276,7 +276,7 @@ export function initDb() {
       endDate,
       50000.0, // $50,000 budget
       0.0,
-      10.0,    // $10 minimum eligible swap
+      1.0,     // $1 minimum eligible swap
       5.0,     // $5.00 USDT referral bonus
       2000.0,  // $2,000 volume required for referral qualification
       1,       // 5% cashback active
@@ -288,7 +288,8 @@ export function initDb() {
     // Ensure existing campaign in persistent DB is updated to match official specs
     db.prepare(`
       UPDATE swap_campaigns
-      SET referral_reward_usd = 5.0,
+      SET min_swap_usd = 1.0,
+          referral_reward_usd = 5.0,
           referral_qualifying_vol_usd = 2000.0,
           cashback_enabled = 1,
           cashback_percentage = 5.0,
