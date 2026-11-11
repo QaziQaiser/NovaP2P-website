@@ -390,6 +390,79 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
       widgetEvents.off(WidgetEvent.RouteExecutionUpdated, handleRouteUpdated);
     };
   }, [onSwapSuccess]);
+
+  // Synchronize height of right routes expansion column with left main swap card ("sath k braber")
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let isDisposed = false;
+
+    const syncEqualHeight = () => {
+      if (isDisposed) return;
+      const container = containerRef.current;
+      if (!container) return;
+
+      const leftCard = (container.querySelector('#widget-relative-container') ||
+        container.querySelector('div[id^="widget-relative-container"]')) as HTMLElement | null;
+
+      if (!leftCard) return;
+
+      const leftHeight = leftCard.offsetHeight;
+      if (!leftHeight || leftHeight < 100) return;
+
+      const expandedContainer = (container.querySelector('#widget-app-expanded-container') ||
+        container.querySelector('div[id^="widget-app-expanded-container"]')) as HTMLElement | null;
+
+      if (expandedContainer && expandedContainer.children && expandedContainer.children.length > 1) {
+        const rightColumn = expandedContainer.children[1] as HTMLElement;
+        if (rightColumn) {
+          rightColumn.style.height = `${leftHeight}px`;
+          rightColumn.style.maxHeight = `${leftHeight}px`;
+
+          const innerContainers = rightColumn.querySelectorAll(
+            '.MuiScopedCssBaseline-root, [class*="Container"]'
+          );
+          innerContainers.forEach((node) => {
+            const el = node as HTMLElement;
+            el.style.maxHeight = `${leftHeight}px`;
+            el.style.height = `${leftHeight}px`;
+          });
+
+          const scrollableArea = rightColumn.querySelector('.MuiContainer-root') as HTMLElement | null;
+          if (scrollableArea) {
+            scrollableArea.style.maxHeight = `${leftHeight - 52}px`;
+            scrollableArea.style.overflowY = 'auto';
+          }
+        }
+      }
+    };
+
+    syncEqualHeight();
+
+    let ro: ResizeObserver | null = null;
+    const leftCard = containerRef.current?.querySelector('#widget-relative-container') ||
+      containerRef.current?.querySelector('div[id^="widget-relative-container"]');
+
+    if (leftCard && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => syncEqualHeight());
+      ro.observe(leftCard);
+    }
+
+    let mo: MutationObserver | null = null;
+    if (containerRef.current && typeof MutationObserver !== 'undefined') {
+      mo = new MutationObserver(() => syncEqualHeight());
+      mo.observe(containerRef.current, { childList: true, subtree: true });
+    }
+
+    const interval = setInterval(syncEqualHeight, 300);
+
+    return () => {
+      isDisposed = true;
+      if (ro) ro.disconnect();
+      if (mo) mo.disconnect();
+      clearInterval(interval);
+    };
+  }, []);
   // Verified registered integration-string on portal.li.fi is 'nova-p2p'
   const partnerName = import.meta.env.VITE_VELORA_PARTNER || 'nova-p2p';
   const lifiApiKey = import.meta.env.VITE_LIFI_API_KEY;
@@ -864,6 +937,41 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
           max-width: 100% !important;
           min-width: 0 !important;
           box-sizing: border-box !important;
+        }
+
+        /* Ensure equal height ("sath k braber") for left swap card and right scrollable routes list */
+        @media (min-width: 641px) {
+          #widget-app-expanded-container,
+          div[id^="widget-app-expanded-container"] {
+            align-items: stretch !important;
+          }
+
+          /* Expansion Container (Right Column) */
+          #widget-app-expanded-container > div:nth-child(2),
+          div[id^="widget-app-expanded-container"] > div:nth-child(2) {
+            height: 100% !important;
+            max-height: 100% !important;
+            display: flex !important;
+          }
+
+          /* Routes container and scoped CSS */
+          #widget-app-expanded-container > div:nth-child(2) > div,
+          div[id^="widget-app-expanded-container"] > div:nth-child(2) > div,
+          #widget-app-expanded-container > div:nth-child(2) .MuiScopedCssBaseline-root,
+          div[id^="widget-app-expanded-container"] > div:nth-child(2) .MuiScopedCssBaseline-root,
+          #widget-app-expanded-container > div:nth-child(2) [class*="Container"],
+          div[id^="widget-app-expanded-container"] > div:nth-child(2) [class*="Container"] {
+            height: 100% !important;
+            max-height: 100% !important;
+            box-sizing: border-box !important;
+          }
+
+          /* Scrollable routes cards container */
+          #widget-app-expanded-container > div:nth-child(2) .MuiContainer-root,
+          div[id^="widget-app-expanded-container"] > div:nth-child(2) .MuiContainer-root {
+            max-height: calc(100% - 52px) !important;
+            overflow-y: auto !important;
+          }
         }
 
         @media (max-width: 640px) {
