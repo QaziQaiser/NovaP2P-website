@@ -21,6 +21,8 @@ import { RewardClaimModal } from './components/campaign/RewardClaimModal';
 import { SwapAdminDashboard } from './components/admin/SwapAdminDashboard';
 import { NovaSwapSection } from './components/swap/NovaSwapSection';
 import { swapCampaignApi, CampaignData, MilestoneItem, UserDashboardData } from './services/swapCampaignApi';
+import logoImg from './assets/logo.png';
+import promotionalBannerImg from './assets/images/promotional-banner.jpeg';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -53,7 +55,7 @@ const Navbar = () => {
           <div className="flex items-center">
             <Link to="/" className="text-2xl font-bold text-primary flex items-center gap-2.5 group">
               <img 
-                src="/assets/logo.png" 
+                src={logoImg} 
                 alt="NovaP2P" 
                 className="w-8 h-8 sm:w-9 sm:h-9 object-contain drop-shadow-sm transition-transform group-hover:scale-105" 
               />
@@ -554,7 +556,7 @@ const AppPreview = () => {
               {/* Sidebar */}
               <div className="w-64 bg-gray-50 border-r border-gray-200 p-4 hidden md:block">
                 <div className="flex items-center gap-2 text-primary font-bold mb-8 px-2">
-                  <img src="/assets/logo.png" alt="NovaP2P" className="w-5 h-5 object-contain" /> NovaP2P
+                  <img src={logoImg} alt="NovaP2P" className="w-5 h-5 object-contain" /> NovaP2P
                 </div>
                 <div className="space-y-2">
                   {['Dashboard', 'P2P Trading', 'My Wallet', 'Trade History', 'Settings'].map((item, i) => (
@@ -967,7 +969,7 @@ const Footer = () => {
           <div className="lg:col-span-3">
             <Link to="/" className="text-2xl font-bold text-primary flex items-center gap-2.5 mb-4 group">
               <img 
-                src="/assets/logo.png" 
+                src={logoImg} 
                 alt="NovaP2P" 
                 className="w-8 h-8 sm:w-9 sm:h-9 object-contain drop-shadow-sm transition-transform group-hover:scale-105" 
               />
@@ -2957,15 +2959,9 @@ const PromotionalPopup = () => {
               className="block cursor-pointer focus:outline-none"
             >
               <img
-                src="/assets/promotional-banner.jpeg"
+                src={promotionalBannerImg}
                 alt="Nova Swap Genesis Rewards"
                 className="w-full h-auto block rounded-2xl object-contain hover:opacity-95 transition-opacity"
-                onError={(e) => {
-                  const target = e.currentTarget;
-                  if (!target.src.endsWith('/assets/promotional-banner.svg')) {
-                    target.src = '/assets/promotional-banner.svg';
-                  }
-                }}
               />
             </a>
           </div>
