@@ -391,13 +391,13 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
     };
   }, [onSwapSuccess]);
 
-  // Synchronize height of right routes expansion column with left main swap card ("sath k braber")
+  // Synchronize CSS variable --widget-card-height with left main swap card ("sath k braber")
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     let isDisposed = false;
 
-    const syncEqualHeight = () => {
+    const syncCardHeight = () => {
       if (isDisposed) return;
       const container = containerRef.current;
       if (!container) return;
@@ -408,59 +408,25 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
       if (!leftCard) return;
 
       const leftHeight = leftCard.offsetHeight;
-      if (!leftHeight || leftHeight < 100) return;
-
-      const expandedContainer = (container.querySelector('#widget-app-expanded-container') ||
-        container.querySelector('div[id^="widget-app-expanded-container"]')) as HTMLElement | null;
-
-      if (expandedContainer && expandedContainer.children && expandedContainer.children.length > 1) {
-        const rightColumn = expandedContainer.children[1] as HTMLElement;
-        if (rightColumn) {
-          rightColumn.style.height = `${leftHeight}px`;
-          rightColumn.style.maxHeight = `${leftHeight}px`;
-
-          const innerContainers = rightColumn.querySelectorAll(
-            '.MuiScopedCssBaseline-root, [class*="Container"]'
-          );
-          innerContainers.forEach((node) => {
-            const el = node as HTMLElement;
-            el.style.maxHeight = `${leftHeight}px`;
-            el.style.height = `${leftHeight}px`;
-          });
-
-          const scrollableArea = rightColumn.querySelector('.MuiContainer-root') as HTMLElement | null;
-          if (scrollableArea) {
-            scrollableArea.style.maxHeight = `${leftHeight - 52}px`;
-            scrollableArea.style.overflowY = 'auto';
-          }
-        }
+      if (leftHeight && leftHeight > 100) {
+        container.style.setProperty('--widget-card-height', `${leftHeight}px`);
       }
     };
 
-    syncEqualHeight();
+    syncCardHeight();
 
     let ro: ResizeObserver | null = null;
     const leftCard = containerRef.current?.querySelector('#widget-relative-container') ||
       containerRef.current?.querySelector('div[id^="widget-relative-container"]');
 
     if (leftCard && typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => syncEqualHeight());
+      ro = new ResizeObserver(() => syncCardHeight());
       ro.observe(leftCard);
     }
-
-    let mo: MutationObserver | null = null;
-    if (containerRef.current && typeof MutationObserver !== 'undefined') {
-      mo = new MutationObserver(() => syncEqualHeight());
-      mo.observe(containerRef.current, { childList: true, subtree: true });
-    }
-
-    const interval = setInterval(syncEqualHeight, 300);
 
     return () => {
       isDisposed = true;
       if (ro) ro.disconnect();
-      if (mo) mo.disconnect();
-      clearInterval(interval);
     };
   }, []);
   // Verified registered integration-string on portal.li.fi is 'nova-p2p'
@@ -904,6 +870,15 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
             width: '100% !important',
           },
         },
+        routesContainer: {
+          boxShadow: '0 20px 45px -10px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04)',
+          borderRadius: '24px',
+          width: '436px',
+          maxWidth: '436px',
+          height: 'var(--widget-card-height, 530px)',
+          maxHeight: 'var(--widget-card-height, 530px)',
+          boxSizing: 'border-box',
+        },
       },
     }),
     [partnerName]
@@ -939,38 +914,27 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
           box-sizing: border-box !important;
         }
 
-        /* Ensure equal height ("sath k braber") for left swap card and right scrollable routes list */
+        /* Equalize width (436px) and height on desktop so both cards are perfectly level ("hight width braber") */
         @media (min-width: 641px) {
-          #widget-app-expanded-container,
-          div[id^="widget-app-expanded-container"] {
-            align-items: stretch !important;
+          #widget-relative-container,
+          div[id^="widget-relative-container"] {
+            width: 436px !important;
+            max-width: 436px !important;
           }
 
           /* Expansion Container (Right Column) */
           #widget-app-expanded-container > div:nth-child(2),
           div[id^="widget-app-expanded-container"] > div:nth-child(2) {
-            height: 100% !important;
-            max-height: 100% !important;
-            display: flex !important;
+            height: var(--widget-card-height, 530px);
+            max-height: var(--widget-card-height, 530px);
           }
 
-          /* Routes container and scoped CSS */
-          #widget-app-expanded-container > div:nth-child(2) > div,
-          div[id^="widget-app-expanded-container"] > div:nth-child(2) > div,
+          /* Route list card matches height and scrolls internally without overflowing */
           #widget-app-expanded-container > div:nth-child(2) .MuiScopedCssBaseline-root,
-          div[id^="widget-app-expanded-container"] > div:nth-child(2) .MuiScopedCssBaseline-root,
-          #widget-app-expanded-container > div:nth-child(2) [class*="Container"],
-          div[id^="widget-app-expanded-container"] > div:nth-child(2) [class*="Container"] {
-            height: 100% !important;
-            max-height: 100% !important;
+          div[id^="widget-app-expanded-container"] > div:nth-child(2) .MuiScopedCssBaseline-root {
+            height: var(--widget-card-height, 530px) !important;
+            max-height: var(--widget-card-height, 530px) !important;
             box-sizing: border-box !important;
-          }
-
-          /* Scrollable routes cards container */
-          #widget-app-expanded-container > div:nth-child(2) .MuiContainer-root,
-          div[id^="widget-app-expanded-container"] > div:nth-child(2) .MuiContainer-root {
-            max-height: calc(100% - 52px) !important;
-            overflow-y: auto !important;
           }
         }
 
