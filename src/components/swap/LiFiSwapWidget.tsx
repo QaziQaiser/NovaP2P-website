@@ -396,36 +396,60 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
     if (typeof window === 'undefined') return;
 
     let isDisposed = false;
+    let ro: ResizeObserver | null = null;
 
     const syncCardHeight = () => {
-      if (isDisposed) return;
+      if (isDisposed) return false;
       const container = containerRef.current;
-      if (!container) return;
+      if (!container) return false;
 
       const leftCard = (container.querySelector('#widget-relative-container') ||
         container.querySelector('div[id^="widget-relative-container"]')) as HTMLElement | null;
 
-      if (!leftCard) return;
+      if (!leftCard) return false;
 
       const leftHeight = leftCard.offsetHeight;
       if (leftHeight && leftHeight > 100) {
         container.style.setProperty('--widget-card-height', `${leftHeight}px`);
+        const expanded = container.querySelector('#widget-app-expanded-container') as HTMLElement | null;
+        if (expanded) {
+          expanded.style.setProperty('--widget-card-height', `${leftHeight}px`);
+        }
       }
+
+      if (!ro && typeof ResizeObserver !== 'undefined') {
+        ro = new ResizeObserver(() => {
+          if (isDisposed) return;
+          const h = leftCard.offsetHeight;
+          if (h && h > 100) {
+            container.style.setProperty('--widget-card-height', `${h}px`);
+            const exp = container.querySelector('#widget-app-expanded-container') as HTMLElement | null;
+            if (exp) {
+              exp.style.setProperty('--widget-card-height', `${h}px`);
+            }
+          }
+        });
+        ro.observe(leftCard);
+      }
+      return true;
     };
 
+    // Attempt sync immediately
     syncCardHeight();
 
-    let ro: ResizeObserver | null = null;
-    const leftCard = containerRef.current?.querySelector('#widget-relative-container') ||
-      containerRef.current?.querySelector('div[id^="widget-relative-container"]');
+    // Poll until LI.FI mounts its internal DOM components
+    const interval = setInterval(() => {
+      if (syncCardHeight() || isDisposed) {
+        clearInterval(interval);
+      }
+    }, 150);
 
-    if (leftCard && typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => syncCardHeight());
-      ro.observe(leftCard);
-    }
+    const timeout = setTimeout(() => clearInterval(interval), 10000);
 
     return () => {
       isDisposed = true;
+      clearInterval(interval);
+      clearTimeout(timeout);
       if (ro) ro.disconnect();
     };
   }, []);
@@ -875,8 +899,8 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
           borderRadius: '24px',
           width: '436px',
           maxWidth: '436px',
-          height: 'var(--widget-card-height, 530px)',
-          maxHeight: 'var(--widget-card-height, 530px)',
+          height: 'var(--widget-card-height, 100%)',
+          maxHeight: 'var(--widget-card-height, 100%)',
           boxSizing: 'border-box',
         },
       },
@@ -914,7 +938,7 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
           box-sizing: border-box !important;
         }
 
-        /* Equalize width (436px) and height on desktop so both cards are perfectly level ("hight width braber") */
+        /* Equalize width (436px) and height on desktop so both cards are 100% equal ("hight width braber") */
         @media (min-width: 641px) {
           #widget-relative-container,
           div[id^="widget-relative-container"] {
@@ -925,15 +949,15 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({ onSwapSuccess, o
           /* Expansion Container (Right Column) */
           #widget-app-expanded-container > div:nth-child(2),
           div[id^="widget-app-expanded-container"] > div:nth-child(2) {
-            height: var(--widget-card-height, 530px);
-            max-height: var(--widget-card-height, 530px);
+            height: var(--widget-card-height, 100%);
+            max-height: var(--widget-card-height, 100%);
           }
 
           /* Route list card matches height and scrolls internally without overflowing */
           #widget-app-expanded-container > div:nth-child(2) .MuiScopedCssBaseline-root,
           div[id^="widget-app-expanded-container"] > div:nth-child(2) .MuiScopedCssBaseline-root {
-            height: var(--widget-card-height, 530px) !important;
-            max-height: var(--widget-card-height, 530px) !important;
+            height: var(--widget-card-height, 100%) !important;
+            max-height: var(--widget-card-height, 100%) !important;
             box-sizing: border-box !important;
           }
         }
