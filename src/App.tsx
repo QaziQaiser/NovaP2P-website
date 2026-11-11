@@ -51,11 +51,13 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center">
           <div className="flex items-center">
-            <Link to="/" className="text-2xl font-bold text-primary flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white">
-                <ArrowRightLeft size={20} />
-              </div>
-              NovaP2P
+            <Link to="/" className="text-2xl font-bold text-primary flex items-center gap-2.5 group">
+              <img 
+                src="/assets/logo.png" 
+                alt="NovaP2P" 
+                className="w-8 h-8 sm:w-9 sm:h-9 object-contain drop-shadow-sm transition-transform group-hover:scale-105" 
+              />
+              <span className="tracking-tight">NovaP2P</span>
             </Link>
           </div>
           
@@ -552,7 +554,7 @@ const AppPreview = () => {
               {/* Sidebar */}
               <div className="w-64 bg-gray-50 border-r border-gray-200 p-4 hidden md:block">
                 <div className="flex items-center gap-2 text-primary font-bold mb-8 px-2">
-                  <ArrowRightLeft size={20} /> NovaP2P
+                  <img src="/assets/logo.png" alt="NovaP2P" className="w-5 h-5 object-contain" /> NovaP2P
                 </div>
                 <div className="space-y-2">
                   {['Dashboard', 'P2P Trading', 'My Wallet', 'Trade History', 'Settings'].map((item, i) => (
@@ -963,12 +965,14 @@ const Footer = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-8 lg:gap-8 mb-12">
           <div className="lg:col-span-3">
-            <a href="#" className="text-2xl font-bold text-primary flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white">
-                <ArrowRightLeft size={20} />
-              </div>
-              NovaP2P
-            </a>
+            <Link to="/" className="text-2xl font-bold text-primary flex items-center gap-2.5 mb-4 group">
+              <img 
+                src="/assets/logo.png" 
+                alt="NovaP2P" 
+                className="w-8 h-8 sm:w-9 sm:h-9 object-contain drop-shadow-sm transition-transform group-hover:scale-105" 
+              />
+              <span className="tracking-tight">NovaP2P</span>
+            </Link>
             <p className="text-gray-500 max-w-sm mb-6 text-sm">
               A next-generation peer-to-peer crypto trading platform designed for simplicity, security, and speed.
             </p>
@@ -2954,7 +2958,7 @@ const PromotionalPopup = () => {
             >
               <img
                 src="/assets/promotional-banner.jpeg"
-                alt="NovaP2P 3-Month Merchant Trading Competition"
+                alt="Nova Swap Genesis Rewards"
                 className="w-full h-auto block rounded-2xl object-contain hover:opacity-95 transition-opacity"
                 onError={(e) => {
                   const target = e.currentTarget;
