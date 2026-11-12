@@ -13,6 +13,7 @@ import {
   MilestoneItem,
   UserDashboardData,
 } from '../../services/swapCampaignApi';
+import { affiliateApi } from '../../services/affiliateApi';
 
 export const NovaSwapSection: React.FC = () => {
   const { account, chainId, isConnected, connectWallet, disconnectWallet, signMessage } = useWallet();
@@ -53,7 +54,9 @@ export const NovaSwapSection: React.FC = () => {
       if (ref) {
         const cleanRef = ref.trim().toUpperCase();
         localStorage.setItem('nova_swap_ref_code', cleanRef);
+        localStorage.setItem('nova_affiliate_ref_wallet', ref.trim().toLowerCase());
         swapCampaignApi.trackReferral(cleanRef);
+        affiliateApi.trackReferral(ref.trim().toLowerCase());
       }
 
       // Track campaign page impression
@@ -97,6 +100,15 @@ export const NovaSwapSection: React.FC = () => {
   useEffect(() => {
     refreshUserDashboard();
   }, [refreshUserDashboard]);
+
+  // Bind stored affiliate ?ref=WALLET attribution when wallet connects
+  useEffect(() => {
+    if (!effectiveAccount || typeof window === 'undefined') return;
+    const savedAffRef = localStorage.getItem('nova_affiliate_ref_wallet');
+    if (savedAffRef && savedAffRef !== effectiveAccount.toLowerCase()) {
+      affiliateApi.trackReferral(savedAffRef, effectiveAccount);
+    }
+  }, [effectiveAccount]);
 
   // Periodic polling (every 4s) to ensure real-time update of volume, cashback & milestones
   useEffect(() => {

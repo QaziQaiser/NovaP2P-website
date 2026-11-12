@@ -231,6 +231,111 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_cashback_user ON swap_cashback_ledger(user_id);
     CREATE INDEX IF NOT EXISTS idx_claims_status ON swap_reward_claims(status);
     CREATE INDEX IF NOT EXISTS idx_events_name ON swap_campaign_events(event_name);
+
+    -- 12. Affiliate Program Applications (Partner & BDM)
+    CREATE TABLE IF NOT EXISTS affiliate_applications (
+      id TEXT PRIMARY KEY,
+      role TEXT NOT NULL, -- 'partner' | 'bdm'
+      wallet_address TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      telegram_username TEXT NOT NULL,
+      twitter_link TEXT NOT NULL,
+      youtube_link TEXT,
+      telegram_channel_link TEXT NOT NULL,
+      audience_size TEXT,
+      marketing_experience TEXT,
+      manageable_partners_count TEXT,
+      message TEXT,
+      bdm_wallet_address TEXT,
+      status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'approved' | 'rejected'
+      admin_notes TEXT,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    -- 13. Approved Affiliates (Partners & BDMs)
+    CREATE TABLE IF NOT EXISTS affiliates (
+      id TEXT PRIMARY KEY,
+      wallet_address TEXT UNIQUE NOT NULL,
+      role TEXT NOT NULL, -- 'partner' | 'bdm'
+      application_id TEXT,
+      full_name TEXT,
+      email TEXT,
+      telegram_username TEXT,
+      bdm_wallet_address TEXT, -- For Partner role: mapped BDM wallet address
+      status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'pending_activation' | 'inactive'
+      commission_rate REAL NOT NULL DEFAULT 0.20, -- 20% of 0.5% platform fee
+      override_rate REAL NOT NULL DEFAULT 0.10, -- 10% of 0.5% platform fee
+      total_referred_volume_usd REAL NOT NULL DEFAULT 0.0,
+      total_earnings_usd REAL NOT NULL DEFAULT 0.0,
+      pending_balance_usd REAL NOT NULL DEFAULT 0.0,
+      paid_balance_usd REAL NOT NULL DEFAULT 0.0,
+      active_users_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    -- 14. Affiliate User Referral Attribution
+    CREATE TABLE IF NOT EXISTS affiliate_referrals (
+      id TEXT PRIMARY KEY,
+      referred_wallet_address TEXT UNIQUE NOT NULL,
+      referrer_wallet_address TEXT NOT NULL,
+      referrer_role TEXT NOT NULL, -- 'partner' | 'bdm'
+      bdm_wallet_address TEXT, -- Nullable; set if referrer is a Partner under a BDM
+      total_volume_usd REAL NOT NULL DEFAULT 0.0,
+      swaps_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      last_swap_at TEXT
+    );
+
+    -- 15. Affiliate Commissions & BDM Override Ledger
+    CREATE TABLE IF NOT EXISTS affiliate_commissions (
+      id TEXT PRIMARY KEY,
+      affiliate_wallet_address TEXT NOT NULL,
+      affiliate_role TEXT NOT NULL, -- 'partner' | 'bdm'
+      commission_type TEXT NOT NULL, -- 'direct_partner' | 'direct_bdm' | 'bdm_override'
+      source_partner_wallet TEXT,
+      referred_user_wallet TEXT NOT NULL,
+      transaction_id TEXT NOT NULL,
+      swap_volume_usd REAL NOT NULL,
+      platform_fee_usd REAL NOT NULL,
+      commission_rate REAL NOT NULL,
+      commission_amount_usd REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'paid'
+      payout_id TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    -- 16. Affiliate Payout Requests
+    CREATE TABLE IF NOT EXISTS affiliate_payouts (
+      id TEXT PRIMARY KEY,
+      affiliate_wallet_address TEXT NOT NULL,
+      affiliate_role TEXT NOT NULL, -- 'partner' | 'bdm'
+      amount_usd REAL NOT NULL,
+      payout_address TEXT NOT NULL,
+      preferred_network TEXT NOT NULL,
+      preferred_token TEXT NOT NULL DEFAULT 'USDT',
+      status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'approved' | 'paid' | 'rejected'
+      tx_hash TEXT,
+      admin_notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      paid_at TEXT
+    );
+
+    -- Affiliate Performance Indexes
+    CREATE INDEX IF NOT EXISTS idx_aff_apps_wallet ON affiliate_applications(wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_aff_apps_status ON affiliate_applications(status);
+    CREATE INDEX IF NOT EXISTS idx_affiliates_wallet ON affiliates(wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_affiliates_bdm ON affiliates(bdm_wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_aff_refs_referred ON affiliate_referrals(referred_wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_aff_refs_referrer ON affiliate_referrals(referrer_wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_aff_comm_wallet ON affiliate_commissions(affiliate_wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_aff_comm_tx ON affiliate_commissions(transaction_id);
+    CREATE INDEX IF NOT EXISTS idx_aff_payouts_wallet ON affiliate_payouts(affiliate_wallet_address);
   `);
 
   // Migration: Ensure existing table columns exist if created previously

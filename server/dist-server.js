@@ -2,7 +2,7 @@
 import express from "express";
 
 // server/api.ts
-import { Router } from "express";
+import { Router as Router2 } from "express";
 
 // server/db.ts
 import Database from "better-sqlite3";
@@ -231,6 +231,111 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_cashback_user ON swap_cashback_ledger(user_id);
     CREATE INDEX IF NOT EXISTS idx_claims_status ON swap_reward_claims(status);
     CREATE INDEX IF NOT EXISTS idx_events_name ON swap_campaign_events(event_name);
+
+    -- 12. Affiliate Program Applications (Partner & BDM)
+    CREATE TABLE IF NOT EXISTS affiliate_applications (
+      id TEXT PRIMARY KEY,
+      role TEXT NOT NULL, -- 'partner' | 'bdm'
+      wallet_address TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      telegram_username TEXT NOT NULL,
+      twitter_link TEXT NOT NULL,
+      youtube_link TEXT,
+      telegram_channel_link TEXT NOT NULL,
+      audience_size TEXT,
+      marketing_experience TEXT,
+      manageable_partners_count TEXT,
+      message TEXT,
+      bdm_wallet_address TEXT,
+      status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'approved' | 'rejected'
+      admin_notes TEXT,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    -- 13. Approved Affiliates (Partners & BDMs)
+    CREATE TABLE IF NOT EXISTS affiliates (
+      id TEXT PRIMARY KEY,
+      wallet_address TEXT UNIQUE NOT NULL,
+      role TEXT NOT NULL, -- 'partner' | 'bdm'
+      application_id TEXT,
+      full_name TEXT,
+      email TEXT,
+      telegram_username TEXT,
+      bdm_wallet_address TEXT, -- For Partner role: mapped BDM wallet address
+      status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'pending_activation' | 'inactive'
+      commission_rate REAL NOT NULL DEFAULT 0.20, -- 20% of 0.5% platform fee
+      override_rate REAL NOT NULL DEFAULT 0.10, -- 10% of 0.5% platform fee
+      total_referred_volume_usd REAL NOT NULL DEFAULT 0.0,
+      total_earnings_usd REAL NOT NULL DEFAULT 0.0,
+      pending_balance_usd REAL NOT NULL DEFAULT 0.0,
+      paid_balance_usd REAL NOT NULL DEFAULT 0.0,
+      active_users_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    -- 14. Affiliate User Referral Attribution
+    CREATE TABLE IF NOT EXISTS affiliate_referrals (
+      id TEXT PRIMARY KEY,
+      referred_wallet_address TEXT UNIQUE NOT NULL,
+      referrer_wallet_address TEXT NOT NULL,
+      referrer_role TEXT NOT NULL, -- 'partner' | 'bdm'
+      bdm_wallet_address TEXT, -- Nullable; set if referrer is a Partner under a BDM
+      total_volume_usd REAL NOT NULL DEFAULT 0.0,
+      swaps_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      last_swap_at TEXT
+    );
+
+    -- 15. Affiliate Commissions & BDM Override Ledger
+    CREATE TABLE IF NOT EXISTS affiliate_commissions (
+      id TEXT PRIMARY KEY,
+      affiliate_wallet_address TEXT NOT NULL,
+      affiliate_role TEXT NOT NULL, -- 'partner' | 'bdm'
+      commission_type TEXT NOT NULL, -- 'direct_partner' | 'direct_bdm' | 'bdm_override'
+      source_partner_wallet TEXT,
+      referred_user_wallet TEXT NOT NULL,
+      transaction_id TEXT NOT NULL,
+      swap_volume_usd REAL NOT NULL,
+      platform_fee_usd REAL NOT NULL,
+      commission_rate REAL NOT NULL,
+      commission_amount_usd REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'paid'
+      payout_id TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    -- 16. Affiliate Payout Requests
+    CREATE TABLE IF NOT EXISTS affiliate_payouts (
+      id TEXT PRIMARY KEY,
+      affiliate_wallet_address TEXT NOT NULL,
+      affiliate_role TEXT NOT NULL, -- 'partner' | 'bdm'
+      amount_usd REAL NOT NULL,
+      payout_address TEXT NOT NULL,
+      preferred_network TEXT NOT NULL,
+      preferred_token TEXT NOT NULL DEFAULT 'USDT',
+      status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'approved' | 'paid' | 'rejected'
+      tx_hash TEXT,
+      admin_notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      paid_at TEXT
+    );
+
+    -- Affiliate Performance Indexes
+    CREATE INDEX IF NOT EXISTS idx_aff_apps_wallet ON affiliate_applications(wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_aff_apps_status ON affiliate_applications(status);
+    CREATE INDEX IF NOT EXISTS idx_affiliates_wallet ON affiliates(wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_affiliates_bdm ON affiliates(bdm_wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_aff_refs_referred ON affiliate_referrals(referred_wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_aff_refs_referrer ON affiliate_referrals(referrer_wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_aff_comm_wallet ON affiliate_commissions(affiliate_wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_aff_comm_tx ON affiliate_commissions(transaction_id);
+    CREATE INDEX IF NOT EXISTS idx_aff_payouts_wallet ON affiliate_payouts(affiliate_wallet_address);
   `);
   try {
     const tableInfo = db.prepare("PRAGMA table_info(swap_reward_claims)").all();
@@ -394,11 +499,646 @@ async function sendAdminClaimNotification(payload) {
   }
 }
 
+// server/affiliateApi.ts
+import { Router } from "express";
+import crypto from "crypto";
+var affiliateRouter = Router();
+var ADMIN_KEY = process.env.SWAP_ADMIN_KEY || "nova-genesis-admin-2026";
+function verifyAffiliateAdmin(req, res, next) {
+  const authHeader = req.headers["x-admin-key"] || req.headers["authorization"];
+  if (!authHeader) {
+    return res.status(401).json({ error: "Admin authentication required" });
+  }
+  const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+  if (token !== ADMIN_KEY) {
+    return res.status(403).json({ error: "Invalid admin credentials" });
+  }
+  next();
+}
+function bindAffiliateReferral(referredWallet, referrerWallet) {
+  try {
+    const cleanReferred = referredWallet.trim().toLowerCase();
+    const cleanReferrer = referrerWallet.trim().toLowerCase();
+    if (!cleanReferred || !cleanReferrer || cleanReferred === cleanReferrer) {
+      return false;
+    }
+    const affiliate = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ? AND status = ?").get(cleanReferrer, "active");
+    if (!affiliate) {
+      return false;
+    }
+    const existingAttribution = db.prepare("SELECT id FROM affiliate_referrals WHERE LOWER(referred_wallet_address) = ?").get(cleanReferred);
+    if (existingAttribution) {
+      return false;
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const refId = "affref_" + crypto.randomUUID();
+    const bdmWallet = affiliate.role === "partner" && affiliate.bdm_wallet_address ? String(affiliate.bdm_wallet_address).toLowerCase() : null;
+    db.prepare(`
+      INSERT INTO affiliate_referrals (
+        id, referred_wallet_address, referrer_wallet_address, referrer_role,
+        bdm_wallet_address, total_volume_usd, swaps_count, created_at, last_swap_at
+      ) VALUES (?, ?, ?, ?, ?, 0.0, 0, ?, NULL)
+    `).run(refId, cleanReferred, cleanReferrer, affiliate.role, bdmWallet, now);
+    db.prepare(`
+      UPDATE affiliates
+      SET active_users_count = active_users_count + 1, updated_at = ?
+      WHERE id = ?
+    `).run(now, affiliate.id);
+    return true;
+  } catch (err) {
+    console.warn("[Affiliate] bindAffiliateReferral warning:", err);
+    return false;
+  }
+}
+function processAffiliateSwapCommission(params) {
+  try {
+    const cleanTrader = params.traderWallet.trim().toLowerCase();
+    if (!cleanTrader || params.volumeUSD <= 0 || !params.transactionId) return;
+    const existingComm = db.prepare("SELECT id FROM affiliate_commissions WHERE transaction_id = ?").get(params.transactionId);
+    if (existingComm) return;
+    const attribution = db.prepare("SELECT * FROM affiliate_referrals WHERE LOWER(referred_wallet_address) = ?").get(cleanTrader);
+    if (!attribution) return;
+    if (attribution.referrer_wallet_address.toLowerCase() === cleanTrader) return;
+    const now = params.verifiedAt || (/* @__PURE__ */ new Date()).toISOString();
+    const platformFeeUSD = Number((params.volumeUSD * 5e-3).toFixed(6));
+    db.prepare(`
+      UPDATE affiliate_referrals
+      SET total_volume_usd = total_volume_usd + ?, swaps_count = swaps_count + 1, last_swap_at = ?
+      WHERE id = ?
+    `).run(params.volumeUSD, now, attribution.id);
+    const referrer = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ? AND status = ?").get(attribution.referrer_wallet_address.toLowerCase(), "active");
+    if (!referrer) return;
+    const directRate = 0.2;
+    const directCommissionUSD = Number((platformFeeUSD * directRate).toFixed(4));
+    const commissionType = referrer.role === "bdm" ? "direct_bdm" : "direct_partner";
+    if (directCommissionUSD > 0) {
+      db.prepare(`
+        INSERT INTO affiliate_commissions (
+          id, affiliate_wallet_address, affiliate_role, commission_type,
+          source_partner_wallet, referred_user_wallet, transaction_id,
+          swap_volume_usd, platform_fee_usd, commission_rate, commission_amount_usd,
+          status, payout_id, created_at
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?)
+      `).run(
+        "comm_" + crypto.randomUUID(),
+        referrer.wallet_address,
+        referrer.role,
+        commissionType,
+        cleanTrader,
+        params.transactionId,
+        params.volumeUSD,
+        platformFeeUSD,
+        directRate,
+        directCommissionUSD,
+        now
+      );
+      db.prepare(`
+        UPDATE affiliates
+        SET total_referred_volume_usd = total_referred_volume_usd + ?,
+            total_earnings_usd = total_earnings_usd + ?,
+            pending_balance_usd = pending_balance_usd + ?,
+            updated_at = ?
+        WHERE id = ?
+      `).run(params.volumeUSD, directCommissionUSD, directCommissionUSD, now, referrer.id);
+    }
+    const bdmWallet = referrer.bdm_wallet_address || attribution.bdm_wallet_address;
+    if (referrer.role === "partner" && bdmWallet && bdmWallet.toLowerCase() !== cleanTrader) {
+      const bdm = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ? AND role = ? AND status = ?").get(bdmWallet.toLowerCase(), "bdm", "active");
+      if (bdm) {
+        const overrideRate = 0.1;
+        const overrideCommissionUSD = Number((platformFeeUSD * overrideRate).toFixed(4));
+        if (overrideCommissionUSD > 0) {
+          db.prepare(`
+            INSERT INTO affiliate_commissions (
+              id, affiliate_wallet_address, affiliate_role, commission_type,
+              source_partner_wallet, referred_user_wallet, transaction_id,
+              swap_volume_usd, platform_fee_usd, commission_rate, commission_amount_usd,
+              status, payout_id, created_at
+            ) VALUES (?, ?, 'bdm', 'bdm_override', ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?)
+          `).run(
+            "comm_" + crypto.randomUUID(),
+            bdm.wallet_address,
+            referrer.wallet_address,
+            cleanTrader,
+            params.transactionId,
+            params.volumeUSD,
+            platformFeeUSD,
+            overrideRate,
+            overrideCommissionUSD,
+            now
+          );
+          db.prepare(`
+            UPDATE affiliates
+            SET total_referred_volume_usd = total_referred_volume_usd + ?,
+                total_earnings_usd = total_earnings_usd + ?,
+                pending_balance_usd = pending_balance_usd + ?,
+                updated_at = ?
+            WHERE id = ?
+          `).run(params.volumeUSD, overrideCommissionUSD, overrideCommissionUSD, now, bdm.id);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[Affiliate] processAffiliateSwapCommission error:", err);
+  }
+}
+affiliateRouter.get("/status/:walletAddress", (req, res) => {
+  try {
+    const cleanWallet = String(req.params.walletAddress || "").trim().toLowerCase();
+    if (!cleanWallet) {
+      return res.status(400).json({ error: "Wallet address is required" });
+    }
+    const affiliate = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ?").get(cleanWallet);
+    const latestApplication = db.prepare("SELECT * FROM affiliate_applications WHERE LOWER(wallet_address) = ? ORDER BY created_at DESC LIMIT 1").get(cleanWallet);
+    if (affiliate) {
+      return res.json({
+        walletAddress: cleanWallet,
+        isApproved: affiliate.status === "active",
+        status: affiliate.status,
+        role: affiliate.role,
+        // 'partner' | 'bdm'
+        affiliate,
+        application: latestApplication || null
+      });
+    }
+    return res.json({
+      walletAddress: cleanWallet,
+      isApproved: false,
+      status: latestApplication ? latestApplication.status : "none",
+      role: latestApplication ? latestApplication.role : null,
+      affiliate: null,
+      application: latestApplication || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+affiliateRouter.post("/apply", (req, res) => {
+  try {
+    const {
+      role,
+      walletAddress,
+      fullName,
+      email,
+      telegramUsername,
+      twitterLink,
+      youtubeLink,
+      telegramChannelLink,
+      audienceSize,
+      marketingExperience,
+      manageablePartnersCount,
+      message,
+      bdmWalletAddress
+    } = req.body;
+    const cleanRole = role === "bdm" ? "bdm" : "partner";
+    const cleanWallet = String(walletAddress || "").trim().toLowerCase();
+    if (!cleanWallet || !fullName || !email || !telegramUsername || !twitterLink || !telegramChannelLink) {
+      return res.status(400).json({ error: "Please complete all required application fields" });
+    }
+    const existingAffiliate = db.prepare("SELECT id, role, status FROM affiliates WHERE LOWER(wallet_address) = ?").get(cleanWallet);
+    if (existingAffiliate) {
+      return res.status(400).json({
+        error: `This wallet is already registered as an approved ${existingAffiliate.role.toUpperCase()}.`,
+        role: existingAffiliate.role
+      });
+    }
+    const existingPending = db.prepare("SELECT id, role FROM affiliate_applications WHERE LOWER(wallet_address) = ? AND status = ?").get(cleanWallet, "pending");
+    if (existingPending) {
+      return res.status(400).json({
+        error: `An application for this wallet (${existingPending.role.toUpperCase()}) is already pending review.`
+      });
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const appId = "app_" + crypto.randomUUID();
+    db.prepare(`
+      INSERT INTO affiliate_applications (
+        id, role, wallet_address, full_name, email, telegram_username,
+        twitter_link, youtube_link, telegram_channel_link, audience_size,
+        marketing_experience, manageable_partners_count, message, bdm_wallet_address,
+        status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).run(
+      appId,
+      cleanRole,
+      cleanWallet,
+      fullName.trim(),
+      email.trim(),
+      telegramUsername.trim(),
+      twitterLink.trim(),
+      youtubeLink ? String(youtubeLink).trim() : null,
+      telegramChannelLink.trim(),
+      audienceSize ? String(audienceSize).trim() : null,
+      marketingExperience ? String(marketingExperience).trim() : null,
+      manageablePartnersCount ? String(manageablePartnersCount).trim() : null,
+      message ? String(message).trim() : null,
+      bdmWalletAddress ? String(bdmWalletAddress).trim().toLowerCase() : null,
+      now,
+      now
+    );
+    try {
+      db.prepare(`
+        INSERT INTO swap_campaign_events (
+          id, campaign_id, wallet_address, event_name, event_data, created_at
+        ) VALUES (?, 'campaign_genesis_001', ?, ?, ?, ?)
+      `).run(
+        "evt_" + crypto.randomUUID(),
+        cleanWallet,
+        `affiliate_${cleanRole}_applied`,
+        JSON.stringify({ appId, fullName, email, telegramUsername }),
+        now
+      );
+    } catch {
+    }
+    res.json({
+      success: true,
+      applicationId: appId,
+      role: cleanRole,
+      status: "pending",
+      message: `Your ${cleanRole === "bdm" ? "BDM" : "Partner"} application has been submitted and will be reviewed within 24 hours.`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+affiliateRouter.post("/track-ref", (req, res) => {
+  try {
+    const { refWallet, traderWallet } = req.body;
+    if (!refWallet) {
+      return res.status(400).json({ error: "refWallet is required" });
+    }
+    const cleanRef = String(refWallet).trim().toLowerCase();
+    const affiliate = db.prepare("SELECT id, wallet_address, role, status FROM affiliates WHERE LOWER(wallet_address) = ? AND status = ?").get(cleanRef, "active");
+    let bound = false;
+    if (affiliate && traderWallet) {
+      bound = bindAffiliateReferral(String(traderWallet), cleanRef);
+    }
+    res.json({
+      success: true,
+      valid: !!affiliate,
+      referrerRole: affiliate?.role || null,
+      bound
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+affiliateRouter.get("/partner/dashboard/:walletAddress", (req, res) => {
+  try {
+    const cleanWallet = String(req.params.walletAddress || "").trim().toLowerCase();
+    const partner = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ? AND role = ?").get(cleanWallet, "partner");
+    if (!partner) {
+      return res.status(403).json({ error: "Wallet is not an approved Partner" });
+    }
+    const commissions = db.prepare(`
+        SELECT * FROM affiliate_commissions
+        WHERE LOWER(affiliate_wallet_address) = ?
+        ORDER BY created_at DESC
+        LIMIT 100
+      `).all(cleanWallet);
+    const referrals = db.prepare(`
+        SELECT * FROM affiliate_referrals
+        WHERE LOWER(referrer_wallet_address) = ?
+        ORDER BY total_volume_usd DESC, created_at DESC
+        LIMIT 100
+      `).all(cleanWallet);
+    const payouts = db.prepare(`
+        SELECT * FROM affiliate_payouts
+        WHERE LOWER(affiliate_wallet_address) = ?
+        ORDER BY created_at DESC
+        LIMIT 50
+      `).all(cleanWallet);
+    const activeUsers = referrals.length;
+    const referralsThisMonth = referrals.filter((r) => {
+      const created = new Date(r.created_at).getTime();
+      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1e3;
+      return created >= thirtyDaysAgo;
+    }).length;
+    res.json({
+      partner: {
+        walletAddress: partner.wallet_address,
+        fullName: partner.full_name,
+        email: partner.email,
+        telegramUsername: partner.telegram_username,
+        status: partner.status,
+        bdmWalletAddress: partner.bdm_wallet_address,
+        referralLink: `https://novap2p.com/swap?ref=${partner.wallet_address}`,
+        commissionRatePct: 20,
+        // 20% of 0.5% fee
+        effectiveVolumePct: 0.1,
+        // 0.10% of volume
+        createdAt: partner.created_at
+      },
+      stats: {
+        totalEarningsUSD: Number((partner.total_earnings_usd || 0).toFixed(4)),
+        pendingBalanceUSD: Number((partner.pending_balance_usd || 0).toFixed(4)),
+        paidBalanceUSD: Number((partner.paid_balance_usd || 0).toFixed(4)),
+        referredVolumeUSD: Number((partner.total_referred_volume_usd || 0).toFixed(2)),
+        activeUsers,
+        referralsThisMonth,
+        minWithdrawalUSD: 100
+      },
+      commissions: commissions.map((c) => ({
+        id: c.id,
+        date: c.created_at,
+        referredUser: c.referred_user_wallet,
+        swapVolumeUSD: c.swap_volume_usd,
+        platformFeeUSD: c.platform_fee_usd,
+        commissionRatePct: Number((c.commission_rate * 100).toFixed(2)),
+        effectiveVolumePct: Number((c.commission_rate * 0.5).toFixed(2)),
+        commissionAmountUSD: c.commission_amount_usd,
+        status: c.status
+        // 'paid' | 'pending'
+      })),
+      referrals: referrals.map((r) => ({
+        id: r.id,
+        walletAddress: r.referred_wallet_address,
+        totalVolumeUSD: r.total_volume_usd,
+        swapsCount: r.swaps_count,
+        joinedAt: r.created_at,
+        lastSwapAt: r.last_swap_at
+      })),
+      payouts
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+affiliateRouter.get("/bdm/dashboard/:walletAddress", (req, res) => {
+  try {
+    const cleanWallet = String(req.params.walletAddress || "").trim().toLowerCase();
+    const bdm = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ? AND role = ?").get(cleanWallet, "bdm");
+    if (!bdm) {
+      return res.status(403).json({ error: "Wallet is not an approved BDM" });
+    }
+    const managedPartners = db.prepare(`
+        SELECT * FROM affiliates
+        WHERE LOWER(bdm_wallet_address) = ? AND role = 'partner'
+        ORDER BY total_referred_volume_usd DESC, created_at DESC
+      `).all(cleanWallet);
+    const partnerRows = managedPartners.map((p) => {
+      const overrideRow = db.prepare(`
+          SELECT COALESCE(SUM(commission_amount_usd), 0) as total_override
+          FROM affiliate_commissions
+          WHERE LOWER(affiliate_wallet_address) = ?
+            AND commission_type = 'bdm_override'
+            AND LOWER(source_partner_wallet) = ?
+        `).get(cleanWallet, p.wallet_address.toLowerCase());
+      return {
+        id: p.id,
+        walletAddress: p.wallet_address,
+        fullName: p.full_name,
+        telegramUsername: p.telegram_username,
+        referredVolumeUSD: Number((p.total_referred_volume_usd || 0).toFixed(2)),
+        partnerEarningsUSD: Number((p.total_earnings_usd || 0).toFixed(4)),
+        bdmOverrideUSD: Number((overrideRow?.total_override || 0).toFixed(4)),
+        activeUsersCount: p.active_users_count || 0,
+        status: p.status,
+        // 'active' | 'pending_activation' | 'inactive'
+        joinedAt: p.created_at
+      };
+    });
+    const totalManagedVolumeUSD = partnerRows.reduce((sum, p) => sum + p.referredVolumeUSD, 0);
+    const activePartnersCount = partnerRows.filter((p) => p.status === "active").length;
+    const commissions = db.prepare(`
+        SELECT * FROM affiliate_commissions
+        WHERE LOWER(affiliate_wallet_address) = ?
+        ORDER BY created_at DESC
+        LIMIT 100
+      `).all(cleanWallet);
+    const payouts = db.prepare(`
+        SELECT * FROM affiliate_payouts
+        WHERE LOWER(affiliate_wallet_address) = ?
+        ORDER BY created_at DESC
+        LIMIT 50
+      `).all(cleanWallet);
+    res.json({
+      bdm: {
+        walletAddress: bdm.wallet_address,
+        fullName: bdm.full_name,
+        email: bdm.email,
+        telegramUsername: bdm.telegram_username,
+        status: bdm.status,
+        referralLink: `https://novap2p.com/swap?ref=${bdm.wallet_address}`,
+        directCommissionRatePct: 20,
+        // 20% of fee on direct BDM link
+        overrideRatePct: 10,
+        // 10% of fee on managed partners
+        createdAt: bdm.created_at
+      },
+      stats: {
+        totalManagedVolumeUSD: Number((totalManagedVolumeUSD + (bdm.total_referred_volume_usd || 0)).toFixed(2)),
+        partnersOnlyVolumeUSD: Number(totalManagedVolumeUSD.toFixed(2)),
+        totalEarningsUSD: Number((bdm.total_earnings_usd || 0).toFixed(4)),
+        pendingPayoutUSD: Number((bdm.pending_balance_usd || 0).toFixed(4)),
+        paidBalanceUSD: Number((bdm.paid_balance_usd || 0).toFixed(4)),
+        activePartnersCount,
+        totalPartnersCount: partnerRows.length,
+        minWithdrawalUSD: 100
+      },
+      partners: partnerRows,
+      commissions: commissions.map((c) => ({
+        id: c.id,
+        date: c.created_at,
+        commissionType: c.commission_type,
+        sourcePartnerWallet: c.source_partner_wallet,
+        referredUser: c.referred_user_wallet,
+        swapVolumeUSD: c.swap_volume_usd,
+        commissionRatePct: Number((c.commission_rate * 100).toFixed(2)),
+        commissionAmountUSD: c.commission_amount_usd,
+        status: c.status
+      })),
+      payouts
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+affiliateRouter.post("/payout/request", (req, res) => {
+  try {
+    const { walletAddress, payoutAddress, preferredNetwork, preferredToken } = req.body;
+    const cleanWallet = String(walletAddress || "").trim().toLowerCase();
+    if (!cleanWallet || !payoutAddress || !preferredNetwork) {
+      return res.status(400).json({ error: "Wallet address, payout destination, and network are required" });
+    }
+    const affiliate = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ? AND status = ?").get(cleanWallet, "active");
+    if (!affiliate) {
+      return res.status(403).json({ error: "Active approved affiliate account required" });
+    }
+    const availableBalance = Number((affiliate.pending_balance_usd || 0).toFixed(2));
+    if (availableBalance < 100) {
+      return res.status(400).json({
+        error: `Minimum payout is $100.00. Your current pending balance is $${availableBalance.toFixed(2)}.`
+      });
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const payoutId = "affpay_" + crypto.randomUUID();
+    db.prepare(`
+      INSERT INTO affiliate_payouts (
+        id, affiliate_wallet_address, affiliate_role, amount_usd,
+        payout_address, preferred_network, preferred_token,
+        status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).run(
+      payoutId,
+      cleanWallet,
+      affiliate.role,
+      availableBalance,
+      String(payoutAddress).trim(),
+      String(preferredNetwork).trim(),
+      preferredToken ? String(preferredToken).trim() : "USDT",
+      now,
+      now
+    );
+    db.prepare(`
+      UPDATE affiliates
+      SET pending_balance_usd = 0.0, updated_at = ?
+      WHERE id = ?
+    `).run(now, affiliate.id);
+    db.prepare(`
+      UPDATE affiliate_commissions
+      SET payout_id = ?
+      WHERE LOWER(affiliate_wallet_address) = ? AND status = 'pending' AND payout_id IS NULL
+    `).run(payoutId, cleanWallet);
+    res.json({
+      success: true,
+      payoutId,
+      amountUSD: availableBalance,
+      status: "pending",
+      message: "Payout request submitted! Processing takes within 24 hours."
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+affiliateRouter.get("/admin/overview", verifyAffiliateAdmin, (req, res) => {
+  try {
+    const applications = db.prepare("SELECT * FROM affiliate_applications ORDER BY created_at DESC").all();
+    const affiliates = db.prepare("SELECT * FROM affiliates ORDER BY total_referred_volume_usd DESC, created_at DESC").all();
+    const payouts = db.prepare("SELECT * FROM affiliate_payouts ORDER BY created_at DESC").all();
+    res.json({
+      applications,
+      affiliates,
+      payouts
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+affiliateRouter.post("/admin/applications/:id/review", verifyAffiliateAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, assignRole, bdmWalletAddress, adminNotes } = req.body;
+    const appRecord = db.prepare("SELECT * FROM affiliate_applications WHERE id = ?").get(id);
+    if (!appRecord) {
+      return res.status(404).json({ error: "Application not found" });
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    if (action === "reject") {
+      db.prepare(`
+        UPDATE affiliate_applications
+        SET status = 'rejected', admin_notes = ?, reviewed_by = 'admin', reviewed_at = ?, updated_at = ?
+        WHERE id = ?
+      `).run(adminNotes || null, now, now, id);
+      return res.json({ success: true, status: "rejected" });
+    }
+    if (action === "approve") {
+      const targetRole = assignRole === "bdm" || assignRole === "partner" ? assignRole : appRecord.role;
+      const cleanWallet = appRecord.wallet_address.toLowerCase();
+      const mappedBdm = bdmWalletAddress ? String(bdmWalletAddress).trim().toLowerCase() : appRecord.bdm_wallet_address || null;
+      db.prepare(`
+        UPDATE affiliate_applications
+        SET status = 'approved', role = ?, bdm_wallet_address = ?, admin_notes = ?, reviewed_by = 'admin', reviewed_at = ?, updated_at = ?
+        WHERE id = ?
+      `).run(targetRole, mappedBdm, adminNotes || null, now, now, id);
+      const existing = db.prepare("SELECT id FROM affiliates WHERE LOWER(wallet_address) = ?").get(cleanWallet);
+      if (!existing) {
+        db.prepare(`
+          INSERT INTO affiliates (
+            id, wallet_address, role, application_id, full_name, email,
+            telegram_username, bdm_wallet_address, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+        `).run(
+          "aff_" + crypto.randomUUID(),
+          cleanWallet,
+          targetRole,
+          appRecord.id,
+          appRecord.full_name,
+          appRecord.email,
+          appRecord.telegram_username,
+          targetRole === "partner" ? mappedBdm : null,
+          now,
+          now
+        );
+      } else {
+        db.prepare(`
+          UPDATE affiliates
+          SET role = ?, bdm_wallet_address = ?, status = 'active', updated_at = ?
+          WHERE id = ?
+        `).run(targetRole, targetRole === "partner" ? mappedBdm : null, now, existing.id);
+      }
+      return res.json({ success: true, status: "approved", role: targetRole, walletAddress: cleanWallet });
+    }
+    return res.status(400).json({ error: "Invalid action" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+affiliateRouter.post("/admin/affiliates/:walletAddress/update", verifyAffiliateAdmin, (req, res) => {
+  try {
+    const cleanWallet = String(req.params.walletAddress || "").trim().toLowerCase();
+    const { status, bdmWalletAddress } = req.body;
+    const existing = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ?").get(cleanWallet);
+    if (!existing) {
+      return res.status(404).json({ error: "Affiliate not found" });
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const newStatus = status || existing.status;
+    const newBdm = bdmWalletAddress !== void 0 ? bdmWalletAddress ? String(bdmWalletAddress).trim().toLowerCase() : null : existing.bdm_wallet_address;
+    db.prepare(`
+      UPDATE affiliates
+      SET status = ?, bdm_wallet_address = ?, updated_at = ?
+      WHERE id = ?
+    `).run(newStatus, newBdm, now, existing.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+affiliateRouter.post("/admin/payouts/:id/pay", verifyAffiliateAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { txHash, adminNotes } = req.body;
+    const payout = db.prepare("SELECT * FROM affiliate_payouts WHERE id = ?").get(id);
+    if (!payout) {
+      return res.status(404).json({ error: "Payout not found" });
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    db.prepare(`
+      UPDATE affiliate_payouts
+      SET status = 'paid', tx_hash = ?, admin_notes = ?, paid_at = ?, updated_at = ?
+      WHERE id = ?
+    `).run(txHash || null, adminNotes || null, now, now, id);
+    db.prepare(`
+      UPDATE affiliates
+      SET paid_balance_usd = paid_balance_usd + ?, updated_at = ?
+      WHERE LOWER(wallet_address) = ?
+    `).run(payout.amount_usd, now, payout.affiliate_wallet_address.toLowerCase());
+    db.prepare(`
+      UPDATE affiliate_commissions
+      SET status = 'paid'
+      WHERE payout_id = ?
+    `).run(id);
+    res.json({ success: true, status: "paid" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // server/api.ts
 import { ethers } from "ethers";
-import crypto from "crypto";
-var apiRouter = Router();
-var ADMIN_KEY = process.env.SWAP_ADMIN_KEY || "nova-genesis-admin-2026";
+import crypto2 from "crypto";
+var apiRouter = Router2();
+var ADMIN_KEY2 = process.env.SWAP_ADMIN_KEY || "nova-genesis-admin-2026";
 var ENABLED_CHAINS = [1, 56, 137, 42161, 10, 8453];
 var pendingNonces = /* @__PURE__ */ new Map();
 function getOrCreateNonce(walletAddress) {
@@ -408,7 +1148,7 @@ function getOrCreateNonce(walletAddress) {
   if (existing && now - existing.timestamp < 10 * 60 * 1e3) {
     return existing.nonce;
   }
-  const nonce = crypto.randomBytes(16).toString("hex");
+  const nonce = crypto2.randomBytes(16).toString("hex");
   pendingNonces.set(normalized, { nonce, timestamp: now });
   return nonce;
 }
@@ -418,7 +1158,7 @@ function verifyAdmin(req, res, next) {
     return res.status(401).json({ error: "Admin authentication required" });
   }
   const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
-  if (token !== ADMIN_KEY) {
+  if (token !== ADMIN_KEY2) {
     return res.status(403).json({ error: "Invalid admin credentials" });
   }
   next();
@@ -497,7 +1237,7 @@ apiRouter.post("/track-referral", (req, res) => {
       INSERT INTO swap_campaign_events (id, campaign_id, user_id, event_name, event_data, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
-      "evt_" + crypto.randomUUID(),
+      "evt_" + crypto2.randomUUID(),
       "campaign_genesis_001",
       referrer ? referrer.id : null,
       "referral_captured",
@@ -525,7 +1265,7 @@ apiRouter.post("/events", (req, res) => {
       INSERT INTO swap_campaign_events (id, campaign_id, wallet_address, event_name, event_data, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
-      "evt_" + crypto.randomUUID(),
+      "evt_" + crypto2.randomUUID(),
       "campaign_genesis_001",
       walletAddress ? String(walletAddress).toLowerCase() : null,
       eventName,
@@ -577,7 +1317,7 @@ apiRouter.post("/auth/verify", async (req, res) => {
     if (!user) {
       let newRefCode = "";
       while (true) {
-        newRefCode = "NP" + crypto.randomBytes(3).toString("hex").toUpperCase();
+        newRefCode = "NP" + crypto2.randomBytes(3).toString("hex").toUpperCase();
         const exists = db.prepare("SELECT id FROM swap_campaign_users WHERE referral_code = ?").get(newRefCode);
         if (!exists) break;
       }
@@ -588,8 +1328,9 @@ apiRouter.post("/auth/verify", async (req, res) => {
         if (referrer && referrer.wallet_address.toLowerCase() !== normalizedAddress) {
           referredByUserId = referrer.id;
         }
+        bindAffiliateReferral(normalizedAddress, String(refCode));
       }
-      const userId = "usr_" + crypto.randomUUID();
+      const userId = "usr_" + crypto2.randomUUID();
       db.prepare(`
         INSERT INTO swap_campaign_users (
           id, campaign_id, wallet_address, chain_id, signature, verified_at,
@@ -619,7 +1360,7 @@ apiRouter.post("/auth/verify", async (req, res) => {
             visitor_ip, status, qualifying_volume_usd, reward_amount_usd, created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          "ref_" + crypto.randomUUID(),
+          "ref_" + crypto2.randomUUID(),
           campaignId,
           referredByUserId,
           userId,
@@ -644,7 +1385,7 @@ apiRouter.post("/auth/verify", async (req, res) => {
     db.prepare(`
       INSERT INTO swap_campaign_events (id, campaign_id, user_id, wallet_address, event_name, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("evt_" + crypto.randomUUID(), campaignId, user.id, normalizedAddress, "wallet_connected", String(ip || ""), now);
+    `).run("evt_" + crypto2.randomUUID(), campaignId, user.id, normalizedAddress, "wallet_connected", String(ip || ""), now);
     res.json({
       success: true,
       user: {
@@ -673,7 +1414,7 @@ function recordSwapTransactionInternal(params) {
     return { success: false, newlyUnlocked: [], belowMin: true };
   }
   const now = params.verifiedAt || (/* @__PURE__ */ new Date()).toISOString();
-  const txId = "tx_" + crypto.randomUUID();
+  const txId = "tx_" + crypto2.randomUUID();
   db.prepare(`
     INSERT INTO swap_transactions (
       id, campaign_id, user_id, wallet_address, chain_id, tx_hash,
@@ -716,7 +1457,7 @@ function recordSwapTransactionInternal(params) {
     const cashbackRate = (campaign.cashback_percentage || 5) / 100;
     const creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
     if (creditedCashbackUSD > 0) {
-      const cbId = "cb_" + crypto.randomUUID();
+      const cbId = "cb_" + crypto2.randomUUID();
       db.prepare(`
         INSERT INTO swap_cashback_ledger (
           id, campaign_id, user_id, wallet_address, transaction_id,
@@ -735,7 +1476,7 @@ function recordSwapTransactionInternal(params) {
         creditedCashbackUSD,
         now
       );
-      const cbRewardId = "rwd_cb_" + crypto.randomUUID();
+      const cbRewardId = "rwd_cb_" + crypto2.randomUUID();
       db.prepare(`
         INSERT INTO swap_rewards (
           id, campaign_id, user_id, milestone_id, reward_type,
@@ -755,7 +1496,7 @@ function recordSwapTransactionInternal(params) {
         SELECT id FROM swap_rewards WHERE user_id = ? AND milestone_id = ?
       `).get(params.userId, m.id);
       if (!existingReward) {
-        const rewardId = "rwd_" + crypto.randomUUID();
+        const rewardId = "rwd_" + crypto2.randomUUID();
         db.prepare(`
           INSERT INTO swap_rewards (
             id, campaign_id, user_id, milestone_id, reward_type,
@@ -789,7 +1530,7 @@ function recordSwapTransactionInternal(params) {
           SET status = 'qualified', qualifying_volume_usd = ?, reward_amount_usd = ?, qualified_at = ?
           WHERE id = ?
         `).run(newTotalVolume, refRewardAmount, now, referral.id);
-        const refRewardId = "rwd_ref_" + crypto.randomUUID();
+        const refRewardId = "rwd_ref_" + crypto2.randomUUID();
         db.prepare(`
           INSERT INTO swap_rewards (
             id, campaign_id, user_id, milestone_id, reward_type,
@@ -799,6 +1540,12 @@ function recordSwapTransactionInternal(params) {
       }
     }
   }
+  processAffiliateSwapCommission({
+    traderWallet: params.normalizedAddress,
+    transactionId: txId,
+    volumeUSD: params.volumeUSD,
+    verifiedAt: now
+  });
   return { success: true, newlyUnlocked, txId };
 }
 var userSyncCache = /* @__PURE__ */ new Map();
@@ -813,11 +1560,11 @@ async function syncUserTransfersFromLiFi(walletAddress, campaignId = "campaign_g
     if (!user) {
       let newRefCode = "";
       while (true) {
-        newRefCode = "NOVA" + crypto.randomBytes(3).toString("hex").toUpperCase();
+        newRefCode = "NOVA" + crypto2.randomBytes(3).toString("hex").toUpperCase();
         const exists = db.prepare("SELECT id FROM swap_campaign_users WHERE referral_code = ?").get(newRefCode);
         if (!exists) break;
       }
-      const userId = "usr_" + crypto.randomUUID();
+      const userId = "usr_" + crypto2.randomUUID();
       const isoNow = (/* @__PURE__ */ new Date()).toISOString();
       db.prepare(`
         INSERT INTO swap_campaign_users (
@@ -900,11 +1647,11 @@ apiRouter.get("/user/:walletAddress", async (req, res) => {
     if (!user) {
       let newRefCode = "";
       while (true) {
-        newRefCode = "NOVA" + crypto.randomBytes(3).toString("hex").toUpperCase();
+        newRefCode = "NOVA" + crypto2.randomBytes(3).toString("hex").toUpperCase();
         const exists = db.prepare("SELECT id FROM swap_campaign_users WHERE referral_code = ?").get(newRefCode);
         if (!exists) break;
       }
-      const userId = "usr_" + crypto.randomUUID();
+      const userId = "usr_" + crypto2.randomUUID();
       const now = (/* @__PURE__ */ new Date()).toISOString();
       db.prepare(`
         INSERT INTO swap_campaign_users (
@@ -1135,11 +1882,11 @@ apiRouter.post("/submit-transaction", async (req, res) => {
     if (!user) {
       let newRefCode = "";
       while (true) {
-        newRefCode = "NOVA" + crypto.randomBytes(3).toString("hex").toUpperCase();
+        newRefCode = "NOVA" + crypto2.randomBytes(3).toString("hex").toUpperCase();
         const exists = db.prepare("SELECT id FROM swap_campaign_users WHERE referral_code = ?").get(newRefCode);
         if (!exists) break;
       }
-      const userId = "usr_" + crypto.randomUUID();
+      const userId = "usr_" + crypto2.randomUUID();
       const now2 = (/* @__PURE__ */ new Date()).toISOString();
       db.prepare(`
         INSERT INTO swap_campaign_users (
@@ -1243,7 +1990,7 @@ apiRouter.post("/rewards/request", async (req, res) => {
       return res.status(400).json({ error: "You already have an active claim under review. Please wait for admin approval before submitting another claim." });
     }
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const claimId = "clm_" + crypto.randomUUID();
+    const claimId = "clm_" + crypto2.randomUUID();
     if (rewardId && rewardId !== "threshold_500" && rewardId !== "accumulated_rewards") {
       const reward = db.prepare("SELECT * FROM swap_rewards WHERE id = ? AND user_id = ?").get(rewardId, user.id);
       if (!reward) {
@@ -1367,10 +2114,10 @@ apiRouter.post("/rewards/request", async (req, res) => {
 });
 apiRouter.post("/admin/login", (req, res) => {
   const { adminKey } = req.body;
-  if (!adminKey || adminKey !== ADMIN_KEY) {
+  if (!adminKey || adminKey !== ADMIN_KEY2) {
     return res.status(403).json({ error: "Invalid admin passkey" });
   }
-  res.json({ success: true, token: ADMIN_KEY });
+  res.json({ success: true, token: ADMIN_KEY2 });
 });
 apiRouter.get("/admin/overview", verifyAdmin, (req, res) => {
   try {
@@ -1497,7 +2244,7 @@ apiRouter.put("/admin/campaign", verifyAdmin, (req, res) => {
     db.prepare(`
       INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
       VALUES (?, 'admin', 'update_campaign_settings', 'campaign', ?, ?, ?, ?)
-    `).run("log_" + crypto.randomUUID(), campaignId, JSON.stringify(req.body), String(req.ip || ""), now);
+    `).run("log_" + crypto2.randomUUID(), campaignId, JSON.stringify(req.body), String(req.ip || ""), now);
     res.json({ success: true, message: "Campaign settings updated successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1530,7 +2277,7 @@ apiRouter.post("/admin/milestones", verifyAdmin, (req, res) => {
         id
       );
     } else {
-      const newId = "ms_" + crypto.randomUUID();
+      const newId = "ms_" + crypto2.randomUUID();
       db.prepare(`
         INSERT INTO swap_campaign_milestones (
           id, campaign_id, milestone_number, title, target_volume_usd,
@@ -1632,7 +2379,7 @@ apiRouter.post("/admin/claims/:id/review", verifyAdmin, (req, res) => {
         INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
         VALUES (?, 'admin', ?, 'claim', ?, ?, ?, ?)
       `).run(
-        "log_" + crypto.randomUUID(),
+        "log_" + crypto2.randomUUID(),
         `claim_${action}`,
         claim.id,
         JSON.stringify({ action, rejectionReason, adminNotes }),
@@ -1660,7 +2407,7 @@ apiRouter.post("/admin/claims/:id/pay", verifyAdmin, (req, res) => {
       return res.status(400).json({ error: "Claim has already been marked as paid" });
     }
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const payoutId = "pay_" + crypto.randomUUID();
+    const payoutId = "pay_" + crypto2.randomUUID();
     db.transaction(() => {
       db.prepare(`
         INSERT INTO swap_reward_payouts (
@@ -1692,7 +2439,7 @@ apiRouter.post("/admin/claims/:id/pay", verifyAdmin, (req, res) => {
         INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
         VALUES (?, 'admin', 'record_payout', 'payout', ?, ?, ?, ?)
       `).run(
-        "log_" + crypto.randomUUID(),
+        "log_" + crypto2.randomUUID(),
         payoutId,
         JSON.stringify({ claimId: claim.id, amountUSD: claim.requested_amount_usd, payoutTxHash, payoutNetwork }),
         String(req.ip || ""),
@@ -1797,6 +2544,7 @@ apiRouter.get("/admin/export/:type", verifyAdmin, (req, res) => {
 var apiApp = express();
 apiApp.use(express.json());
 apiApp.use("/swap", apiRouter);
+apiApp.use("/affiliate", affiliateRouter);
 var index_default = apiApp;
 export {
   apiApp,

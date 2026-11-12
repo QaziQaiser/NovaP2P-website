@@ -23,6 +23,21 @@ import { NovaSwapSection } from './components/swap/NovaSwapSection';
 import { swapCampaignApi, CampaignData, MilestoneItem, UserDashboardData } from './services/swapCampaignApi';
 import logoImg from './assets/logo.png';
 import promotionalBannerImg from './assets/images/promotional-banner.jpeg';
+import { SwapPage } from './pages/SwapPage';
+import { BecomePartnerPage } from './pages/affiliate/BecomePartnerPage';
+import { BecomeBdmPage } from './pages/affiliate/BecomeBdmPage';
+import { PartnerDashboardPage } from './pages/affiliate/PartnerDashboardPage';
+import { BdmDashboardPage } from './pages/affiliate/BdmDashboardPage';
+import {
+  HowSwapWorksPage,
+  SupportedChainsPage,
+  SwapFeesPage,
+} from './pages/info/SwapInfoPages';
+import {
+  PartnerOverviewPage,
+  CommissionStructurePage,
+  PartnerFaqPage,
+} from './pages/info/PartnerInfoPages';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -44,6 +59,7 @@ const Navbar = () => {
     { name: 'About Us', href: '/about' },
     { name: 'Merchant', href: '/merchant' },
     { name: 'Fee Structure', href: '/fee-structure' },
+    { name: 'Become a Partner', href: '/become-partner' },
     { name: 'Contact Us', href: '/contact' },
     { name: 'FAQ', href: '/#faq' },
   ];
@@ -53,7 +69,7 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center">
           <div className="flex items-center">
-            <Link to="/" className="text-2xl font-bold text-primary flex items-center gap-2.5 group">
+            <Link to="/" className="text-2xl font-bold text-primary flex items-center gap-2.5 group shrink-0">
               <img 
                 src={logoImg} 
                 alt="NovaP2P" 
@@ -63,13 +79,13 @@ const Navbar = () => {
             </Link>
           </div>
           
-          <div className="hidden md:flex items-center space-x-8">
+          <div className="hidden lg:flex items-center space-x-5 xl:space-x-7">
             {navLinks.map((link) => (
               link.href.startsWith('/') && !link.href.startsWith('/#') ? (
                 <Link
                   key={link.name}
                   to={link.href}
-                  className="text-gray-600 hover:text-primary font-medium transition-colors"
+                  className="text-gray-600 hover:text-primary font-medium transition-colors text-sm xl:text-[15px] whitespace-nowrap"
                 >
                   {link.name}
                 </Link>
@@ -85,7 +101,7 @@ const Navbar = () => {
                       window.history.pushState(null, '', link.href);
                     }
                   }}
-                  className="text-gray-600 hover:text-primary font-medium transition-colors"
+                  className="text-gray-600 hover:text-primary font-medium transition-colors text-sm xl:text-[15px] whitespace-nowrap"
                 >
                   {link.name}
                 </a>
@@ -93,13 +109,13 @@ const Navbar = () => {
             ))}
             <a 
               href="https://app.novap2p.com/register" 
-              className="bg-primary hover:bg-primary-dark text-white px-6 py-2.5 rounded-full font-medium transition-colors shadow-lg shadow-primary/30"
+              className="bg-primary hover:bg-primary-dark text-white px-5 xl:px-6 py-2.5 rounded-full font-medium transition-colors shadow-lg shadow-primary/30 text-sm whitespace-nowrap shrink-0"
             >
               Sign In / Sign Up
             </a>
           </div>
 
-          <div className="md:hidden flex items-center">
+          <div className="lg:hidden flex items-center">
             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-gray-600">
               {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
@@ -114,7 +130,7 @@ const Navbar = () => {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-white border-t border-gray-100 overflow-hidden"
+            className="lg:hidden bg-white border-t border-gray-100 overflow-hidden"
           >
             <div className="px-4 pt-2 pb-6 space-y-1 shadow-lg">
               {navLinks.map((link) => (
@@ -965,57 +981,23 @@ const Footer = () => {
   return (
     <footer className="bg-gray-50 pt-16 pb-8 border-t border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-8 lg:gap-8 mb-12">
-          <div className="lg:col-span-3">
-            <Link to="/" className="text-2xl font-bold text-primary flex items-center gap-2.5 mb-4 group">
-              <img 
-                src={logoImg} 
-                alt="NovaP2P" 
-                className="w-8 h-8 sm:w-9 sm:h-9 object-contain drop-shadow-sm transition-transform group-hover:scale-105" 
-              />
-              <span className="tracking-tight">NovaP2P</span>
-            </Link>
-            <p className="text-gray-500 max-w-sm mb-6 text-sm">
-              A next-generation peer-to-peer crypto trading platform designed for simplicity, security, and speed.
-            </p>
-          </div>
-          
-          <div className="lg:col-span-2">
-            <h4 className="font-bold text-gray-900 mb-4">Quick Links</h4>
-            <ul className="space-y-2 text-sm">
-              <li><a href="/#home" className="text-gray-500 hover:text-primary transition-colors">Home</a></li>
-              <li><Link to="/about" className="text-gray-500 hover:text-primary transition-colors">About Us</Link></li>
-              <li><Link to="/contact" className="text-gray-500 hover:text-primary transition-colors">Contact Us</Link></li>
-              <li><a href="/#features" className="text-gray-500 hover:text-primary transition-colors">Features</a></li>
-              <li><Link to="/merchant" className="text-gray-500 hover:text-primary transition-colors">Apply for Merchant</Link></li>
-              <li><Link to="/risk-disclosure" className="text-gray-500 hover:text-primary transition-colors">Risk Disclosure</Link></li>
-            </ul>
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 mb-12">
+          <div className="lg:col-span-3 space-y-5">
+            <div>
+              <Link to="/" className="text-2xl font-bold text-primary flex items-center gap-2.5 mb-4 group">
+                <img 
+                  src={logoImg} 
+                  alt="NovaP2P" 
+                  className="w-8 h-8 sm:w-9 sm:h-9 object-contain drop-shadow-sm transition-transform group-hover:scale-105" 
+                />
+                <span className="tracking-tight">NovaP2P</span>
+              </Link>
+              <p className="text-gray-500 max-w-sm text-sm">
+                A next-generation peer-to-peer crypto trading platform designed for simplicity, security, and speed.
+              </p>
+            </div>
 
-          <div className="lg:col-span-2">
-            <h4 className="font-bold text-gray-900 mb-4">Help & Support</h4>
-            <ul className="space-y-2 text-sm">
-              <li><Link to="/help-center" className="text-gray-500 hover:text-primary transition-colors">Help Center/ FAQs</Link></li>
-              <li><Link to="/contact-support" className="text-gray-500 hover:text-primary transition-colors">Contact Support</Link></li>
-              <li><Link to="/dispute-support" className="text-gray-500 hover:text-primary transition-colors">Dispute Support</Link></li>
-              <li><Link to="/report-issue" className="text-gray-500 hover:text-primary transition-colors">Report an issue</Link></li>
-            </ul>
-          </div>
-          
-          <div className="lg:col-span-2">
-            <h4 className="font-bold text-gray-900 mb-4">Legal</h4>
-            <ul className="space-y-2 text-sm">
-              <li><Link to="/privacy-policy" className="text-gray-500 hover:text-primary transition-colors">Privacy Policy</Link></li>
-              <li><Link to="/terms-of-service" className="text-gray-500 hover:text-primary transition-colors">Terms of Service</Link></li>
-              <li><Link to="/cookie-policy" className="text-gray-500 hover:text-primary transition-colors">Cookie Policy</Link></li>
-              <li><Link to="/aml-kyc-policy" className="text-gray-500 hover:text-primary transition-colors">AML & KYC Policy</Link></li>
-              <li><Link to="/fee-structure" className="text-gray-500 hover:text-primary transition-colors">Fee Structure</Link></li>
-            </ul>
-          </div>
-
-          <div className="lg:col-span-3">
-            <h4 className="font-bold text-gray-900 mb-4">Follow Us</h4>
-            <div className="mb-6 relative min-h-[52px]">
+            <div className="relative min-h-[48px]">
               <AnimatePresence mode="wait">
                 {status === 'success' ? (
                   <motion.div 
@@ -1061,15 +1043,15 @@ const Footer = () => {
                 )}
               </AnimatePresence>
             </div>
-            <div className="space-y-4 text-sm text-gray-600">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0">
-                  <Mail size={14} />
-                </div>
-                <span>support@novap2p.com</span>
+
+            <div className="flex items-center gap-3 text-sm text-gray-600">
+              <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-primary shrink-0">
+                <Mail size={14} />
               </div>
+              <span>support@novap2p.com</span>
             </div>
-            <div className="flex space-x-3 mt-6">
+
+            <div className="flex space-x-3">
               <a href="https://facebook.com/novap2p" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
                 <Facebook size={18} />
               </a>
@@ -1082,6 +1064,63 @@ const Footer = () => {
               <a href="https://whatsapp.com/channel/0029VbCZrCdE50UZsxiXWE37" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-colors">
                 <MessageCircle size={18} />
               </a>
+            </div>
+          </div>
+
+          <div className="lg:col-span-9 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6">
+            <div>
+              <h4 className="font-bold text-gray-900 mb-4">Nova Swap</h4>
+              <ul className="space-y-2 text-sm">
+                <li><Link to="/swap" className="text-gray-500 hover:text-primary transition-colors">Swap Tokens</Link></li>
+                <li><Link to="/how-swap-works" className="text-gray-500 hover:text-primary transition-colors">How Swap Works</Link></li>
+                <li><Link to="/supported-chains" className="text-gray-500 hover:text-primary transition-colors">Supported Chains</Link></li>
+                <li><Link to="/swap-fees" className="text-gray-500 hover:text-primary transition-colors">Swap Fees</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-gray-900 mb-4">Partners</h4>
+              <ul className="space-y-2 text-sm">
+                <li><Link to="/become-partner" className="text-gray-500 hover:text-primary transition-colors">Become a Partner</Link></li>
+                <li><Link to="/become-bdm" className="text-gray-500 hover:text-primary transition-colors">Become a BDM</Link></li>
+                <li><Link to="/partner-overview" className="text-gray-500 hover:text-primary transition-colors">Partner Program Overview</Link></li>
+                <li><Link to="/commission" className="text-gray-500 hover:text-primary transition-colors">Commission Structure</Link></li>
+                <li><Link to="/partner-dashboard" className="text-gray-500 hover:text-primary transition-colors">Partner Dashboard</Link></li>
+                <li><Link to="/partner-faq" className="text-gray-500 hover:text-primary transition-colors">Partner FAQ</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-gray-900 mb-4">Quick Links</h4>
+              <ul className="space-y-2 text-sm">
+                <li><a href="/#home" className="text-gray-500 hover:text-primary transition-colors">Home</a></li>
+                <li><Link to="/about" className="text-gray-500 hover:text-primary transition-colors">About Us</Link></li>
+                <li><Link to="/contact" className="text-gray-500 hover:text-primary transition-colors">Contact Us</Link></li>
+                <li><a href="/#features" className="text-gray-500 hover:text-primary transition-colors">Features</a></li>
+                <li><Link to="/merchant" className="text-gray-500 hover:text-primary transition-colors">Apply for Merchant</Link></li>
+                <li><Link to="/risk-disclosure" className="text-gray-500 hover:text-primary transition-colors">Risk Disclosure</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-gray-900 mb-4">Help & Support</h4>
+              <ul className="space-y-2 text-sm">
+                <li><Link to="/help-center" className="text-gray-500 hover:text-primary transition-colors">Help Center/ FAQs</Link></li>
+                <li><Link to="/contact-support" className="text-gray-500 hover:text-primary transition-colors">Contact Support</Link></li>
+                <li><Link to="/dispute-support" className="text-gray-500 hover:text-primary transition-colors">Dispute Support</Link></li>
+                <li><Link to="/report-issue" className="text-gray-500 hover:text-primary transition-colors">Report an issue</Link></li>
+              </ul>
+            </div>
+            
+            <div>
+              <h4 className="font-bold text-gray-900 mb-4">Legal</h4>
+              <ul className="space-y-2 text-sm">
+                <li><Link to="/privacy-policy" className="text-gray-500 hover:text-primary transition-colors">Privacy Policy</Link></li>
+                <li><Link to="/terms-of-service" className="text-gray-500 hover:text-primary transition-colors">Terms of Service</Link></li>
+                <li><Link to="/cookie-policy" className="text-gray-500 hover:text-primary transition-colors">Cookie Policy</Link></li>
+                <li><Link to="/aml-kyc-policy" className="text-gray-500 hover:text-primary transition-colors">AML & KYC Policy</Link></li>
+                <li><Link to="/fee-structure" className="text-gray-500 hover:text-primary transition-colors">Fee Structure</Link></li>
+              </ul>
             </div>
           </div>
         </div>
@@ -2996,15 +3035,77 @@ const AnalyticsTracker = () => {
   const location = useLocation();
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).gtag) {
-      (window as any).gtag('config', 'G-N8MKBS9JK3', {
-        page_path: location.pathname + location.search,
-        page_title: document.title,
-      });
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(location.search);
+      const ref = params.get('ref');
+      if (ref) {
+        localStorage.setItem('nova_swap_ref_code', ref.trim().toUpperCase());
+        localStorage.setItem('nova_affiliate_ref_wallet', ref.trim().toLowerCase());
+      }
+      if ((window as any).gtag) {
+        (window as any).gtag('config', 'G-N8MKBS9JK3', {
+          page_path: location.pathname + location.search,
+          page_title: document.title,
+        });
+      }
     }
   }, [location]);
 
   return null;
+};
+
+const AppShell = () => {
+  const location = useLocation();
+  const isStandaloneDarkPortal =
+    location.pathname.startsWith('/partner-dashboard') ||
+    location.pathname.startsWith('/bdm-dashboard') ||
+    location.pathname.startsWith('/swap-admin');
+
+  return (
+    <div
+      className={
+        isStandaloneDarkPortal
+          ? 'min-h-screen bg-[#060c14] font-sans'
+          : 'min-h-screen bg-white font-sans selection:bg-primary/20 selection:text-primary'
+      }
+    >
+      {!isStandaloneDarkPortal && <Navbar />}
+      {!isStandaloneDarkPortal && <PromotionalPopup />}
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/swap" element={<SwapPage />} />
+        <Route path="/how-swap-works" element={<HowSwapWorksPage />} />
+        <Route path="/supported-chains" element={<SupportedChainsPage />} />
+        <Route path="/swap-fees" element={<SwapFeesPage />} />
+        <Route path="/become-partner" element={<BecomePartnerPage />} />
+        <Route path="/become-bdm" element={<BecomeBdmPage />} />
+        <Route path="/partner-overview" element={<PartnerOverviewPage />} />
+        <Route path="/commission" element={<CommissionStructurePage />} />
+        <Route path="/partner-dashboard" element={<PartnerDashboardPage />} />
+        <Route path="/bdm-dashboard" element={<BdmDashboardPage />} />
+        <Route path="/partner-faq" element={<PartnerFaqPage />} />
+        <Route path="/about" element={<AboutUs />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/merchant" element={<Merchant />} />
+        <Route path="/risk-disclosure" element={<RiskDisclosure />} />
+        <Route path="/help-center" element={<HelpCenter />} />
+        <Route path="/faq" element={<HelpCenter />} />
+        <Route path="/help" element={<HelpCenter />} />
+        <Route path="/contact-support" element={<ContactSupport />} />
+        <Route path="/support" element={<ContactSupport />} />
+        <Route path="/dispute-support" element={<DisputeSupport />} />
+        <Route path="/report-issue" element={<ReportIssue />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/terms-of-service" element={<TermsOfService />} />
+        <Route path="/cookie-policy" element={<CookiePolicy />} />
+        <Route path="/aml-kyc-policy" element={<AmlKycPolicy />} />
+        <Route path="/fee-structure" element={<FeeStructure />} />
+        <Route path="/swap-admin" element={<SwapAdminDashboard />} />
+        <Route path="*" element={<Home />} />
+      </Routes>
+      {!isStandaloneDarkPortal && <Footer />}
+    </div>
+  );
 };
 
 export default function App() {
@@ -3012,32 +3113,7 @@ export default function App() {
     <WalletProvider>
       <BrowserRouter>
         <AnalyticsTracker />
-        <div className="min-h-screen bg-white font-sans selection:bg-primary/20 selection:text-primary">
-          <Navbar />
-          <PromotionalPopup />
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/about" element={<AboutUs />} />
-            <Route path="/contact" element={<Contact />} />
-            <Route path="/merchant" element={<Merchant />} />
-            <Route path="/risk-disclosure" element={<RiskDisclosure />} />
-            <Route path="/help-center" element={<HelpCenter />} />
-            <Route path="/faq" element={<HelpCenter />} />
-            <Route path="/help" element={<HelpCenter />} />
-            <Route path="/contact-support" element={<ContactSupport />} />
-            <Route path="/support" element={<ContactSupport />} />
-            <Route path="/dispute-support" element={<DisputeSupport />} />
-            <Route path="/report-issue" element={<ReportIssue />} />
-            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-            <Route path="/terms-of-service" element={<TermsOfService />} />
-            <Route path="/cookie-policy" element={<CookiePolicy />} />
-            <Route path="/aml-kyc-policy" element={<AmlKycPolicy />} />
-            <Route path="/fee-structure" element={<FeeStructure />} />
-            <Route path="/swap-admin" element={<SwapAdminDashboard />} />
-            <Route path="*" element={<Home />} />
-          </Routes>
-          <Footer />
-        </div>
+        <AppShell />
       </BrowserRouter>
     </WalletProvider>
   );

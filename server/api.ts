@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { db } from './db.ts';
 import { sendAdminClaimNotification } from './notifications.ts';
+import { bindAffiliateReferral, processAffiliateSwapCommission } from './affiliateApi.ts';
 import { ethers } from 'ethers';
 import crypto from 'crypto';
 
@@ -240,6 +241,8 @@ apiRouter.post('/auth/verify', async (req: Request, res: Response) => {
         if (referrer && referrer.wallet_address.toLowerCase() !== normalizedAddress) {
           referredByUserId = referrer.id;
         }
+        // Also attribute Partner/BDM affiliate wallet if applicable
+        bindAffiliateReferral(normalizedAddress, String(refCode));
       }
 
       const userId = 'usr_' + crypto.randomUUID();
@@ -500,6 +503,14 @@ export function recordSwapTransactionInternal(params: {
       }
     }
   }
+
+  // 6. Credit Partner / BDM Affiliate Commissions (20% Partner + 10% BDM Override)
+  processAffiliateSwapCommission({
+    traderWallet: params.normalizedAddress,
+    transactionId: txId,
+    volumeUSD: params.volumeUSD,
+    verifiedAt: now,
+  });
 
   return { success: true, newlyUnlocked, txId };
 }
