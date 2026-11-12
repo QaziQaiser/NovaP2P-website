@@ -107,7 +107,7 @@ export const BdmApplicationForm: React.FC<BdmApplicationFormProps> = ({
         <p className="text-gray-600 max-w-md mx-auto mb-4">
           Thank you for applying as a Business Development Manager (BDM). Our leadership team will review your profile and approve your wallet within 24 hours.
         </p>
-        <div className="inline-block bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-mono text-gray-700">
+        <div className="inline-block bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-mono text-gray-700 break-all max-w-full">
           Wallet: {walletAddress}
         </div>
       </div>
@@ -287,3 +287,4 @@ export const BdmApplicationForm: React.FC<BdmApplicationFormProps> = ({
     </form>
   );
 };
+

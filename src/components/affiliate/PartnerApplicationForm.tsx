@@ -104,7 +104,7 @@ export const PartnerApplicationForm: React.FC<PartnerApplicationFormProps> = ({
         <p className="text-gray-600 max-w-md mx-auto mb-4">
           Thank you for applying to the Nova Swap Partner Program. Our team will review your channels and approve your wallet within 24 hours.
         </p>
-        <div className="inline-block bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-mono text-gray-700">
+        <div className="inline-block bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-mono text-gray-700 break-all max-w-full">
           Wallet: {walletAddress}
         </div>
       </div>
@@ -273,3 +273,4 @@ export const PartnerApplicationForm: React.FC<PartnerApplicationFormProps> = ({
     </form>
   );
 };
+

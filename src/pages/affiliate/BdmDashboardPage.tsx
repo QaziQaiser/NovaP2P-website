@@ -276,9 +276,22 @@ export const BdmDashboardPage: React.FC = () => {
                 </button>
               ))}
             </div>
-            <Link to="/" className="py-2.5 px-4 text-xs text-slate-400 flex items-center gap-2">
-              <ArrowLeft size={14} /> Back to Main Site
-            </Link>
+            <div className="pt-3 border-t border-slate-800 space-y-1">
+              <Link to="/" className="py-2.5 px-4 text-xs text-slate-400 hover:text-white flex items-center gap-2">
+                <ArrowLeft size={14} /> Back to Main Site
+              </Link>
+              {isConnected && account && (
+                <button
+                  onClick={() => {
+                    disconnectWallet();
+                    setMobileSidebarOpen(false);
+                  }}
+                  className="w-full py-2.5 px-4 text-xs text-red-400 hover:bg-red-500/10 rounded-xl flex items-center gap-2 cursor-pointer"
+                >
+                  <LogOut size={14} /> Disconnect Wallet
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -291,6 +304,7 @@ export const BdmDashboardPage: React.FC = () => {
             <button
               onClick={() => setMobileSidebarOpen(true)}
               className="lg:hidden p-2 rounded-lg text-slate-300 hover:bg-slate-800"
+              aria-label="Open menu"
             >
               <Menu size={20} />
             </button>
@@ -301,9 +315,16 @@ export const BdmDashboardPage: React.FC = () => {
 
           <div className="flex items-center gap-3">
             {isConnected && account ? (
-              <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-[#0e1726] border border-slate-700/80">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0e1726] border border-slate-700/80">
                 <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
                 <span className="text-xs font-mono text-slate-200">{formatWallet(account)}</span>
+                <button
+                  onClick={disconnectWallet}
+                  className="text-slate-400 hover:text-red-400 transition-colors ml-1 cursor-pointer lg:hidden"
+                  title="Disconnect Wallet"
+                >
+                  <LogOut size={13} />
+                </button>
               </div>
             ) : (
               <Link to="/become-bdm" className="text-xs sm:text-sm font-semibold text-teal-400">
@@ -376,23 +397,28 @@ export const BdmDashboardPage: React.FC = () => {
                     </p>
                   </div>
 
-                  <button
-                    onClick={() => setIsPayoutModalOpen(true)}
-                    className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 flex items-center justify-center gap-2 shrink-0 cursor-pointer"
-                  >
-                    <Wallet size={18} />
-                    <span>Request Payout</span>
-                  </button>
+                  <div className="flex flex-col items-stretch sm:items-end shrink-0">
+                    <button
+                      onClick={() => setIsPayoutModalOpen(true)}
+                      className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+                    >
+                      <Wallet size={18} />
+                      <span>Request Payout</span>
+                    </button>
+                    <span className="text-[11px] text-slate-400 mt-1.5 text-center sm:text-right">
+                      Minimum payout: $100 | Processed within 24 hours
+                    </span>
+                  </div>
                 </div>
 
                 {/* BDM Direct Link */}
-                <div className="mt-5 pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="mt-5 pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
                   <div className="flex items-center gap-2 text-xs text-slate-400 shrink-0">
                     <Link2 size={15} className="text-teal-400" />
                     <span>Direct BDM Referral Link (20% Commission):</span>
                   </div>
-                  <div className="flex-1 flex items-center gap-2">
-                    <div className="flex-1 bg-[#060c14] border border-slate-700/80 rounded-lg px-3 py-2 font-mono text-xs text-slate-200 truncate">
+                  <div className="flex-1 min-w-0 w-full flex items-center gap-2">
+                    <div className="flex-1 min-w-0 bg-[#060c14] border border-slate-700/80 rounded-lg px-3 py-2 font-mono text-xs text-slate-200 truncate">
                       {dashboard.bdm.referralLink}
                     </div>
                     <button
@@ -619,3 +645,4 @@ export const BdmDashboardPage: React.FC = () => {
     </div>
   );
 };
+

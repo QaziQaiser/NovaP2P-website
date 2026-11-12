@@ -22,6 +22,7 @@ interface WalletContextType {
   signer: JsonRpcSigner | null;
   connectWallet: () => Promise<void>;
   disconnectWallet: () => void;
+  syncExternalWallet: (address: string | null) => void;
   switchNetwork: (targetChainId: number) => Promise<void>;
   getTokenBalance: (tokenAddress: string, decimals: number) => Promise<string>;
   checkAllowance: (tokenAddress: string, spender: string) => Promise<bigint>;
@@ -33,10 +34,24 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [account, setAccount] = useState<string | null>(null);
+  const [externalWallet, setExternalWallet] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
+
+  const normalizeDisplayAddress = useCallback((addr: string) => {
+    return addr.startsWith('0x') ? addr.toLowerCase() : addr;
+  }, []);
+
+  const syncExternalWallet = useCallback(
+    (address: string | null) => {
+      setExternalWallet(address ? normalizeDisplayAddress(address) : null);
+    },
+    [normalizeDisplayAddress]
+  );
+
+  const activeAccount = account || externalWallet;
 
   // Initialize provider if window.ethereum exists
   const getEthereumObject = () => {
@@ -120,13 +135,19 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       const unsubscribe = kit.subscribeAccount((state) => {
         if (state?.address) {
-          const lower = state.address.toLowerCase();
-          setAccount(lower);
+          const normalized = normalizeDisplayAddress(state.address);
+          setAccount(normalized);
           const eth = getEthereumObject();
           if (eth) {
             const bp = new BrowserProvider(eth);
             setProvider(bp);
             bp.getSigner().then(setSigner).catch(() => {});
+          }
+        } else if (state?.isConnected === false) {
+          setExternalWallet(null);
+          if (!getEthereumObject()) {
+            setAccount(null);
+            setSigner(null);
           }
         }
       });
@@ -137,7 +158,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     } catch (err) {
       console.warn('AppKit account subscription error:', err);
     }
-  }, []);
+  }, [normalizeDisplayAddress]);
 
   const connectWallet = async () => {
     const eth = getEthereumObject();
@@ -173,6 +194,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const disconnectWallet = () => {
     setAccount(null);
+    setExternalWallet(null);
     setSigner(null);
     try {
       const kit = getAppKit();
@@ -289,14 +311,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   return (
     <WalletContext.Provider
       value={{
-        account,
+        account: activeAccount,
         chainId,
-        isConnected: !!account,
+        isConnected: !!activeAccount,
         isConnecting,
         provider,
         signer,
         connectWallet,
         disconnectWallet,
+        syncExternalWallet,
         switchNetwork,
         getTokenBalance,
         checkAllowance,

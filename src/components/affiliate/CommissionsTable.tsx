@@ -146,3 +146,4 @@ export const CommissionsTable: React.FC<CommissionsTableProps> = ({
     </div>
   );
 };
+

@@ -16,8 +16,13 @@ import {
 import { affiliateApi } from '../../services/affiliateApi';
 
 export const NovaSwapSection: React.FC = () => {
-  const { account, chainId, isConnected, connectWallet, disconnectWallet, signMessage } = useWallet();
+  const { account, chainId, isConnected, connectWallet, disconnectWallet, syncExternalWallet, signMessage } = useWallet();
   const [detectedWallet, setDetectedWallet] = useState<string | null>(null);
+
+  const handleWidgetWalletChange = (addr: string | null) => {
+    setDetectedWallet(addr);
+    syncExternalWallet(addr);
+  };
 
   // Sync wallet from either WalletContext or direct LI.FI injected provider
   const effectiveAccount = account || detectedWallet;
@@ -308,7 +313,7 @@ export const NovaSwapSection: React.FC = () => {
 
         <LiFiSwapWidget
           onSwapSuccess={handleSwapSuccess}
-          onWalletChange={setDetectedWallet}
+          onWalletChange={handleWidgetWalletChange}
           isWalletConnected={isWalletConnected}
         />
       </motion.div>

@@ -323,3 +323,4 @@ export const PartnerFaqPage: React.FC = () => {
     </div>
   );
 };
+

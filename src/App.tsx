@@ -132,7 +132,7 @@ const Navbar = () => {
             exit={{ opacity: 0, height: 0 }}
             className="lg:hidden bg-white border-t border-gray-100 overflow-hidden"
           >
-            <div className="px-4 pt-2 pb-6 space-y-1 shadow-lg">
+            <div className="px-4 pt-2 pb-6 space-y-1 shadow-lg max-h-[calc(100vh-72px)] overflow-y-auto">
               {navLinks.map((link) => (
                 link.href.startsWith('/') && !link.href.startsWith('/#') ? (
                   <Link

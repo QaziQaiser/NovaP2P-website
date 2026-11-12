@@ -83,7 +83,7 @@ export const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
           <X size={20} />
         </button>
 
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex items-center gap-3 mb-5 pr-6">
           <div className="w-11 h-11 rounded-xl bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center">
             <Wallet size={22} />
           </div>
@@ -189,3 +189,4 @@ export const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
     </div>
   );
 };
+

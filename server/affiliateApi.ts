@@ -537,7 +537,16 @@ affiliateRouter.get('/bdm/dashboard/:walletAddress', (req: Request, res: Respons
       };
     });
 
-    const totalManagedVolumeUSD = partnerRows.reduce((sum, p) => sum + p.referredVolumeUSD, 0);
+    const partnersOnlyVolumeUSD = partnerRows.reduce((sum, p) => sum + p.referredVolumeUSD, 0);
+    const directBdmRow = db
+      .prepare(`
+        SELECT COALESCE(SUM(total_volume_usd), 0) as direct_volume
+        FROM affiliate_referrals
+        WHERE LOWER(referrer_wallet_address) = ? AND referrer_role = 'bdm'
+      `)
+      .get(cleanWallet) as any;
+    const directBdmVolumeUSD = Number((directBdmRow?.direct_volume || 0).toFixed(2));
+    const totalManagedVolumeUSD = partnersOnlyVolumeUSD + directBdmVolumeUSD;
     const activePartnersCount = partnerRows.filter((p) => p.status === 'active').length;
 
     const commissions = db
@@ -571,8 +580,8 @@ affiliateRouter.get('/bdm/dashboard/:walletAddress', (req: Request, res: Respons
         createdAt: bdm.created_at,
       },
       stats: {
-        totalManagedVolumeUSD: Number((totalManagedVolumeUSD + (bdm.total_referred_volume_usd || 0)).toFixed(2)),
-        partnersOnlyVolumeUSD: Number(totalManagedVolumeUSD.toFixed(2)),
+        totalManagedVolumeUSD: Number(totalManagedVolumeUSD.toFixed(2)),
+        partnersOnlyVolumeUSD: Number(partnersOnlyVolumeUSD.toFixed(2)),
         totalEarningsUSD: Number((bdm.total_earnings_usd || 0).toFixed(4)),
         pendingPayoutUSD: Number((bdm.pending_balance_usd || 0).toFixed(4)),
         paidBalanceUSD: Number((bdm.paid_balance_usd || 0).toFixed(4)),
@@ -848,3 +857,4 @@ affiliateRouter.post('/admin/payouts/:id/pay', verifyAffiliateAdmin, (req: Reque
     res.status(500).json({ error: err.message });
   }
 });
+

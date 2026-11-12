@@ -56,7 +56,7 @@ export const WalletConnectGate: React.FC<WalletConnectGateProps> = ({
       <button
         onClick={connectWallet}
         disabled={isConnecting}
-        className={`inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-xl font-semibold text-base transition-all cursor-pointer disabled:opacity-60 ${
+        className={`inline-flex items-center justify-center gap-2 px-5 sm:px-8 py-3.5 sm:py-4 rounded-xl font-semibold text-sm sm:text-base whitespace-nowrap transition-all cursor-pointer disabled:opacity-60 ${
           isTeal
             ? 'bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 shadow-lg shadow-teal-500/25'
             : 'bg-primary hover:bg-primary-dark text-white shadow-lg shadow-primary/30'
@@ -82,3 +82,4 @@ export const WalletConnectGate: React.FC<WalletConnectGateProps> = ({
     </div>
   );
 };
+

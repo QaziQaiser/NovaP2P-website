@@ -253,3 +253,4 @@ export const affiliateApi = {
       body: JSON.stringify(payload),
     }),
 };
+

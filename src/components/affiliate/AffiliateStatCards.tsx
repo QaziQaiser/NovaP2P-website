@@ -55,3 +55,4 @@ export const AffiliateStatCards: React.FC<AffiliateStatCardsProps> = ({ cards })
     </div>
   );
 };
+

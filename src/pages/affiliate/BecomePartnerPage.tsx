@@ -68,11 +68,11 @@ export const BecomePartnerPage: React.FC = () => {
 
         {/* Connected Wallet Header */}
         {isConnected && account && (
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-gray-200 rounded-2xl px-5 py-3.5 mb-6 shadow-sm">
-            <div className="flex items-center gap-2.5 text-sm">
-              <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-gray-500">Connected Wallet:</span>
-              <span className="font-mono font-semibold text-gray-900">{account}</span>
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-gray-200 rounded-2xl px-4 sm:px-5 py-3.5 mb-6 shadow-sm">
+            <div className="flex items-center gap-2.5 text-sm min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse shrink-0" />
+              <span className="text-gray-500 shrink-0">Connected Wallet:</span>
+              <span className="font-mono font-semibold text-gray-900 break-all">{account}</span>
             </div>
             <button
               onClick={disconnectWallet}
@@ -102,7 +102,7 @@ export const BecomePartnerPage: React.FC = () => {
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Application Pending Review</h2>
             <p className="text-gray-600 max-w-lg mx-auto mb-6">
               Your {statusData.role === 'bdm' ? 'BDM' : 'Partner'} application for wallet{' '}
-              <span className="font-mono font-semibold text-gray-900">{account}</span> is currently under review. Applications are processed within 24 hours.
+              <span className="font-mono font-semibold text-gray-900 break-all">{account}</span> is currently under review. Applications are processed within 24 hours.
             </p>
             <div className="inline-flex items-center gap-2 text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200 px-4 py-2 rounded-xl">
               <ShieldCheck size={15} className="text-primary" />
@@ -129,3 +129,4 @@ export const BecomePartnerPage: React.FC = () => {
     </div>
   );
 };
+

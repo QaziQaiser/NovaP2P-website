@@ -223,7 +223,7 @@ export const PartnerDashboardPage: React.FC = () => {
 
           {/* Mobile Tabs */}
           {dashboard && (
-            <div className="flex md:hidden items-center gap-5 overflow-x-auto pb-2 border-t border-slate-800/60 pt-2">
+            <div className="flex md:hidden items-center justify-between gap-1.5 overflow-x-auto pb-2 border-t border-slate-800/60 pt-2">
               {(
                 [
                   { id: 'dashboard', label: 'Dashboard' },
@@ -235,7 +235,7 @@ export const PartnerDashboardPage: React.FC = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap cursor-pointer ${
+                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap cursor-pointer ${
                     activeTab === tab.id
                       ? 'bg-teal-500/15 text-teal-300 border border-teal-500/30'
                       : 'text-slate-400'
@@ -301,11 +301,11 @@ export const PartnerDashboardPage: React.FC = () => {
             {/* Big Referral Link Box */}
             <div className="rounded-2xl bg-[#0c1420]/90 border border-slate-800/90 p-5 sm:p-6 shadow-xl shadow-black/25">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="flex items-start sm:items-center gap-4">
+                <div className="flex items-start sm:items-center gap-4 min-w-0">
                   <div className="w-12 h-12 rounded-full bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center shrink-0">
                     <Link2 size={22} />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <h2 className="text-lg font-bold text-white">Your Referral Link</h2>
                     <p className="text-xs sm:text-sm text-slate-400">
                       Share your link and earn <strong className="text-teal-400">20% of the 0.5% fee (0.10% of volume)</strong> lifetime • Referrals get 5% cashback
@@ -313,8 +313,8 @@ export const PartnerDashboardPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:max-w-2xl">
-                  <div className="flex-1 bg-[#070d15] border border-slate-700/80 rounded-xl px-4 py-3 font-mono text-xs sm:text-sm text-slate-200 truncate">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-0 w-full lg:max-w-2xl">
+                  <div className="flex-1 min-w-0 bg-[#070d15] border border-slate-700/80 rounded-xl px-4 py-3 font-mono text-xs sm:text-sm text-slate-200 truncate">
                     {dashboard.partner.referralLink}
                   </div>
                   <button
@@ -502,3 +502,4 @@ export const PartnerDashboardPage: React.FC = () => {
     </div>
   );
 };
+
