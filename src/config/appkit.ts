@@ -63,6 +63,14 @@ export const getAppKit = (): AppKit | null => {
         enableCoinbase: true,
         enableWalletConnect: true,
         allWallets: 'SHOW',
+        features: {
+          analytics: false,
+          email: false,
+          socials: false,
+          onramp: false,
+          swaps: false,
+          connectMethodsOrder: ['wallet'],
+        },
         themeMode: 'light',
         themeVariables: {
           '--w3m-color-mix': '#4F7DF3',
@@ -93,4 +101,11 @@ export const openAppKitModal = async (view?: 'Connect' | 'Account' | 'Networks' 
     }
   }
 };
+
+// Pre-warm AppKit instance in browser so mobile wallet modal opens without initialization lag
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    getAppKit();
+  }, 150);
+}
 

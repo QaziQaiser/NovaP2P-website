@@ -53,13 +53,29 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const activeAccount = account || externalWallet;
 
-  // Initialize provider if window.ethereum exists
-  const getEthereumObject = () => {
+  // Track dynamically announced EIP-6963 providers (fast mobile in-app browser & extension detection)
+  const [announcedProvider, setAnnouncedProvider] = useState<any>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onAnnounceProvider = (event: any) => {
+      const detail = event?.detail;
+      if (detail?.provider) {
+        setAnnouncedProvider((prev: any) => prev || detail.provider);
+      }
+    };
+    window.addEventListener('eip6963:announceProvider', onAnnounceProvider);
+    window.dispatchEvent(new Event('eip6963:requestProvider'));
+    return () => window.removeEventListener('eip6963:announceProvider', onAnnounceProvider);
+  }, []);
+
+  // Initialize provider if window.ethereum or an EIP-6963 provider exists
+  const getEthereumObject = useCallback(() => {
     if (typeof window !== 'undefined' && (window as any).ethereum) {
       return (window as any).ethereum;
     }
-    return null;
-  };
+    return announcedProvider;
+  }, [announcedProvider]);
 
   const handleAccountsChanged = useCallback(async (accounts: string[]) => {
     if (accounts.length === 0) {
@@ -128,21 +144,54 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   }, [account, handleAccountsChanged, handleChainChanged]);
 
   // Sync wallet state when connected via WalletConnect AppKit / Web3Modal
+  // Includes mobile foreground resume sync (visibilitychange/focus/pageshow) and fallback poll
   useEffect(() => {
     const kit = getAppKit();
     if (!kit) return;
 
-    try {
-      const unsubscribe = kit.subscribeAccount((state) => {
-        if (state?.address) {
-          const normalized = normalizeDisplayAddress(state.address);
-          setAccount(normalized);
-          const eth = getEthereumObject();
-          if (eth) {
-            const bp = new BrowserProvider(eth);
-            setProvider(bp);
-            bp.getSigner().then(setSigner).catch(() => {});
+    const applyAppKitAddress = (addr?: string | null) => {
+      if (!addr) return;
+      const normalized = normalizeDisplayAddress(addr);
+      setAccount((prev) => (prev === normalized ? prev : normalized));
+      setIsConnecting(false);
+      const eth = getEthereumObject();
+      if (eth) {
+        const bp = new BrowserProvider(eth);
+        setProvider(bp);
+        bp.getSigner().then(setSigner).catch(() => {});
+      }
+    };
+
+    const syncAppKitNow = () => {
+      try {
+        const addr =
+          kit.getAddress?.('eip155') ||
+          kit.getAddress?.('solana') ||
+          kit.getAddress?.();
+        if (addr) {
+          applyAppKitAddress(addr);
+        } else if (kit.getIsConnectedState?.() === false) {
+          setExternalWallet(null);
+          if (!getEthereumObject()) {
+            setAccount(null);
+            setSigner(null);
           }
+        }
+      } catch {
+        // Ignore transient initialization errors
+      }
+    };
+
+    // Run immediately on mount
+    syncAppKitNow();
+
+    let unsubscribeAccount: (() => void) | undefined;
+    let unsubscribeState: (() => void) | undefined;
+
+    try {
+      unsubscribeAccount = kit.subscribeAccount((state) => {
+        if (state?.address) {
+          applyAppKitAddress(state.address);
         } else if (state?.isConnected === false) {
           setExternalWallet(null);
           if (!getEthereumObject()) {
@@ -152,13 +201,43 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       });
 
-      return () => {
-        if (typeof unsubscribe === 'function') unsubscribe();
-      };
+      if (typeof kit.subscribeState === 'function') {
+        unsubscribeState = kit.subscribeState((modalState: any) => {
+          if (modalState?.open === false) {
+            setIsConnecting(false);
+            syncAppKitNow();
+          }
+        });
+      }
     } catch (err) {
       console.warn('AppKit account subscription error:', err);
     }
-  }, [normalizeDisplayAddress]);
+
+    // Mobile wallet deep-link returns often restore browser tab visibility without firing immediate WS events
+    const onResume = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      syncAppKitNow();
+      setTimeout(syncAppKitNow, 350);
+    };
+
+    window.addEventListener('focus', onResume);
+    window.addEventListener('pageshow', onResume);
+    document.addEventListener('visibilitychange', onResume);
+
+    // Lightweight fallback poll for mobile WalletConnect relay completion
+    const pollAppKit = setInterval(() => {
+      syncAppKitNow();
+    }, 1200);
+
+    return () => {
+      clearInterval(pollAppKit);
+      window.removeEventListener('focus', onResume);
+      window.removeEventListener('pageshow', onResume);
+      document.removeEventListener('visibilitychange', onResume);
+      if (typeof unsubscribeAccount === 'function') unsubscribeAccount();
+      if (typeof unsubscribeState === 'function') unsubscribeState();
+    };
+  }, [normalizeDisplayAddress, getEthereumObject]);
 
   const connectWallet = async () => {
     const eth = getEthereumObject();
@@ -186,9 +265,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     // Modern mobile & multi-chain WalletConnect AppKit modal (Trust Wallet, MetaMask, Coinbase, Phantom, Solana, TRON)
     try {
+      setIsConnecting(true);
       await openAppKitModal('Connect');
     } catch (err) {
       console.error('Failed to open AppKit modal:', err);
+    } finally {
+      setIsConnecting(false);
     }
   };
 

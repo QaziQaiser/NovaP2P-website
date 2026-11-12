@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, XCircle, Loader2, Users, DollarSign, ShieldCheck } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, Users, DollarSign, ShieldCheck, Mail, X } from 'lucide-react';
 import { affiliateApi } from '../../services/affiliateApi';
+import { sendApplicantDecisionEmail, buildDecisionMailtoLink } from '../../services/emailNotifications';
 
 interface AffiliateAdminPanelProps {
   adminKey: string;
@@ -12,7 +13,13 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
   const [payouts, setPayouts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [fallbackMailto, setFallbackMailto] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Modal state for Approve (optional BDM mapping) & Reject (mandatory reason/query)
+  const [reviewModal, setReviewModal] = useState<{ app: any; action: 'approve' | 'reject' } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [assignBdmWallet, setAssignBdmWallet] = useState('');
 
   const loadData = useCallback(async () => {
     try {
@@ -32,26 +39,69 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
     loadData();
   }, [loadData]);
 
-  const handleReviewApp = async (app: any, action: 'approve' | 'reject') => {
-    let bdmWalletAddress: string | undefined;
-    if (action === 'approve' && app.role === 'partner') {
-      const input = prompt(
-        'Optional: Enter assigned BDM Wallet Address (or leave empty for direct Partner):',
-        app.bdm_wallet_address || ''
-      );
-      if (input === null) return;
-      bdmWalletAddress = input.trim() || undefined;
+  const openReviewModal = (app: any, action: 'approve' | 'reject') => {
+    setError(null);
+    setFallbackMailto(null);
+    setRejectReason(app.admin_notes || '');
+    setAssignBdmWallet(app.bdm_wallet_address || '');
+    setReviewModal({ app, action });
+  };
+
+  const submitReviewModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewModal) return;
+
+    const { app, action } = reviewModal;
+    if (action === 'reject' && !rejectReason.trim()) {
+      setError('Please enter a rejection reason / query so the applicant knows why their application was rejected.');
+      return;
     }
 
     try {
       setIsLoading(true);
       setError(null);
-      await affiliateApi.reviewApplication(adminKey, app.id, {
+      setFallbackMailto(null);
+
+      const res = await affiliateApi.reviewApplication(adminKey, app.id, {
         action,
         assignRole: app.role,
-        bdmWalletAddress,
+        bdmWalletAddress: action === 'approve' && app.role === 'partner' ? assignBdmWallet.trim() || undefined : undefined,
+        adminNotes: action === 'reject' ? rejectReason.trim() : undefined,
       });
-      setNotice(`Application ${action === 'approve' ? 'approved' : 'rejected'} successfully.`);
+
+      // Automatically send Confirmation or Rejection email to applicant
+      const emailStatus = await sendApplicantDecisionEmail({
+        decision: action === 'approve' ? 'approved' : 'rejected',
+        role: res.role || app.role,
+        applicantEmail: res.applicantEmail || app.email,
+        applicantName: res.applicantName || app.full_name,
+        walletAddress: res.walletAddress || app.wallet_address,
+        rejectionReason: action === 'reject' ? rejectReason.trim() : null,
+      });
+
+      if (emailStatus.sent) {
+        setNotice(
+          action === 'approve'
+            ? `Application approved, dashboard activated, and confirmation email sent to ${app.email}.`
+            : `Application rejected and rejection reason email sent to ${app.email}.`
+        );
+      } else {
+        setNotice(
+          `Application ${action === 'approve' ? 'approved (dashboard active)' : 'rejected'} in DB, but automatic EmailJS email to ${app.email} failed (${emailStatus.error || 'template recipient setting'}).`
+        );
+        setFallbackMailto(
+          buildDecisionMailtoLink({
+            decision: action === 'approve' ? 'approved' : 'rejected',
+            role: res.role || app.role,
+            applicantEmail: res.applicantEmail || app.email,
+            applicantName: res.applicantName || app.full_name,
+            walletAddress: res.walletAddress || app.wallet_address,
+            rejectionReason: action === 'reject' ? rejectReason.trim() : null,
+          })
+        );
+      }
+
+      setReviewModal(null);
       loadData();
     } catch (err: any) {
       setError(err.message);
@@ -94,8 +144,16 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
   return (
     <div className="space-y-6">
       {notice && (
-        <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium">
-          {notice}
+        <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex flex-wrap items-center justify-between gap-2">
+          <span>{notice}</span>
+          {fallbackMailto && (
+            <a
+              href={fallbackMailto}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500 text-slate-950 font-bold hover:bg-emerald-400"
+            >
+              <Mail size={12} /> Send via Email Client
+            </a>
+          )}
         </div>
       )}
       {error && (
@@ -167,18 +225,35 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
                       )}
                       {app.message && <div className="text-[11px] text-slate-500 truncate">{app.message}</div>}
                     </td>
-                    <td className="py-3 px-3 capitalize font-semibold text-slate-200">{app.status}</td>
+                    <td className="py-3 px-3 capitalize font-semibold text-slate-200">
+                      <span
+                        className={
+                          app.status === 'approved'
+                            ? 'text-emerald-400'
+                            : app.status === 'rejected'
+                            ? 'text-red-400'
+                            : 'text-amber-300'
+                        }
+                      >
+                        {app.status}
+                      </span>
+                      {app.status === 'rejected' && app.admin_notes && (
+                        <div className="text-[11px] font-normal text-red-300/90 mt-0.5 max-w-[200px] whitespace-normal">
+                          Reason: {app.admin_notes}
+                        </div>
+                      )}
+                    </td>
                     <td className="py-3 px-3 text-right whitespace-nowrap">
                       {app.status === 'pending' && (
                         <div className="inline-flex gap-1.5">
                           <button
-                            onClick={() => handleReviewApp(app, 'approve')}
+                            onClick={() => openReviewModal(app, 'approve')}
                             className="px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1 cursor-pointer"
                           >
                             <CheckCircle size={12} /> Approve
                           </button>
                           <button
-                            onClick={() => handleReviewApp(app, 'reject')}
+                            onClick={() => openReviewModal(app, 'reject')}
                             className="px-2.5 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 inline-flex items-center gap-1 cursor-pointer"
                           >
                             <XCircle size={12} /> Reject
@@ -328,6 +403,123 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
           </table>
         </div>
       </div>
+      {/* Approve / Reject Modal */}
+      {reviewModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-base font-bold text-white flex items-center gap-2">
+                {reviewModal.action === 'approve' ? (
+                  <CheckCircle size={18} className="text-emerald-400" />
+                ) : (
+                  <XCircle size={18} className="text-red-400" />
+                )}
+                {reviewModal.action === 'approve' ? 'Approve Application' : 'Reject Application'}
+              </h4>
+              <button
+                type="button"
+                onClick={() => setReviewModal(null)}
+                className="p-1 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-300 bg-slate-800/60 border border-slate-700 rounded-xl p-3 mb-4 space-y-1">
+              <div><strong>Applicant:</strong> {reviewModal.app.full_name} ({reviewModal.app.email})</div>
+              <div><strong>Role:</strong> {reviewModal.app.role?.toUpperCase()}</div>
+              <div className="font-mono break-all"><strong>Wallet:</strong> {reviewModal.app.wallet_address}</div>
+            </div>
+
+            <form onSubmit={submitReviewModal} className="space-y-4">
+              {reviewModal.action === 'approve' && reviewModal.app.role === 'partner' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Assigned BDM Wallet Address (Optional — leave empty for direct Partner)
+                  </label>
+                  <input
+                    type="text"
+                    value={assignBdmWallet}
+                    onChange={(e) => setAssignBdmWallet(e.target.value)}
+                    placeholder="0x... BDM wallet or select below"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-200 text-xs font-mono outline-none focus:border-teal-500"
+                  />
+                  {bdmList.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {bdmList.map((b) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => setAssignBdmWallet(b.wallet_address)}
+                          className="text-[11px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-700 cursor-pointer"
+                        >
+                          {b.full_name} ({b.wallet_address.slice(0, 6)}...)
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {reviewModal.action === 'reject' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Rejection Reason / Query (Sent directly to applicant) *
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {[
+                      'Social channel links could not be verified or appear inactive.',
+                      'Minimum active community engagement requirement not yet met.',
+                      'Provided Telegram / X profile does not match ownership of the submitted channels.',
+                    ].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setRejectReason(preset)}
+                        className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-left cursor-pointer"
+                      >
+                        + {preset.slice(0, 46)}...
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    required
+                    rows={4}
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="Explain clearly why the application is rejected or what needs to be updated to re-apply..."
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-200 text-xs outline-none focus:border-red-500"
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReviewModal(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                    reviewModal.action === 'approve'
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                      : 'bg-red-500 hover:bg-red-400 text-white'
+                  }`}
+                >
+                  {isLoading && <Loader2 size={13} className="animate-spin" />}
+                  {reviewModal.action === 'approve'
+                    ? 'Approve & Send Confirmation Email'
+                    : 'Reject & Send Reason Email'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

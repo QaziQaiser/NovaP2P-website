@@ -24,6 +24,115 @@ function verifyAffiliateAdmin(req: Request, res: Response, next: () => void) {
 }
 
 /**
+ * Deterministic HMAC review token so admin email links can securely inspect/approve/reject
+ * an application without leaking the raw ADMIN_KEY in URLs.
+ */
+export function signReviewToken(appId: string): string {
+  return crypto.createHmac('sha256', ADMIN_KEY).update(`review:${appId}`).digest('hex');
+}
+
+export function verifyReviewToken(appId: string, token: string): boolean {
+  if (!appId || !token) return false;
+  const expected = signReviewToken(appId);
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(String(token).trim(), 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+interface ReviewDecisionResult {
+  success: boolean;
+  status: 'approved' | 'rejected';
+  role: 'partner' | 'bdm';
+  walletAddress: string;
+  applicantEmail: string;
+  applicantName: string;
+  rejectionReason: string | null;
+}
+
+function processApplicationDecision(params: {
+  appRecord: any;
+  action: 'approve' | 'reject';
+  assignRole?: string;
+  bdmWalletAddress?: string;
+  adminNotes?: string;
+}): ReviewDecisionResult {
+  const { appRecord, action, assignRole, bdmWalletAddress, adminNotes } = params;
+  const now = new Date().toISOString();
+  const cleanWallet = String(appRecord.wallet_address).toLowerCase();
+
+  if (action === 'reject') {
+    const cleanReason = adminNotes ? String(adminNotes).trim() : '';
+    db.prepare(`
+      UPDATE affiliate_applications
+      SET status = 'rejected', admin_notes = ?, reviewed_by = 'admin', reviewed_at = ?, updated_at = ?
+      WHERE id = ?
+    `).run(cleanReason || null, now, now, appRecord.id);
+
+    return {
+      success: true,
+      status: 'rejected',
+      role: appRecord.role,
+      walletAddress: cleanWallet,
+      applicantEmail: appRecord.email,
+      applicantName: appRecord.full_name,
+      rejectionReason: cleanReason || null,
+    };
+  }
+
+  const targetRole = assignRole === 'bdm' || assignRole === 'partner' ? assignRole : appRecord.role;
+  const mappedBdm = bdmWalletAddress
+    ? String(bdmWalletAddress).trim().toLowerCase()
+    : appRecord.bdm_wallet_address || null;
+
+  db.prepare(`
+    UPDATE affiliate_applications
+    SET status = 'approved', role = ?, bdm_wallet_address = ?, admin_notes = ?, reviewed_by = 'admin', reviewed_at = ?, updated_at = ?
+    WHERE id = ?
+  `).run(targetRole, mappedBdm, adminNotes ? String(adminNotes).trim() : null, now, now, appRecord.id);
+
+  const existing = db
+    .prepare('SELECT id FROM affiliates WHERE LOWER(wallet_address) = ?')
+    .get(cleanWallet) as any;
+
+  if (!existing) {
+    db.prepare(`
+      INSERT INTO affiliates (
+        id, wallet_address, role, application_id, full_name, email,
+        telegram_username, bdm_wallet_address, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+    `).run(
+      'aff_' + crypto.randomUUID(),
+      cleanWallet,
+      targetRole,
+      appRecord.id,
+      appRecord.full_name,
+      appRecord.email,
+      appRecord.telegram_username,
+      targetRole === 'partner' ? mappedBdm : null,
+      now,
+      now
+    );
+  } else {
+    db.prepare(`
+      UPDATE affiliates
+      SET role = ?, bdm_wallet_address = ?, status = 'active', updated_at = ?
+      WHERE id = ?
+    `).run(targetRole, targetRole === 'partner' ? mappedBdm : null, now, existing.id);
+  }
+
+  return {
+    success: true,
+    status: 'approved',
+    role: targetRole,
+    walletAddress: cleanWallet,
+    applicantEmail: appRecord.email,
+    applicantName: appRecord.full_name,
+    rejectionReason: null,
+  };
+}
+
+/**
  * Helper: Bind a trader wallet to an approved Partner or BDM wallet
  * when they visit or connect via ?ref=WALLETADDRESS
  */
@@ -359,6 +468,7 @@ affiliateRouter.post('/apply', (req: Request, res: Response) => {
     res.json({
       success: true,
       applicationId: appId,
+      reviewToken: signReviewToken(appId),
       role: cleanRole,
       status: 'pending',
       message: `Your ${cleanRole === 'bdm' ? 'BDM' : 'Partner'} application has been submitted and will be reviewed within 24 hours.`,
@@ -714,6 +824,10 @@ affiliateRouter.post('/admin/applications/:id/review', verifyAffiliateAdmin, (re
     const { id } = req.params;
     const { action, assignRole, bdmWalletAddress, adminNotes } = req.body; // action: 'approve' | 'reject'
 
+    if (action !== 'approve' && action !== 'reject') {
+      return res.status(400).json({ error: 'Invalid action' });
+    }
+
     const appRecord = db
       .prepare('SELECT * FROM affiliate_applications WHERE id = ?')
       .get(id) as any;
@@ -722,65 +836,84 @@ affiliateRouter.post('/admin/applications/:id/review', verifyAffiliateAdmin, (re
       return res.status(404).json({ error: 'Application not found' });
     }
 
-    const now = new Date().toISOString();
-
-    if (action === 'reject') {
-      db.prepare(`
-        UPDATE affiliate_applications
-        SET status = 'rejected', admin_notes = ?, reviewed_by = 'admin', reviewed_at = ?, updated_at = ?
-        WHERE id = ?
-      `).run(adminNotes || null, now, now, id);
-
-      return res.json({ success: true, status: 'rejected' });
+    if (action === 'reject' && (!adminNotes || !String(adminNotes).trim())) {
+      return res.status(400).json({ error: 'Please provide a rejection reason / query for the applicant.' });
     }
 
-    if (action === 'approve') {
-      const targetRole = assignRole === 'bdm' || assignRole === 'partner' ? assignRole : appRecord.role;
-      const cleanWallet = appRecord.wallet_address.toLowerCase();
-      const mappedBdm = bdmWalletAddress
-        ? String(bdmWalletAddress).trim().toLowerCase()
-        : appRecord.bdm_wallet_address || null;
+    const result = processApplicationDecision({
+      appRecord,
+      action,
+      assignRole,
+      bdmWalletAddress,
+      adminNotes,
+    });
 
-      db.prepare(`
-        UPDATE affiliate_applications
-        SET status = 'approved', role = ?, bdm_wallet_address = ?, admin_notes = ?, reviewed_by = 'admin', reviewed_at = ?, updated_at = ?
-        WHERE id = ?
-      `).run(targetRole, mappedBdm, adminNotes || null, now, now, id);
+    return res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-      const existing = db
-        .prepare('SELECT id FROM affiliates WHERE LOWER(wallet_address) = ?')
-        .get(cleanWallet) as any;
+// Signed Email Link: Fetch Application Details for Review Page (/affiliate-review)
+affiliateRouter.get('/review-info', (req: Request, res: Response) => {
+  try {
+    const id = String(req.query.id || '').trim();
+    const token = String(req.query.token || '').trim();
 
-      if (!existing) {
-        db.prepare(`
-          INSERT INTO affiliates (
-            id, wallet_address, role, application_id, full_name, email,
-            telegram_username, bdm_wallet_address, status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
-        `).run(
-          'aff_' + crypto.randomUUID(),
-          cleanWallet,
-          targetRole,
-          appRecord.id,
-          appRecord.full_name,
-          appRecord.email,
-          appRecord.telegram_username,
-          targetRole === 'partner' ? mappedBdm : null,
-          now,
-          now
-        );
-      } else {
-        db.prepare(`
-          UPDATE affiliates
-          SET role = ?, bdm_wallet_address = ?, status = 'active', updated_at = ?
-          WHERE id = ?
-        `).run(targetRole, targetRole === 'partner' ? mappedBdm : null, now, existing.id);
-      }
-
-      return res.json({ success: true, status: 'approved', role: targetRole, walletAddress: cleanWallet });
+    if (!verifyReviewToken(id, token)) {
+      return res.status(403).json({ error: 'Invalid or expired review link.' });
     }
 
-    return res.status(400).json({ error: 'Invalid action' });
+    const appRecord = db
+      .prepare('SELECT * FROM affiliate_applications WHERE id = ?')
+      .get(id) as any;
+
+    if (!appRecord) {
+      return res.status(404).json({ error: 'Application not found.' });
+    }
+
+    return res.json({
+      application: appRecord,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Signed Email Link: Approve or Reject directly from Email Review Link
+affiliateRouter.post('/review-action', (req: Request, res: Response) => {
+  try {
+    const { id, token, action, assignRole, bdmWalletAddress, adminNotes } = req.body;
+
+    if (!verifyReviewToken(String(id || ''), String(token || ''))) {
+      return res.status(403).json({ error: 'Invalid or expired review signature.' });
+    }
+
+    if (action !== 'approve' && action !== 'reject') {
+      return res.status(400).json({ error: 'Action must be approve or reject.' });
+    }
+
+    const appRecord = db
+      .prepare('SELECT * FROM affiliate_applications WHERE id = ?')
+      .get(String(id)) as any;
+
+    if (!appRecord) {
+      return res.status(404).json({ error: 'Application not found.' });
+    }
+
+    if (action === 'reject' && (!adminNotes || !String(adminNotes).trim())) {
+      return res.status(400).json({ error: 'Rejection reason / query is required before rejecting.' });
+    }
+
+    const result = processApplicationDecision({
+      appRecord,
+      action,
+      assignRole,
+      bdmWalletAddress,
+      adminNotes,
+    });
+
+    return res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

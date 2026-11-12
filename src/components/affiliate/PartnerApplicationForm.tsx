@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import emailjs from '@emailjs/browser';
 import { Send, CheckCircle2, AlertCircle, Wallet, Loader2 } from 'lucide-react';
 import { affiliateApi } from '../../services/affiliateApi';
+import { sendAdminAffiliateApplicationEmail } from '../../services/emailNotifications';
 
 interface PartnerApplicationFormProps {
   walletAddress: string;
@@ -25,6 +25,7 @@ export const PartnerApplicationForm: React.FC<PartnerApplicationFormProps> = ({
   const [walletConfirmed, setWalletConfirmed] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emailWarning, setEmailWarning] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -36,9 +37,10 @@ export const PartnerApplicationForm: React.FC<PartnerApplicationFormProps> = ({
 
     setIsSubmitting(true);
     setError(null);
+    setEmailWarning(null);
 
     try {
-      await affiliateApi.submitApplication({
+      const res = await affiliateApi.submitApplication({
         role: 'partner',
         walletAddress,
         fullName: formData.fullName,
@@ -51,38 +53,26 @@ export const PartnerApplicationForm: React.FC<PartnerApplicationFormProps> = ({
         message: formData.message,
       });
 
-      // Send admin email notification via EmailJS (non-blocking)
-      try {
-        const appEnv = (import.meta as any).env || {};
-        const serviceId = appEnv.VITE_EMAILJS_SERVICE_ID || 'service_vdt1rat';
-        const templateId = appEnv.VITE_EMAILJS_TEMPLATE_ID || 'template_k3vb6pp';
-        const publicKey = appEnv.VITE_EMAILJS_PUBLIC_KEY || '8J3X62oVWT-2HXcvw';
+      // Send admin email notification with direct signed Approve/Reject action links
+      const emailResult = await sendAdminAffiliateApplicationEmail({
+        applicationId: res.applicationId,
+        reviewToken: res.reviewToken,
+        role: 'partner',
+        walletAddress,
+        fullName: formData.fullName,
+        email: formData.email,
+        telegramUsername: formData.telegramUsername,
+        twitterLink: formData.twitterLink,
+        youtubeLink: formData.youtubeLink,
+        telegramChannelLink: formData.telegramChannelLink,
+        audienceSize: formData.audienceSize,
+        message: formData.message,
+      });
 
-        await emailjs.send(
-          serviceId,
-          templateId,
-          {
-            from_name: formData.fullName,
-            from_email: formData.email,
-            subject: `New Partner Program Application — ${formData.fullName}`,
-            form_source: 'Nova Swap Partner Application',
-            message: [
-              `Role: Partner`,
-              `Wallet Address: ${walletAddress}`,
-              `Full Name: ${formData.fullName}`,
-              `Email: ${formData.email}`,
-              `Telegram Username: ${formData.telegramUsername}`,
-              `Twitter / X: ${formData.twitterLink}`,
-              `YouTube Channel: ${formData.youtubeLink}`,
-              `Telegram Channel/Group: ${formData.telegramChannelLink}`,
-              `Estimated Audience Size: ${formData.audienceSize}`,
-              `Message: ${formData.message}`,
-            ].join('\n'),
-          },
-          publicKey
+      if (!emailResult.sent) {
+        setEmailWarning(
+          `Your application is saved in our review queue, though email delivery reported: ${emailResult.error || 'Email service unavailable'}`
         );
-      } catch (emailErr) {
-        console.warn('EmailJS notification failed (application saved in DB):', emailErr);
       }
 
       setSubmitted(true);
@@ -107,6 +97,11 @@ export const PartnerApplicationForm: React.FC<PartnerApplicationFormProps> = ({
         <div className="inline-block bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-mono text-gray-700 break-all max-w-full">
           Wallet: {walletAddress}
         </div>
+        {emailWarning && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mt-4 max-w-md mx-auto">
+            {emailWarning}
+          </p>
+        )}
       </div>
     );
   }

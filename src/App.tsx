@@ -28,6 +28,7 @@ import { BecomePartnerPage } from './pages/affiliate/BecomePartnerPage';
 import { BecomeBdmPage } from './pages/affiliate/BecomeBdmPage';
 import { PartnerDashboardPage } from './pages/affiliate/PartnerDashboardPage';
 import { BdmDashboardPage } from './pages/affiliate/BdmDashboardPage';
+import { AffiliateReviewPage } from './pages/affiliate/AffiliateReviewPage';
 import {
   HowSwapWorksPage,
   SupportedChainsPage,
@@ -3059,6 +3060,7 @@ const AppShell = () => {
   const isStandaloneDarkPortal =
     location.pathname.startsWith('/partner-dashboard') ||
     location.pathname.startsWith('/bdm-dashboard') ||
+    location.pathname.startsWith('/affiliate-review') ||
     location.pathname.startsWith('/swap-admin');
 
   return (
@@ -3083,6 +3085,7 @@ const AppShell = () => {
         <Route path="/commission" element={<CommissionStructurePage />} />
         <Route path="/partner-dashboard" element={<PartnerDashboardPage />} />
         <Route path="/bdm-dashboard" element={<BdmDashboardPage />} />
+        <Route path="/affiliate-review" element={<AffiliateReviewPage />} />
         <Route path="/partner-faq" element={<PartnerFaqPage />} />
         <Route path="/about" element={<AboutUs />} />
         <Route path="/contact" element={<Contact />} />

@@ -28,8 +28,20 @@ export interface AffiliateStatusResponse {
     full_name: string;
     email: string;
     status: 'pending' | 'approved' | 'rejected';
+    admin_notes?: string | null;
+    reviewed_at?: string | null;
     created_at: string;
   } | null;
+}
+
+export interface ReviewDecisionResponse {
+  success: boolean;
+  status: 'approved' | 'rejected';
+  role: AffiliateRole;
+  walletAddress: string;
+  applicantEmail: string;
+  applicantName: string;
+  rejectionReason: string | null;
 }
 
 export interface PartnerCommissionItem {
@@ -181,7 +193,14 @@ export const affiliateApi = {
     message?: string;
     bdmWalletAddress?: string;
   }) =>
-    requestJson<{ success: boolean; applicationId: string; role: AffiliateRole; status: string; message: string }>(
+    requestJson<{
+      success: boolean;
+      applicationId: string;
+      reviewToken: string;
+      role: AffiliateRole;
+      status: string;
+      message: string;
+    }>(
       `${API_BASE}/apply`,
       {
         method: 'POST',
@@ -229,9 +248,27 @@ export const affiliateApi = {
     id: string,
     payload: { action: 'approve' | 'reject'; assignRole?: AffiliateRole; bdmWalletAddress?: string; adminNotes?: string }
   ) =>
-    requestJson<{ success: boolean; status: string }>(`${API_BASE}/admin/applications/${id}/review`, {
+    requestJson<ReviewDecisionResponse>(`${API_BASE}/admin/applications/${id}/review`, {
       method: 'POST',
       headers: { 'x-admin-key': adminKey },
+      body: JSON.stringify(payload),
+    }),
+
+  getReviewInfo: (id: string, token: string) =>
+    requestJson<{ application: any }>(
+      `${API_BASE}/review-info?id=${encodeURIComponent(id)}&token=${encodeURIComponent(token)}`
+    ),
+
+  submitReviewAction: (payload: {
+    id: string;
+    token: string;
+    action: 'approve' | 'reject';
+    assignRole?: AffiliateRole;
+    bdmWalletAddress?: string;
+    adminNotes?: string;
+  }) =>
+    requestJson<ReviewDecisionResponse>(`${API_BASE}/review-action`, {
+      method: 'POST',
       body: JSON.stringify(payload),
     }),
 

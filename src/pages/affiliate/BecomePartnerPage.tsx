@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Clock, ShieldCheck, ArrowRight, Loader2, LogOut, Sparkles } from 'lucide-react';
+import { Clock, ShieldCheck, ArrowRight, Loader2, LogOut, Sparkles, XCircle, RefreshCw } from 'lucide-react';
 import { useWallet } from '../../context/WalletContext';
 import { affiliateApi, AffiliateStatusResponse } from '../../services/affiliateApi';
 import { WalletConnectGate } from '../../components/affiliate/WalletConnectGate';
@@ -12,6 +12,7 @@ export const BecomePartnerPage: React.FC = () => {
 
   const [statusData, setStatusData] = useState<AffiliateStatusResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [reapplying, setReapplying] = useState(false);
 
   const checkStatus = useCallback(async () => {
     if (!account) {
@@ -109,8 +110,43 @@ export const BecomePartnerPage: React.FC = () => {
               <span>Once approved, reconnecting this wallet unlocks your dashboard automatically.</span>
             </div>
           </div>
+        ) : statusData?.status === 'rejected' && !reapplying ? (
+          <div className="bg-white border border-red-200 rounded-3xl p-8 md:p-10 text-center shadow-lg space-y-5">
+            <div className="w-16 h-16 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center mx-auto">
+              <XCircle size={32} />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Application Not Approved</h2>
+              <p className="text-sm text-gray-600 max-w-lg mx-auto">
+                Your previous Partner application for wallet{' '}
+                <span className="font-mono font-semibold text-gray-900 break-all">{account}</span> was reviewed and not approved.
+              </p>
+            </div>
+            {statusData.application?.admin_notes && (
+              <div className="max-w-lg mx-auto text-left bg-red-50/70 border border-red-200 rounded-2xl p-4">
+                <div className="text-xs font-bold uppercase tracking-wider text-red-700 mb-1">
+                  Reviewer Reason / Query
+                </div>
+                <p className="text-sm text-red-900 whitespace-pre-wrap">
+                  {statusData.application.admin_notes}
+                </p>
+              </div>
+            )}
+            <button
+              onClick={() => setReapplying(true)}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold text-sm shadow-md cursor-pointer"
+            >
+              <RefreshCw size={16} /> Update Details &amp; Re-Apply
+            </button>
+          </div>
         ) : (
-          <PartnerApplicationForm walletAddress={account} onSubmitted={checkStatus} />
+          <PartnerApplicationForm
+            walletAddress={account}
+            onSubmitted={() => {
+              setReapplying(false);
+              checkStatus();
+            }}
+          />
         )}
 
         {/* Footer links */}

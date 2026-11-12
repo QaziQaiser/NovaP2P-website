@@ -80,8 +80,11 @@ export const ContactForm: React.FC<ContactFormProps> = ({ className = '', source
 
       // Template parameters matching your EmailJS configuration
       const templateParams = {
+        name: name,
+        email: email,
         from_name: name,
         from_email: email,
+        reply_to: email,
         message: message,
         subject: `Contact Form Submission (${source}) - NovaP2P`,
         form_source: source,
