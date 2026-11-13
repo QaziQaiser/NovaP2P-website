@@ -1,43 +1,38 @@
 import { Router, type Request, type Response } from 'express';
 import crypto from 'crypto';
 import { db } from './db.ts';
+import {
+  verifyAdmin as verifyAffiliateAdmin,
+  signReviewToken,
+  verifyReviewToken,
+  consumeSignedChallenge,
+  isValidWalletAddress,
+  sendServerError,
+} from './auth.ts';
+import { sendAdminAffiliateApplicationEmail, sendApplicantDecisionEmail } from './notifications.ts';
 
 export const affiliateRouter = Router();
 
-const ADMIN_KEY = process.env.SWAP_ADMIN_KEY || 'nova-genesis-admin-2026';
-
-// Admin auth middleware matching existing swap admin dashboard
-function verifyAffiliateAdmin(req: Request, res: Response, next: () => void) {
-  const authHeader = req.headers['x-admin-key'] || req.headers['authorization'];
-  if (!authHeader) {
-    return res.status(401).json({ error: 'Admin authentication required' });
-  }
-  const token =
-    typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : authHeader;
-
-  if (token !== ADMIN_KEY) {
-    return res.status(403).json({ error: 'Invalid admin credentials' });
-  }
-  next();
+/** Public site origin used in email links (APP_URL env, else the request host). */
+function getSiteOrigin(req: Request): string {
+  const configured = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  if (/^https?:\/\//.test(configured)) return configured;
+  const host = req.get('host');
+  return host ? `${req.protocol}://${host}` : 'https://novap2p.com';
 }
 
-/**
- * Deterministic HMAC review token so admin email links can securely inspect/approve/reject
- * an application without leaking the raw ADMIN_KEY in URLs.
- */
-export function signReviewToken(appId: string): string {
-  return crypto.createHmac('sha256', ADMIN_KEY).update(`review:${appId}`).digest('hex');
-}
-
-export function verifyReviewToken(appId: string, token: string): boolean {
-  if (!appId || !token) return false;
-  const expected = signReviewToken(appId);
-  const a = Buffer.from(expected, 'utf8');
-  const b = Buffer.from(String(token).trim(), 'utf8');
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+/** Sends the applicant decision email and reports whether it was delivered. */
+async function notifyApplicant(req: Request, result: ReviewDecisionResult): Promise<boolean> {
+  const emailResult = await sendApplicantDecisionEmail({
+    siteOrigin: getSiteOrigin(req),
+    decision: result.status,
+    role: result.role,
+    applicantEmail: result.applicantEmail,
+    applicantName: result.applicantName,
+    walletAddress: result.walletAddress,
+    rejectionReason: result.rejectionReason,
+  });
+  return emailResult.sent;
 }
 
 interface ReviewDecisionResult {
@@ -51,6 +46,16 @@ interface ReviewDecisionResult {
 }
 
 function processApplicationDecision(params: {
+  appRecord: any;
+  action: 'approve' | 'reject';
+  assignRole?: string;
+  bdmWalletAddress?: string;
+  adminNotes?: string;
+}): ReviewDecisionResult {
+  return db.transaction(() => applyApplicationDecision(params))();
+}
+
+function applyApplicationDecision(params: {
   appRecord: any;
   action: 'approve' | 'reject';
   assignRole?: string;
@@ -144,6 +149,9 @@ export function bindAffiliateReferral(referredWallet: string, referrerWallet: st
     if (!cleanReferred || !cleanReferrer || cleanReferred === cleanReferrer) {
       return false;
     }
+    if (!isValidWalletAddress(referredWallet.trim()) || !isValidWalletAddress(referrerWallet.trim())) {
+      return false;
+    }
 
     // Check if referrer is an active approved Partner or BDM
     const affiliate = db
@@ -206,6 +214,19 @@ export function processAffiliateSwapCommission(params: {
   verifiedAt?: string;
 }): void {
   try {
+    db.transaction(() => creditAffiliateSwapCommission(params))();
+  } catch (err) {
+    console.warn('[Affiliate] processAffiliateSwapCommission error:', err);
+  }
+}
+
+function creditAffiliateSwapCommission(params: {
+  traderWallet: string;
+  transactionId: string;
+  volumeUSD: number;
+  verifiedAt?: string;
+}): void {
+  {
     const cleanTrader = params.traderWallet.trim().toLowerCase();
     if (!cleanTrader || params.volumeUSD <= 0 || !params.transactionId) return;
 
@@ -321,8 +342,6 @@ export function processAffiliateSwapCommission(params: {
         }
       }
     }
-  } catch (err) {
-    console.warn('[Affiliate] processAffiliateSwapCommission error:', err);
   }
 }
 
@@ -342,9 +361,12 @@ affiliateRouter.get('/status/:walletAddress', (req: Request, res: Response) => {
       .prepare('SELECT * FROM affiliates WHERE LOWER(wallet_address) = ?')
       .get(cleanWallet) as any;
 
-    const latestApplication = db
+    const latestApplicationRow = db
       .prepare('SELECT * FROM affiliate_applications WHERE LOWER(wallet_address) = ? ORDER BY created_at DESC LIMIT 1')
       .get(cleanWallet) as any;
+
+    // Public endpoint: never expose applicant contact email
+    const latestApplication = latestApplicationRow ? { ...latestApplicationRow, email: undefined } : null;
 
     if (affiliate) {
       return res.json({
@@ -352,7 +374,7 @@ affiliateRouter.get('/status/:walletAddress', (req: Request, res: Response) => {
         isApproved: affiliate.status === 'active',
         status: affiliate.status,
         role: affiliate.role, // 'partner' | 'bdm'
-        affiliate,
+        affiliate: { ...affiliate, email: undefined },
         application: latestApplication || null,
       });
     }
@@ -366,12 +388,12 @@ affiliateRouter.get('/status/:walletAddress', (req: Request, res: Response) => {
       application: latestApplication || null,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
 // 2. Submit Partner or BDM Application
-affiliateRouter.post('/apply', (req: Request, res: Response) => {
+affiliateRouter.post('/apply', async (req: Request, res: Response) => {
   try {
     const {
       role,
@@ -387,6 +409,8 @@ affiliateRouter.post('/apply', (req: Request, res: Response) => {
       manageablePartnersCount,
       message,
       bdmWalletAddress,
+      signature,
+      signedMessage,
     } = req.body;
 
     const cleanRole = role === 'bdm' ? 'bdm' : 'partner';
@@ -394,6 +418,25 @@ affiliateRouter.post('/apply', (req: Request, res: Response) => {
 
     if (!cleanWallet || !fullName || !email || !telegramUsername || !twitterLink || !telegramChannelLink) {
       return res.status(400).json({ error: 'Please complete all required application fields' });
+    }
+
+    if (!isValidWalletAddress(String(walletAddress).trim())) {
+      return res.status(400).json({ error: 'Please connect a valid wallet address.' });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    }
+
+    // Prove ownership of the applying wallet
+    const signatureError = consumeSignedChallenge({
+      address: String(walletAddress).trim(),
+      purpose: 'affiliate_apply',
+      message: signedMessage,
+      signature,
+    });
+    if (signatureError) {
+      return res.status(401).json({ error: signatureError });
     }
 
     // Check if already approved
@@ -433,12 +476,12 @@ affiliateRouter.post('/apply', (req: Request, res: Response) => {
       appId,
       cleanRole,
       cleanWallet,
-      fullName.trim(),
-      email.trim(),
-      telegramUsername.trim(),
-      twitterLink.trim(),
+      String(fullName).trim(),
+      String(email).trim(),
+      String(telegramUsername).trim(),
+      String(twitterLink).trim(),
       youtubeLink ? String(youtubeLink).trim() : null,
-      telegramChannelLink.trim(),
+      String(telegramChannelLink).trim(),
       audienceSize ? String(audienceSize).trim() : null,
       marketingExperience ? String(marketingExperience).trim() : null,
       manageablePartnersCount ? String(manageablePartnersCount).trim() : null,
@@ -465,16 +508,42 @@ affiliateRouter.post('/apply', (req: Request, res: Response) => {
       // Non-blocking audit log
     }
 
+    // Email the admin (support@novap2p.com) with signed Approve / Reject links. The review token never leaves the server.
+    const reviewToken = signReviewToken(appId);
+    let adminNotified = false;
+    if (reviewToken) {
+      const emailResult = await sendAdminAffiliateApplicationEmail({
+        siteOrigin: getSiteOrigin(req),
+        applicationId: appId,
+        reviewToken,
+        role: cleanRole,
+        walletAddress: cleanWallet,
+        fullName: String(fullName).trim(),
+        email: String(email).trim(),
+        telegramUsername: String(telegramUsername).trim(),
+        twitterLink: String(twitterLink).trim(),
+        youtubeLink: youtubeLink ? String(youtubeLink).trim() : null,
+        telegramChannelLink: String(telegramChannelLink).trim(),
+        audienceSize: audienceSize ? String(audienceSize).trim() : null,
+        marketingExperience: marketingExperience ? String(marketingExperience).trim() : null,
+        manageablePartnersCount: manageablePartnersCount ? String(manageablePartnersCount).trim() : null,
+        message: message ? String(message).trim() : null,
+      });
+      adminNotified = emailResult.sent;
+    } else {
+      console.warn(`[Affiliate] Application ${appId} saved, but admin email skipped: SWAP_ADMIN_KEY not configured (needed for review links).`);
+    }
+
     res.json({
       success: true,
       applicationId: appId,
-      reviewToken: signReviewToken(appId),
+      adminNotified,
       role: cleanRole,
       status: 'pending',
       message: `Your ${cleanRole === 'bdm' ? 'BDM' : 'Partner'} application has been submitted and will be reviewed within 24 hours.`,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
@@ -487,6 +556,9 @@ affiliateRouter.post('/track-ref', (req: Request, res: Response) => {
     }
 
     const cleanRef = String(refWallet).trim().toLowerCase();
+    if (!isValidWalletAddress(String(refWallet).trim())) {
+      return res.json({ success: true, valid: false, referrerRole: null, bound: false });
+    }
     const affiliate = db
       .prepare('SELECT id, wallet_address, role, status FROM affiliates WHERE LOWER(wallet_address) = ? AND status = ?')
       .get(cleanRef, 'active') as any;
@@ -503,7 +575,7 @@ affiliateRouter.post('/track-ref', (req: Request, res: Response) => {
       bound,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
@@ -557,7 +629,6 @@ affiliateRouter.get('/partner/dashboard/:walletAddress', (req: Request, res: Res
       partner: {
         walletAddress: partner.wallet_address,
         fullName: partner.full_name,
-        email: partner.email,
         telegramUsername: partner.telegram_username,
         status: partner.status,
         bdmWalletAddress: partner.bdm_wallet_address,
@@ -597,7 +668,7 @@ affiliateRouter.get('/partner/dashboard/:walletAddress', (req: Request, res: Res
       payouts,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
@@ -681,7 +752,6 @@ affiliateRouter.get('/bdm/dashboard/:walletAddress', (req: Request, res: Respons
       bdm: {
         walletAddress: bdm.wallet_address,
         fullName: bdm.full_name,
-        email: bdm.email,
         telegramUsername: bdm.telegram_username,
         status: bdm.status,
         referralLink: `https://novap2p.com/swap?ref=${bdm.wallet_address}`,
@@ -714,18 +784,33 @@ affiliateRouter.get('/bdm/dashboard/:walletAddress', (req: Request, res: Respons
       payouts,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
 // 6. Request Affiliate Payout (Partner or BDM, minimum $100)
 affiliateRouter.post('/payout/request', (req: Request, res: Response) => {
   try {
-    const { walletAddress, payoutAddress, preferredNetwork, preferredToken } = req.body;
+    const { walletAddress, payoutAddress, preferredNetwork, preferredToken, signature, signedMessage } = req.body;
     const cleanWallet = String(walletAddress || '').trim().toLowerCase();
 
     if (!cleanWallet || !payoutAddress || !preferredNetwork) {
       return res.status(400).json({ error: 'Wallet address, payout destination, and network are required' });
+    }
+
+    if (String(payoutAddress).trim().length < 20 || String(payoutAddress).trim().length > 128) {
+      return res.status(400).json({ error: 'Please enter a valid payout wallet address.' });
+    }
+
+    // Only the affiliate's own wallet can request (and choose the destination of) a payout
+    const signatureError = consumeSignedChallenge({
+      address: String(walletAddress).trim(),
+      purpose: 'affiliate_payout',
+      message: signedMessage,
+      signature,
+    });
+    if (signatureError) {
+      return res.status(401).json({ error: signatureError });
     }
 
     const affiliate = db
@@ -746,6 +831,7 @@ affiliateRouter.post('/payout/request', (req: Request, res: Response) => {
     const now = new Date().toISOString();
     const payoutId = 'affpay_' + crypto.randomUUID();
 
+    db.transaction(() => {
     db.prepare(`
       INSERT INTO affiliate_payouts (
         id, affiliate_wallet_address, affiliate_role, amount_usd,
@@ -776,6 +862,7 @@ affiliateRouter.post('/payout/request', (req: Request, res: Response) => {
       SET payout_id = ?
       WHERE LOWER(affiliate_wallet_address) = ? AND status = 'pending' AND payout_id IS NULL
     `).run(payoutId, cleanWallet);
+    })();
 
     res.json({
       success: true,
@@ -785,7 +872,7 @@ affiliateRouter.post('/payout/request', (req: Request, res: Response) => {
       message: 'Payout request submitted! Processing takes within 24 hours.',
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
@@ -814,12 +901,12 @@ affiliateRouter.get('/admin/overview', verifyAffiliateAdmin, (req: Request, res:
       payouts,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
 // Admin: Approve or Reject Affiliate Application
-affiliateRouter.post('/admin/applications/:id/review', verifyAffiliateAdmin, (req: Request, res: Response) => {
+affiliateRouter.post('/admin/applications/:id/review', verifyAffiliateAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { action, assignRole, bdmWalletAddress, adminNotes } = req.body; // action: 'approve' | 'reject'
@@ -848,9 +935,10 @@ affiliateRouter.post('/admin/applications/:id/review', verifyAffiliateAdmin, (re
       adminNotes,
     });
 
-    return res.json(result);
+    const applicantNotified = await notifyApplicant(req, result);
+    return res.json({ ...result, applicantNotified });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
@@ -876,12 +964,12 @@ affiliateRouter.get('/review-info', (req: Request, res: Response) => {
       application: appRecord,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
 // Signed Email Link: Approve or Reject directly from Email Review Link
-affiliateRouter.post('/review-action', (req: Request, res: Response) => {
+affiliateRouter.post('/review-action', async (req: Request, res: Response) => {
   try {
     const { id, token, action, assignRole, bdmWalletAddress, adminNotes } = req.body;
 
@@ -901,6 +989,11 @@ affiliateRouter.post('/review-action', (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Application not found.' });
     }
 
+    // Email links are single-use: once reviewed, further changes go through the admin panel
+    if (appRecord.status !== 'pending') {
+      return res.status(409).json({ error: `This application has already been ${appRecord.status}. Use the admin panel (/swap-admin) to make further changes.` });
+    }
+
     if (action === 'reject' && (!adminNotes || !String(adminNotes).trim())) {
       return res.status(400).json({ error: 'Rejection reason / query is required before rejecting.' });
     }
@@ -913,9 +1006,10 @@ affiliateRouter.post('/review-action', (req: Request, res: Response) => {
       adminNotes,
     });
 
-    return res.json(result);
+    const applicantNotified = await notifyApplicant(req, result);
+    return res.json({ ...result, applicantNotified });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
@@ -947,7 +1041,7 @@ affiliateRouter.post('/admin/affiliates/:walletAddress/update', verifyAffiliateA
 
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 
@@ -965,8 +1059,13 @@ affiliateRouter.post('/admin/payouts/:id/pay', verifyAffiliateAdmin, (req: Reque
       return res.status(404).json({ error: 'Payout not found' });
     }
 
+    if (payout.status === 'paid') {
+      return res.status(400).json({ error: 'This payout has already been marked as paid.' });
+    }
+
     const now = new Date().toISOString();
 
+    db.transaction(() => {
     db.prepare(`
       UPDATE affiliate_payouts
       SET status = 'paid', tx_hash = ?, admin_notes = ?, paid_at = ?, updated_at = ?
@@ -984,10 +1083,11 @@ affiliateRouter.post('/admin/payouts/:id/pay', verifyAffiliateAdmin, (req: Reque
       SET status = 'paid'
       WHERE payout_id = ?
     `).run(id);
+    })();
 
     res.json({ success: true, status: 'paid' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'affiliate api');
   }
 });
 

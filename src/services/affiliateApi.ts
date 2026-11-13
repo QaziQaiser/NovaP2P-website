@@ -42,6 +42,8 @@ export interface ReviewDecisionResponse {
   applicantEmail: string;
   applicantName: string;
   rejectionReason: string | null;
+  /** True when the server emailed the decision to the applicant */
+  applicantNotified?: boolean;
 }
 
 export interface PartnerCommissionItem {
@@ -159,12 +161,13 @@ export interface BdmDashboardData {
 const API_BASE = '/api/affiliate';
 
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
+  // Merge headers last so per-call headers (e.g. x-admin-key) never drop the JSON Content-Type
   const res = await fetch(url, {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       ...(options?.headers || {}),
     },
-    ...options,
   });
 
   const data = await res.json().catch(() => ({}));
@@ -192,11 +195,13 @@ export const affiliateApi = {
     manageablePartnersCount?: string;
     message?: string;
     bdmWalletAddress?: string;
+    signature: string;
+    signedMessage: string;
   }) =>
     requestJson<{
       success: boolean;
       applicationId: string;
-      reviewToken: string;
+      adminNotified: boolean;
       role: AffiliateRole;
       status: string;
       message: string;
@@ -228,6 +233,8 @@ export const affiliateApi = {
     payoutAddress: string;
     preferredNetwork: string;
     preferredToken?: string;
+    signature: string;
+    signedMessage: string;
   }) =>
     requestJson<{ success: boolean; payoutId: string; amountUSD: number; status: string; message: string }>(
       `${API_BASE}/payout/request`,

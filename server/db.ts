@@ -6,7 +6,8 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dataDir = path.resolve(__dirname, '../data');
+// DATA_DIR lets the SQLite database live outside the deploy folder so redeploys do not wipe it.
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve(__dirname, '../data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
@@ -353,6 +354,17 @@ export function initDb() {
     }
   } catch (err) {
     // Ignore if table was just created
+  }
+
+  // Migration: link rewards to the claim that requested them (accumulated claims cover many rewards)
+  try {
+    const rewardCols = (db.prepare("PRAGMA table_info(swap_rewards)").all() as any[]).map((col: any) => col.name);
+    if (!rewardCols.includes('claim_id')) {
+      db.exec("ALTER TABLE swap_rewards ADD COLUMN claim_id TEXT;");
+    }
+    db.exec("CREATE INDEX IF NOT EXISTS idx_rewards_claim ON swap_rewards(claim_id);");
+  } catch (err) {
+    console.error('[DB] swap_rewards.claim_id migration failed:', err);
   }
 
   // Seed / Update active Genesis campaign configuration

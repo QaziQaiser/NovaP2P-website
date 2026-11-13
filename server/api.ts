@@ -2,44 +2,62 @@ import { Router, type Request, type Response } from 'express';
 import { db } from './db.ts';
 import { sendAdminClaimNotification } from './notifications.ts';
 import { bindAffiliateReferral, processAffiliateSwapCommission } from './affiliateApi.ts';
-import { ethers } from 'ethers';
 import crypto from 'crypto';
+import {
+  verifyAdmin,
+  isValidAdminKey,
+  ADMIN_KEY,
+  issueChallenge,
+  consumeSignedChallenge,
+  isSignaturePurpose,
+  isValidWalletAddress,
+  getWalletKind,
+  sendServerError,
+} from './auth.ts';
 
 export const apiRouter = Router();
 
-const ADMIN_KEY = process.env.SWAP_ADMIN_KEY || 'nova-genesis-admin-2026';
 const ENABLED_CHAINS = [1, 56, 137, 42161, 10, 8453];
+const DEFAULT_CAMPAIGN_ID = 'campaign_genesis_001';
+const CLAIM_THRESHOLD_USD = 500.0;
 
-// Nonce storage for signature verification
-const pendingNonces = new Map<string, { nonce: string; timestamp: number }>();
+// Registered LI.FI integrator string; only swaps routed through Nova Swap are credited
+const LIFI_INTEGRATOR = (process.env.LIFI_INTEGRATOR || process.env.VITE_VELORA_PARTNER || 'nova-p2p').toLowerCase();
 
-// Helper: Clean up old nonces (older than 10 mins)
-function getOrCreateNonce(walletAddress: string): string {
-  const normalized = walletAddress.toLowerCase();
-  const now = Date.now();
-  const existing = pendingNonces.get(normalized);
-  if (existing && now - existing.timestamp < 10 * 60 * 1000) {
-    return existing.nonce;
-  }
-  const nonce = crypto.randomBytes(16).toString('hex');
-  pendingNonces.set(normalized, { nonce, timestamp: now });
-  return nonce;
+// EVM tx hashes (0x + 64 hex) or Solana / non-EVM transaction signatures (base58)
+const TX_HASH_PATTERN = /^(0x[a-fA-F0-9]{64}|[1-9A-HJ-NP-Za-km-z]{43,100})$/;
+
+function clientIp(req: Request): string {
+  return String(req.ip || req.socket.remoteAddress || '');
 }
 
-// Helper: Verify Admin authorization header
-function verifyAdmin(req: Request, res: Response, next: () => void) {
-  const authHeader = req.headers['x-admin-key'] || req.headers['authorization'];
-  if (!authHeader) {
-    return res.status(401).json({ error: 'Admin authentication required' });
-  }
-  const token = typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7)
-    : authHeader;
+// Helper: Find or auto-create the campaign user record for a wallet
+function findOrCreateCampaignUser(normalizedAddress: string, campaignId: string, chainId: number = 1): any {
+  let user = db.prepare('SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?').get(campaignId, normalizedAddress) as any;
+  if (user) return user;
 
-  if (token !== ADMIN_KEY) {
-    return res.status(403).json({ error: 'Invalid admin credentials' });
+  let newRefCode = '';
+  while (true) {
+    newRefCode = 'NOVA' + crypto.randomBytes(3).toString('hex').toUpperCase();
+    const exists = db.prepare('SELECT id FROM swap_campaign_users WHERE referral_code = ?').get(newRefCode);
+    if (!exists) break;
   }
-  next();
+  const userId = 'usr_' + crypto.randomUUID();
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT OR IGNORE INTO swap_campaign_users (
+      id, campaign_id, wallet_address, chain_id, signature, verified_at,
+      referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
+      is_flagged, last_active_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(userId, campaignId, normalizedAddress, chainId, 'auto_connected', now, newRefCode, null, 0.0, 0, 0, now, now);
+  return db.prepare('SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?').get(campaignId, normalizedAddress) as any;
+}
+
+// Helper: Check that a LI.FI transfer/status record was routed through Nova Swap
+function isNovaIntegratorTransfer(record: any): boolean {
+  const integrator = String(record?.metadata?.integrator || record?.integrator || '').toLowerCase();
+  return integrator === LIFI_INTEGRATOR;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +128,7 @@ apiRouter.get('/campaign', (req: Request, res: Response) => {
       },
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -126,13 +144,13 @@ apiRouter.post('/track-referral', (req: Request, res: Response) => {
     const referrer = db.prepare('SELECT id, wallet_address FROM swap_campaign_users WHERE UPPER(referral_code) = ?').get(cleanCode) as any;
     
     // Log referral visit event
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ip = clientIp(req);
     db.prepare(`
       INSERT INTO swap_campaign_events (id, campaign_id, user_id, event_name, event_data, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       'evt_' + crypto.randomUUID(),
-      'campaign_genesis_001',
+      DEFAULT_CAMPAIGN_ID,
       referrer ? referrer.id : null,
       'referral_captured',
       JSON.stringify({ refCode: cleanCode, valid: !!referrer }),
@@ -146,7 +164,7 @@ apiRouter.post('/track-referral', (req: Request, res: Response) => {
       referrerCode: cleanCode,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -158,13 +176,13 @@ apiRouter.post('/events', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Event name is required' });
     }
 
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ip = clientIp(req);
     db.prepare(`
       INSERT INTO swap_campaign_events (id, campaign_id, wallet_address, event_name, event_data, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       'evt_' + crypto.randomUUID(),
-      'campaign_genesis_001',
+      DEFAULT_CAMPAIGN_ID,
       walletAddress ? String(walletAddress).toLowerCase() : null,
       eventName,
       eventData ? JSON.stringify(eventData) : null,
@@ -174,7 +192,7 @@ apiRouter.post('/events', (req: Request, res: Response) => {
 
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -182,16 +200,33 @@ apiRouter.post('/events', (req: Request, res: Response) => {
 apiRouter.get('/auth/nonce', (req: Request, res: Response) => {
   try {
     const { address } = req.query;
-    if (!address || typeof address !== 'string') {
-      return res.status(400).json({ error: 'Wallet address required' });
+    if (!address || typeof address !== 'string' || !isValidWalletAddress(address)) {
+      return res.status(400).json({ error: 'Valid wallet address required' });
     }
 
-    const nonce = getOrCreateNonce(address);
-    const message = `Sign this message to verify wallet ownership for Nova Swap Genesis Campaign.\n\nWallet: ${address.toLowerCase()}\nNonce: ${nonce}\nTimestamp: ${new Date().toISOString()}`;
-
-    res.json({ nonce, message });
+    res.json(issueChallenge(address, 'verify_wallet'));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'auth/nonce');
+  }
+});
+
+// 4b. Get a one-time message to sign for a protected action (reward claim, affiliate apply / payout)
+apiRouter.get('/auth/challenge', (req: Request, res: Response) => {
+  try {
+    const { address, purpose } = req.query;
+    if (!address || typeof address !== 'string' || !isValidWalletAddress(address)) {
+      return res.status(400).json({ error: 'Valid wallet address required' });
+    }
+    if (!isSignaturePurpose(purpose)) {
+      return res.status(400).json({ error: 'Invalid signature purpose' });
+    }
+    if (getWalletKind(address) === 'tron') {
+      return res.status(400).json({ error: 'Please connect an EVM (e.g. MetaMask, Trust Wallet) or Solana wallet to sign this request.' });
+    }
+
+    res.json(issueChallenge(address, purpose));
+  } catch (err: any) {
+    sendServerError(res, err, 'auth/challenge');
   }
 });
 
@@ -199,26 +234,20 @@ apiRouter.get('/auth/nonce', (req: Request, res: Response) => {
 apiRouter.post('/auth/verify', async (req: Request, res: Response) => {
   try {
     const { address, signature, message, chainId, refCode } = req.body;
-    if (!address || !signature || !message) {
+    if (!address || !signature || !message || !isValidWalletAddress(address)) {
       return res.status(400).json({ error: 'Address, signature and message are required' });
     }
 
-    const normalizedAddress = address.toLowerCase();
+    const normalizedAddress = String(address).toLowerCase();
 
-    // Verify cryptographic signature
-    let recoveredAddress = '';
-    try {
-      recoveredAddress = ethers.verifyMessage(message, signature).toLowerCase();
-    } catch (e: any) {
-      return res.status(400).json({ error: 'Signature verification failed: ' + e.message });
-    }
-
-    if (recoveredAddress !== normalizedAddress) {
-      return res.status(400).json({ error: 'Recovered address does not match claimed wallet address' });
+    // Verify the signature over the exact server-issued one-time message
+    const signatureError = consumeSignedChallenge({ address, purpose: 'verify_wallet', message, signature });
+    if (signatureError) {
+      return res.status(400).json({ error: signatureError });
     }
 
     const now = new Date().toISOString();
-    const campaignId = 'campaign_genesis_001';
+    const campaignId = DEFAULT_CAMPAIGN_ID;
 
     // Find or create user
     let user = db.prepare('SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?').get(campaignId, normalizedAddress) as any;
@@ -270,7 +299,7 @@ apiRouter.post('/auth/verify', async (req: Request, res: Response) => {
 
       // Create swap_referrals record if attributed
       if (referredByUserId) {
-        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        const ip = clientIp(req);
         db.prepare(`
           INSERT OR IGNORE INTO swap_referrals (
             id, campaign_id, referrer_user_id, referred_user_id, referral_code,
@@ -300,11 +329,8 @@ apiRouter.post('/auth/verify', async (req: Request, res: Response) => {
       `).run(signature, now, chainId ? Number(chainId) : user.chain_id, now, user.id);
     }
 
-    // Invalidate used nonce
-    pendingNonces.delete(normalizedAddress);
-
     // Track wallet_connected event
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ip = clientIp(req);
     db.prepare(`
       INSERT INTO swap_campaign_events (id, campaign_id, user_id, wallet_address, event_name, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -324,7 +350,7 @@ apiRouter.post('/auth/verify', async (req: Request, res: Response) => {
       },
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -345,228 +371,215 @@ export function recordSwapTransactionInternal(params: {
   verificationSource?: string;
   verifiedAt?: string;
 }): { success: boolean; newlyUnlocked: string[]; duplicate?: boolean; belowMin?: boolean; txId?: string } {
-  // Check duplicate transaction
-  const existingTx = db.prepare('SELECT id FROM swap_transactions WHERE chain_id = ? AND tx_hash = ?')
-    .get(params.numericChainId, params.normalizedTxHash);
-  if (existingTx) {
-    return { success: false, newlyUnlocked: [], duplicate: true };
-  }
-
-  const campaign = db.prepare('SELECT * FROM swap_campaigns WHERE id = ?').get(params.campaignId) as any;
-  const minSwapUSD = campaign ? campaign.min_swap_usd : 1.0;
-  if (params.volumeUSD < minSwapUSD) {
-    return { success: false, newlyUnlocked: [], belowMin: true };
-  }
-
-  const now = params.verifiedAt || new Date().toISOString();
-  const txId = 'tx_' + crypto.randomUUID();
-
-  // 1. Insert transaction
-  db.prepare(`
-    INSERT INTO swap_transactions (
-      id, campaign_id, user_id, wallet_address, chain_id, tx_hash,
-      lifi_route_id, from_token_symbol, from_token_address, to_token_symbol,
-      to_token_address, from_amount, to_amount, volume_usd, execution_status,
-      verification_status, verification_source, verified_at, raw_data, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    txId,
-    params.campaignId,
-    params.userId,
-    params.normalizedAddress,
-    params.numericChainId,
-    params.normalizedTxHash,
-    params.lifiRouteId || null,
-    typeof params.fromToken === 'string' ? params.fromToken : params.fromToken?.symbol || null,
-    params.fromToken?.address || null,
-    typeof params.toToken === 'string' ? params.toToken : params.toToken?.symbol || null,
-    params.toToken?.address || null,
-    params.fromAmount ? String(params.fromAmount) : null,
-    params.toAmount ? String(params.toAmount) : null,
-    params.volumeUSD,
-    'DONE',
-    'VERIFIED',
-    params.verificationSource || 'lifi_api',
-    now,
-    params.rawRouteData ? JSON.stringify(params.rawRouteData) : null,
-    now
-  );
-
-  // 2. Increment user cumulative volume
-  const user = db.prepare('SELECT * FROM swap_campaign_users WHERE id = ?').get(params.userId) as any;
-  const newTotalVolume = Number(((user?.total_volume_usd || 0) + params.volumeUSD).toFixed(4));
-  const newSwapsCount = (user?.eligible_swaps_count || 0) + 1;
-
-  db.prepare(`
-    UPDATE swap_campaign_users 
-    SET total_volume_usd = ?, eligible_swaps_count = ?, last_active_at = ?
-    WHERE id = ?
-  `).run(newTotalVolume, newSwapsCount, now, params.userId);
-
-  // 3. Calculate and credit active 5% Cashback on Nova Swap fees (0.5% fee collected)
-  if (campaign && campaign.cashback_enabled) {
-    const novaFeeCollectedUSD = params.volumeUSD * 0.005; // 0.5% Nova fee
-    const cashbackRate = (campaign.cashback_percentage || 5.0) / 100.0;
-    const creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
-
-    if (creditedCashbackUSD > 0) {
-      const cbId = 'cb_' + crypto.randomUUID();
-      db.prepare(`
-        INSERT INTO swap_cashback_ledger (
-          id, campaign_id, user_id, wallet_address, transaction_id,
-          swap_volume_usd, nova_fee_usd, cashback_rate, cashback_amount_usd,
-          status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'credited', ?)
-      `).run(
-        cbId,
-        params.campaignId,
-        params.userId,
-        params.normalizedAddress,
-        txId,
-        params.volumeUSD,
-        novaFeeCollectedUSD,
-        cashbackRate,
-        creditedCashbackUSD,
-        now
-      );
-
-      // Also record in rewards table as cashback reward
-      const cbRewardId = 'rwd_cb_' + crypto.randomUUID();
-      db.prepare(`
-        INSERT INTO swap_rewards (
-          id, campaign_id, user_id, milestone_id, reward_type,
-          amount_usd, status, unlocked_at, created_at
-        ) VALUES (?, ?, ?, NULL, 'cashback', ?, 'unlocked', ?, ?)
-      `).run(cbRewardId, params.campaignId, params.userId, creditedCashbackUSD, now, now);
+  // All writes for one swap (transaction, volume, cashback, milestones, referral, affiliate commission)
+  // commit together or not at all.
+  const run = db.transaction(() => {
+    // Check duplicate transaction
+    const existingTx = db.prepare('SELECT id FROM swap_transactions WHERE chain_id = ? AND tx_hash = ?')
+      .get(params.numericChainId, params.normalizedTxHash);
+    if (existingTx) {
+      return { success: false, newlyUnlocked: [], duplicate: true };
     }
-  }
 
-  // 4. Unlock eligible milestones ($10,000 -> $25, $25,000 -> $50, $50,000 -> $100)
-  const milestones = db.prepare(`
-    SELECT * FROM swap_campaign_milestones 
-    WHERE campaign_id = ? AND is_active = 1
-  `).all(params.campaignId) as any[];
+    const campaign = db.prepare('SELECT * FROM swap_campaigns WHERE id = ?').get(params.campaignId) as any;
+    const minSwapUSD = campaign ? campaign.min_swap_usd : 1.0;
+    if (params.volumeUSD < minSwapUSD) {
+      return { success: false, newlyUnlocked: [], belowMin: true };
+    }
 
-  const newlyUnlocked: string[] = [];
-  milestones.forEach(m => {
-    if (newTotalVolume >= m.target_volume_usd) {
-      const existingReward = db.prepare(`
-        SELECT id FROM swap_rewards WHERE user_id = ? AND milestone_id = ?
-      `).get(params.userId, m.id);
+    const now = params.verifiedAt || new Date().toISOString();
+    const txId = 'tx_' + crypto.randomUUID();
 
-      if (!existingReward) {
-        const rewardId = 'rwd_' + crypto.randomUUID();
+    // 1. Insert transaction
+    db.prepare(`
+      INSERT INTO swap_transactions (
+        id, campaign_id, user_id, wallet_address, chain_id, tx_hash,
+        lifi_route_id, from_token_symbol, from_token_address, to_token_symbol,
+        to_token_address, from_amount, to_amount, volume_usd, execution_status,
+        verification_status, verification_source, verified_at, raw_data, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      txId,
+      params.campaignId,
+      params.userId,
+      params.normalizedAddress,
+      params.numericChainId,
+      params.normalizedTxHash,
+      params.lifiRouteId || null,
+      typeof params.fromToken === 'string' ? params.fromToken : params.fromToken?.symbol || null,
+      params.fromToken?.address || null,
+      typeof params.toToken === 'string' ? params.toToken : params.toToken?.symbol || null,
+      params.toToken?.address || null,
+      params.fromAmount ? String(params.fromAmount) : null,
+      params.toAmount ? String(params.toAmount) : null,
+      params.volumeUSD,
+      'DONE',
+      'VERIFIED',
+      params.verificationSource || 'lifi_api',
+      now,
+      params.rawRouteData ? JSON.stringify(params.rawRouteData) : null,
+      now
+    );
+
+    // 2. Increment user cumulative volume
+    const user = db.prepare('SELECT * FROM swap_campaign_users WHERE id = ?').get(params.userId) as any;
+    const newTotalVolume = Number(((user?.total_volume_usd || 0) + params.volumeUSD).toFixed(4));
+    const newSwapsCount = (user?.eligible_swaps_count || 0) + 1;
+
+    db.prepare(`
+      UPDATE swap_campaign_users
+      SET total_volume_usd = ?, eligible_swaps_count = ?, last_active_at = ?
+      WHERE id = ?
+    `).run(newTotalVolume, newSwapsCount, now, params.userId);
+
+    // 3. Calculate and credit active 5% Cashback on Nova Swap fees (0.5% fee collected)
+    if (campaign && campaign.cashback_enabled) {
+      const novaFeeCollectedUSD = params.volumeUSD * 0.005; // 0.5% Nova fee
+      const cashbackRate = (campaign.cashback_percentage || 5.0) / 100.0;
+      const creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
+
+      if (creditedCashbackUSD > 0) {
+        const cbId = 'cb_' + crypto.randomUUID();
         db.prepare(`
-          INSERT INTO swap_rewards (
-            id, campaign_id, user_id, milestone_id, reward_type,
-            amount_usd, status, unlocked_at, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO swap_cashback_ledger (
+            id, campaign_id, user_id, wallet_address, transaction_id,
+            swap_volume_usd, nova_fee_usd, cashback_rate, cashback_amount_usd,
+            status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'credited', ?)
         `).run(
-          rewardId,
+          cbId,
           params.campaignId,
           params.userId,
-          m.id,
-          'milestone',
-          m.reward_amount_usd,
-          'unlocked',
-          now,
+          params.normalizedAddress,
+          txId,
+          params.volumeUSD,
+          novaFeeCollectedUSD,
+          cashbackRate,
+          creditedCashbackUSD,
           now
         );
-        newlyUnlocked.push(m.title);
-      }
-    }
-  });
 
-  // 5. Check referral qualification for referrer ($5.00 USDT on $2,000 volume)
-  if (user?.referred_by_user_id) {
-    const referral = db.prepare(`
-      SELECT * FROM swap_referrals 
-      WHERE campaign_id = ? AND referred_user_id = ?
-    `).get(params.campaignId, params.userId) as any;
-
-    if (referral && referral.status === 'connected') {
-      if (newTotalVolume >= campaign.referral_qualifying_vol_usd) {
-        const refRewardAmount = campaign.referral_reward_usd || 5.0;
-        db.prepare(`
-          UPDATE swap_referrals 
-          SET status = 'qualified', qualifying_volume_usd = ?, reward_amount_usd = ?, qualified_at = ?
-          WHERE id = ?
-        `).run(newTotalVolume, refRewardAmount, now, referral.id);
-
-        const refRewardId = 'rwd_ref_' + crypto.randomUUID();
+        // Also record in rewards table as cashback reward
+        const cbRewardId = 'rwd_cb_' + crypto.randomUUID();
         db.prepare(`
           INSERT INTO swap_rewards (
             id, campaign_id, user_id, milestone_id, reward_type,
             amount_usd, status, unlocked_at, created_at
-          ) VALUES (?, ?, ?, NULL, 'referral', ?, 'unlocked', ?, ?)
-        `).run(refRewardId, params.campaignId, user.referred_by_user_id, refRewardAmount, now, now);
+          ) VALUES (?, ?, ?, NULL, 'cashback', ?, 'unlocked', ?, ?)
+        `).run(cbRewardId, params.campaignId, params.userId, creditedCashbackUSD, now, now);
       }
     }
-  }
 
-  // 6. Credit Partner / BDM Affiliate Commissions (20% Partner + 10% BDM Override)
-  processAffiliateSwapCommission({
-    traderWallet: params.normalizedAddress,
-    transactionId: txId,
-    volumeUSD: params.volumeUSD,
-    verifiedAt: now,
+    // 4. Unlock eligible milestones ($10,000 -> $25, $25,000 -> $50, $50,000 -> $100)
+    const milestones = db.prepare(`
+      SELECT * FROM swap_campaign_milestones
+      WHERE campaign_id = ? AND is_active = 1
+    `).all(params.campaignId) as any[];
+
+    const newlyUnlocked: string[] = [];
+    milestones.forEach(m => {
+      if (newTotalVolume >= m.target_volume_usd) {
+        const existingReward = db.prepare(`
+          SELECT id FROM swap_rewards WHERE user_id = ? AND milestone_id = ?
+        `).get(params.userId, m.id);
+
+        if (!existingReward) {
+          const rewardId = 'rwd_' + crypto.randomUUID();
+          db.prepare(`
+            INSERT INTO swap_rewards (
+              id, campaign_id, user_id, milestone_id, reward_type,
+              amount_usd, status, unlocked_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            rewardId,
+            params.campaignId,
+            params.userId,
+            m.id,
+            'milestone',
+            m.reward_amount_usd,
+            'unlocked',
+            now,
+            now
+          );
+          newlyUnlocked.push(m.title);
+        }
+      }
+    });
+
+    // 5. Check referral qualification for referrer ($5.00 USDT on $2,000 volume)
+    if (campaign && user?.referred_by_user_id) {
+      const referral = db.prepare(`
+        SELECT * FROM swap_referrals
+        WHERE campaign_id = ? AND referred_user_id = ?
+      `).get(params.campaignId, params.userId) as any;
+
+      if (referral && referral.status === 'connected') {
+        if (newTotalVolume >= campaign.referral_qualifying_vol_usd) {
+          const refRewardAmount = campaign.referral_reward_usd || 5.0;
+          db.prepare(`
+            UPDATE swap_referrals
+            SET status = 'qualified', qualifying_volume_usd = ?, reward_amount_usd = ?, qualified_at = ?
+            WHERE id = ?
+          `).run(newTotalVolume, refRewardAmount, now, referral.id);
+
+          const refRewardId = 'rwd_ref_' + crypto.randomUUID();
+          db.prepare(`
+            INSERT INTO swap_rewards (
+              id, campaign_id, user_id, milestone_id, reward_type,
+              amount_usd, status, unlocked_at, created_at
+            ) VALUES (?, ?, ?, NULL, 'referral', ?, 'unlocked', ?, ?)
+          `).run(refRewardId, params.campaignId, user.referred_by_user_id, refRewardAmount, now, now);
+        }
+      }
+    }
+
+    // 6. Credit Partner / BDM Affiliate Commissions (20% Partner + 10% BDM Override)
+    processAffiliateSwapCommission({
+      traderWallet: params.normalizedAddress,
+      transactionId: txId,
+      volumeUSD: params.volumeUSD,
+      verifiedAt: now,
+    });
+
+    return { success: true, newlyUnlocked, txId };
   });
 
-  return { success: true, newlyUnlocked, txId };
+  try {
+    return run();
+  } catch (err: any) {
+    // A concurrent insert of the same (chain_id, tx_hash) is a duplicate, not a failure
+    if (String(err?.message || '').includes('UNIQUE constraint failed: swap_transactions')) {
+      return { success: false, newlyUnlocked: [], duplicate: true };
+    }
+    throw err;
+  }
 }
 
 // Auto-sync completed on-chain swaps from LI.FI API for a wallet address
 const userSyncCache = new Map<string, number>();
+const LIFI_SYNC_INTERVAL_MS = 20000;
 
-export async function syncUserTransfersFromLiFi(walletAddress: string, campaignId: string = 'campaign_genesis_001'): Promise<void> {
+export async function syncUserTransfersFromLiFi(walletAddress: string, campaignId: string = DEFAULT_CAMPAIGN_ID): Promise<void> {
   const normalized = walletAddress.toLowerCase();
   const now = Date.now();
   const lastSync = userSyncCache.get(normalized) || 0;
-  // Rate limit external sync to once every 3.5s per wallet address
-  if (now - lastSync < 3500) return;
+  // Rate limit external sync per wallet address
+  if (now - lastSync < LIFI_SYNC_INTERVAL_MS) return;
   userSyncCache.set(normalized, now);
 
   try {
-    let user = db.prepare('SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?').get(campaignId, normalized) as any;
-    if (!user) {
-      let newRefCode = '';
-      while (true) {
-        newRefCode = 'NOVA' + crypto.randomBytes(3).toString('hex').toUpperCase();
-        const exists = db.prepare('SELECT id FROM swap_campaign_users WHERE referral_code = ?').get(newRefCode);
-        if (!exists) break;
-      }
-      const userId = 'usr_' + crypto.randomUUID();
-      const isoNow = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO swap_campaign_users (
-          id, campaign_id, wallet_address, chain_id, signature, verified_at,
-          referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
-          is_flagged, last_active_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        userId,
-        campaignId,
-        normalized,
-        1,
-        'auto_connected',
-        isoNow,
-        newRefCode,
-        null,
-        0.0,
-        0,
-        0,
-        isoNow,
-        isoNow
-      );
-      user = db.prepare('SELECT * FROM swap_campaign_users WHERE id = ?').get(userId) as any;
-    }
+    const user = findOrCreateCampaignUser(normalized, campaignId, 1);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
-    const lifiRes = await fetch(`https://li.quest/v1/analytics/transfers?wallet=${encodeURIComponent(normalized)}`, {
-      headers: { 'Accept': 'application/json' },
-      signal: controller.signal,
-    });
+    // Only transfers routed through Nova Swap's registered integrator are eligible
+    const lifiRes = await fetch(
+      `https://li.quest/v1/analytics/transfers?integrator=${encodeURIComponent(LIFI_INTEGRATOR)}&wallet=${encodeURIComponent(walletAddress)}`,
+      {
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal,
+      }
+    );
     clearTimeout(timeoutId);
 
     if (lifiRes.ok) {
@@ -575,11 +588,15 @@ export async function syncUserTransfersFromLiFi(walletAddress: string, campaignI
 
       for (const t of transfers) {
         if (t.status !== 'DONE') continue;
+        if (!isNovaIntegratorTransfer(t)) continue;
+        // Only credit swaps sent from this wallet
+        if (String(t.fromAddress || '').toLowerCase() !== normalized) continue;
 
         const txHash = (t.sending?.txHash || t.receiving?.txHash || t.transactionId || '').toLowerCase();
         if (!txHash) continue;
 
-        const chainId = Number(t.sending?.chainId || t.receiving?.chainId || 56);
+        const chainId = Number(t.sending?.chainId || t.receiving?.chainId || 0);
+        if (!chainId) continue;
         const volumeUSD = parseFloat(t.sending?.amountUSD || t.receiving?.amountUSD || '0');
         if (isNaN(volumeUSD) || volumeUSD <= 0) continue;
 
@@ -619,64 +636,33 @@ export async function syncUserTransfersFromLiFi(walletAddress: string, campaignI
 apiRouter.get('/user/:walletAddress', async (req: Request, res: Response) => {
   try {
     const { walletAddress } = req.params;
-    if (!walletAddress) {
-      return res.status(400).json({ error: 'Wallet address required' });
+    if (!walletAddress || !isValidWalletAddress(walletAddress)) {
+      return res.status(400).json({ error: 'Valid wallet address required' });
     }
 
     const normalizedAddress = walletAddress.toLowerCase();
-    const campaignId = 'campaign_genesis_001';
+    const campaignId = DEFAULT_CAMPAIGN_ID;
 
     // Auto-sync completed swaps from LI.FI API for this wallet address
-    await syncUserTransfersFromLiFi(normalizedAddress, campaignId);
+    await syncUserTransfersFromLiFi(walletAddress, campaignId);
 
-    let user = db.prepare('SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?').get(campaignId, normalizedAddress) as any;
-    if (!user) {
-      // Auto-create user record so dashboard works immediately when wallet connects
-      let newRefCode = '';
-      while (true) {
-        newRefCode = 'NOVA' + crypto.randomBytes(3).toString('hex').toUpperCase();
-        const exists = db.prepare('SELECT id FROM swap_campaign_users WHERE referral_code = ?').get(newRefCode);
-        if (!exists) break;
-      }
-      const userId = 'usr_' + crypto.randomUUID();
-      const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO swap_campaign_users (
-          id, campaign_id, wallet_address, chain_id, signature, verified_at,
-          referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
-          is_flagged, last_active_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        userId,
-        campaignId,
-        normalizedAddress,
-        1,
-        'auto_connected',
-        now,
-        newRefCode,
-        null,
-        0.0,
-        0,
-        0,
-        now,
-        now
-      );
-      user = db.prepare('SELECT * FROM swap_campaign_users WHERE id = ?').get(userId) as any;
-    }
+    // Auto-create user record so dashboard works immediately when wallet connects
+    const user = findOrCreateCampaignUser(normalizedAddress, campaignId, 1);
+    const campaign = db.prepare('SELECT * FROM swap_campaigns WHERE id = ?').get(campaignId) as any;
 
     // Fetch all active campaign milestones
     const milestones = db.prepare(`
-      SELECT * FROM swap_campaign_milestones 
-      WHERE campaign_id = ? AND is_active = 1 
+      SELECT * FROM swap_campaign_milestones
+      WHERE campaign_id = ? AND is_active = 1
       ORDER BY sort_order ASC, target_volume_usd ASC
     `).all(campaignId) as any[];
 
-    // Fetch user rewards
+    // Fetch user rewards (claims are linked either directly by reward_id or via the reward's claim_id)
     const rewards = db.prepare(`
       SELECT r.*, c.id as claim_id, c.status as claim_status, c.payout_address, c.preferred_network, c.preferred_token,
              p.payout_tx_hash, p.payout_network as paid_network, p.paid_at
       FROM swap_rewards r
-      LEFT JOIN swap_reward_claims c ON c.reward_id = r.id
+      LEFT JOIN swap_reward_claims c ON c.id = COALESCE(r.claim_id, (SELECT c2.id FROM swap_reward_claims c2 WHERE c2.reward_id = r.id ORDER BY c2.created_at DESC LIMIT 1))
       LEFT JOIN swap_reward_payouts p ON p.claim_id = c.id
       WHERE r.user_id = ?
     `).all(user.id) as any[];
@@ -693,16 +679,19 @@ apiRouter.get('/user/:walletAddress', async (req: Request, res: Response) => {
     const milestoneProgress = milestones.map(m => {
       const isReached = user.total_volume_usd >= m.target_volume_usd;
       const rewardRecord = rewardsMap.get(m.id);
-      
-      let status: 'locked' | 'in_progress' | 'unlocked' | 'requested' | 'under_review' | 'approved' | 'paid' | 'rejected' = 'locked';
+
+      let status: 'locked' | 'in_progress' | 'unlocked' | 'requested' | 'under_review' | 'approved' | 'paid' | 'rejected' | 'frozen' = 'locked';
 
       if (rewardRecord) {
-        if (rewardRecord.status === 'paid' || rewardRecord.claim_status === 'paid') status = 'paid';
-        else if (rewardRecord.claim_status === 'approved') status = 'approved';
-        else if (rewardRecord.claim_status === 'under_review') status = 'under_review';
-        else if (rewardRecord.claim_status === 'pending') status = 'requested';
-        else if (rewardRecord.status === 'unlocked') status = 'unlocked';
-        else if (rewardRecord.status === 'rejected') status = 'rejected';
+        const claimStatus = rewardRecord.claim_status;
+        const rewardStatus = rewardRecord.status;
+        if (rewardStatus === 'paid' || claimStatus === 'paid') status = 'paid';
+        else if (claimStatus === 'approved' || rewardStatus === 'approved') status = 'approved';
+        else if (claimStatus === 'under_review' || rewardStatus === 'under_review') status = 'under_review';
+        else if (claimStatus === 'frozen' || rewardStatus === 'frozen') status = 'frozen';
+        else if (claimStatus === 'pending' || rewardStatus === 'requested') status = 'requested';
+        else if (rewardStatus === 'rejected') status = 'rejected';
+        else status = 'unlocked';
       } else if (isReached) {
         status = 'unlocked';
       } else {
@@ -741,7 +730,7 @@ apiRouter.get('/user/:walletAddress', async (req: Request, res: Response) => {
 
     // Referral statistics
     const referralStats = db.prepare(`
-      SELECT 
+      SELECT
         COUNT(*) as total_referred_users,
         COALESCE(SUM(CASE WHEN status IN ('qualified', 'rewarded') THEN 1 ELSE 0 END), 0) as qualified_referrals,
         COALESCE(SUM(reward_amount_usd), 0) as total_referral_rewards
@@ -771,11 +760,16 @@ apiRouter.get('/user/:walletAddress', async (req: Request, res: Response) => {
     // Total bonus rewards = milestone bonus + referral bonus
     const totalBonusUSD = Number((milestoneBonusUSD + referralBonusUSD).toFixed(2));
 
-    // Total accumulated eligible rewards = Cashback + Total Bonuses
-    const totalAccumulatedRewardsUSD = Number((totalCashbackUSD + totalBonusUSD).toFixed(2));
+    // Claimable balance towards the $500 activation threshold = rewards not yet claimed or paid
+    const claimableRow = db.prepare(`
+      SELECT COALESCE(SUM(amount_usd), 0) as claimable
+      FROM swap_rewards
+      WHERE user_id = ? AND status = 'unlocked'
+    `).get(user.id) as any;
+    const totalAccumulatedRewardsUSD = Number((claimableRow?.claimable || 0).toFixed(2));
 
     // Claim stats against $500 activation threshold
-    const claimThresholdUSD = 500.0;
+    const claimThresholdUSD = CLAIM_THRESHOLD_USD;
     const progressPercent = Math.min(100, Math.round((totalAccumulatedRewardsUSD / claimThresholdUSD) * 100));
     const isClaimEligible = totalAccumulatedRewardsUSD >= claimThresholdUSD;
 
@@ -824,7 +818,7 @@ apiRouter.get('/user/:walletAddress', async (req: Request, res: Response) => {
       milestones: milestoneProgress,
       cashbackStats: {
         totalCashbackUSD,
-        cashbackPercentage: 5.0,
+        cashbackPercentage: campaign?.cashback_percentage ?? 5.0,
       },
       bonusStats: {
         milestoneBonusUSD,
@@ -870,7 +864,7 @@ apiRouter.get('/user/:walletAddress', async (req: Request, res: Response) => {
       })),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'user dashboard');
   }
 });
 
@@ -885,7 +879,6 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
       toToken,
       fromAmount,
       toAmount,
-      volumeUSD,
       lifiRouteId,
       rawRouteData,
     } = req.body;
@@ -893,50 +886,23 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
     if (!walletAddress || !chainId || !txHash) {
       return res.status(400).json({ error: 'walletAddress, chainId and txHash are required' });
     }
+    if (!isValidWalletAddress(walletAddress)) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+    if (typeof txHash !== 'string' || !TX_HASH_PATTERN.test(txHash.trim())) {
+      return res.status(400).json({ error: 'Invalid transaction hash' });
+    }
 
-    const normalizedAddress = walletAddress.toLowerCase();
-    const normalizedTxHash = txHash.toLowerCase();
+    const normalizedAddress = String(walletAddress).toLowerCase();
+    const rawTxHash = txHash.trim();
+    const normalizedTxHash = rawTxHash.toLowerCase();
     const numericChainId = Number(chainId);
 
     if (!numericChainId || isNaN(numericChainId) || numericChainId <= 0) {
       return res.status(400).json({ error: `Invalid Chain ID ${chainId}` });
     }
 
-    const campaignId = 'campaign_genesis_001';
-    let user = db.prepare('SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?').get(campaignId, normalizedAddress) as any;
-    if (!user) {
-      // Auto-create user record so swap transaction can be credited immediately
-      let newRefCode = '';
-      while (true) {
-        newRefCode = 'NOVA' + crypto.randomBytes(3).toString('hex').toUpperCase();
-        const exists = db.prepare('SELECT id FROM swap_campaign_users WHERE referral_code = ?').get(newRefCode);
-        if (!exists) break;
-      }
-      const userId = 'usr_' + crypto.randomUUID();
-      const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO swap_campaign_users (
-          id, campaign_id, wallet_address, chain_id, signature, verified_at,
-          referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
-          is_flagged, last_active_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        userId,
-        campaignId,
-        normalizedAddress,
-        numericChainId,
-        'auto_connected',
-        now,
-        newRefCode,
-        null,
-        0.0,
-        0,
-        0,
-        now,
-        now
-      );
-      user = db.prepare('SELECT * FROM swap_campaign_users WHERE id = ?').get(userId) as any;
-    }
+    const campaignId = DEFAULT_CAMPAIGN_ID;
 
     // Check duplicate transaction
     const existingTx = db.prepare('SELECT id FROM swap_transactions WHERE chain_id = ? AND tx_hash = ?').get(numericChainId, normalizedTxHash);
@@ -944,28 +910,63 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
       return res.status(409).json({ error: 'Transaction hash has already been credited for this chain' });
     }
 
-    // Verify swap volume in USD
-    let verifiedVolume = typeof volumeUSD === 'number' && volumeUSD > 0 ? volumeUSD : 0;
-
-    // Optional LI.FI Status API verification
-    let lifiVerified = false;
+    // Independently verify the swap with the LI.FI Status API. Volume always comes from LI.FI, never from the client.
+    let lifiData: any = null;
     try {
-      const lifiStatusRes = await fetch(`https://li.quest/v1/status?txHash=${normalizedTxHash}&fromChain=${numericChainId}`, {
-        headers: { 'Accept': 'application/json' },
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const lifiStatusRes = await fetch(
+        `https://li.quest/v1/status?txHash=${encodeURIComponent(rawTxHash)}&fromChain=${numericChainId}`,
+        { headers: { 'Accept': 'application/json' }, signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
       if (lifiStatusRes.ok) {
-        const lifiData = await lifiStatusRes.json();
-        if (lifiData.status === 'DONE') {
-          lifiVerified = true;
-          if (lifiData.sending?.amountUSD) {
-            verifiedVolume = parseFloat(lifiData.sending.amountUSD);
-          }
-        }
+        lifiData = await lifiStatusRes.json();
       }
     } catch (e) {
-      // If network unreachable in sandbox, proceed with route-provided validated volume
+      lifiData = null;
     }
 
+    if (!lifiData || lifiData.status !== 'DONE') {
+      // Not final yet (or LI.FI unreachable). The dashboard auto-sync credits it once LI.FI confirms.
+      return res.status(202).json({
+        success: false,
+        pending: true,
+        message: 'Swap is being confirmed by LI.FI. Your volume will update automatically once it is final.',
+      });
+    }
+
+    if (!isNovaIntegratorTransfer(lifiData)) {
+      return res.status(400).json({ error: 'This swap was not executed through Nova Swap and is not eligible for the campaign.' });
+    }
+
+    const senderAddress = String(lifiData.fromAddress || lifiData.sending?.fromAddress || '').toLowerCase();
+    if (!senderAddress || senderAddress !== normalizedAddress) {
+      return res.status(400).json({ error: 'This swap was not sent from the connected wallet.' });
+    }
+
+    // LI.FI also resolves its own transactionId; always store the canonical sending tx hash + chain
+    // (same key the dashboard auto-sync uses) so one swap can never be credited twice.
+    const canonicalTxHash = String(lifiData.sending?.txHash || '').toLowerCase();
+    const canonicalChainId = Number(lifiData.sending?.chainId || numericChainId);
+    if (!canonicalTxHash) {
+      return res.status(202).json({
+        success: false,
+        pending: true,
+        message: 'Swap is being confirmed by LI.FI. Your volume will update automatically once it is final.',
+      });
+    }
+
+    const verifiedVolume = parseFloat(lifiData.sending?.amountUSD || '0');
+    if (isNaN(verifiedVolume) || verifiedVolume <= 0) {
+      return res.status(202).json({
+        success: false,
+        pending: true,
+        message: 'Swap volume is still being priced by LI.FI. It will be credited automatically.',
+      });
+    }
+
+    const user = findOrCreateCampaignUser(normalizedAddress, campaignId, canonicalChainId);
     const campaign = db.prepare('SELECT * FROM swap_campaigns WHERE id = ?').get(campaignId) as any;
     const minSwapUSD = campaign ? campaign.min_swap_usd : 1.0;
 
@@ -975,16 +976,16 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
       campaignId,
       userId: user.id,
       normalizedAddress,
-      numericChainId,
-      normalizedTxHash,
+      numericChainId: canonicalChainId,
+      normalizedTxHash: canonicalTxHash,
       volumeUSD: verifiedVolume,
       fromToken,
       toToken,
       fromAmount,
       toAmount,
-      lifiRouteId,
+      lifiRouteId: typeof lifiRouteId === 'string' ? lifiRouteId : null,
       rawRouteData,
-      verificationSource: lifiVerified ? 'lifi_status_api' : 'validated_route',
+      verificationSource: 'lifi_status_api',
       verifiedAt: now,
     });
 
@@ -993,8 +994,8 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
     }
 
     if (result.belowMin) {
-      return res.status(400).json({ 
-        error: `Swap volume ($${verifiedVolume.toFixed(2)}) is below minimum eligible threshold of $${minSwapUSD.toFixed(2)}` 
+      return res.status(400).json({
+        error: `Swap volume ($${verifiedVolume.toFixed(2)}) is below minimum eligible threshold of $${minSwapUSD.toFixed(2)}`
       });
     }
 
@@ -1008,29 +1009,47 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
       newlyUnlockedMilestones: result.newlyUnlocked,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'submit-transaction');
   }
 });
 
-// 8. Submit reward claim request
 // 8. Submit reward claim request (Supports individual milestone or $500 threshold claim)
+// Requires a wallet signature proving ownership; payouts always go to the verified wallet.
 apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
   try {
-    const { walletAddress, rewardId, payoutAddress, preferredNetwork, preferredToken, claimAmountUSD } = req.body;
+    const { walletAddress, rewardId, preferredNetwork, preferredToken, claimAmountUSD, signature, message, signerAddress } = req.body;
 
-    if (!walletAddress || !payoutAddress) {
-      return res.status(400).json({ error: 'walletAddress and payoutAddress are required' });
+    if (!walletAddress || !isValidWalletAddress(walletAddress)) {
+      return res.status(400).json({ error: 'walletAddress is required' });
     }
 
-    const normalizedAddress = walletAddress.toLowerCase();
-    const user = db.prepare('SELECT id, campaign_id FROM swap_campaign_users WHERE wallet_address = ?').get(normalizedAddress) as any;
+    const normalizedAddress = String(walletAddress).toLowerCase();
+    const signingAddress = typeof signerAddress === 'string' && signerAddress.trim() ? signerAddress.trim() : String(walletAddress).trim();
+    if (signingAddress.toLowerCase() !== normalizedAddress) {
+      return res.status(400).json({ error: 'Signing wallet does not match the claim wallet.' });
+    }
+
+    const signatureError = consumeSignedChallenge({ address: signingAddress, purpose: 'reward_claim', message, signature });
+    if (signatureError) {
+      return res.status(401).json({ error: signatureError });
+    }
+
+    // Payout is always sent to the verified wallet that owns the rewards
+    const payoutAddress = signingAddress;
+
+    const user = db.prepare('SELECT id, campaign_id, is_flagged FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?')
+      .get(DEFAULT_CAMPAIGN_ID, normalizedAddress) as any;
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    if (user.is_flagged) {
+      return res.status(403).json({ error: 'This wallet is under review and cannot submit claims at the moment. Please contact support@novap2p.com.' });
+    }
+
     // Check if there is already a pending claim
     const pendingClaim = db.prepare(`
-      SELECT id FROM swap_reward_claims 
+      SELECT id FROM swap_reward_claims
       WHERE user_id = ? AND status IN ('pending', 'under_review')
     `).get(user.id);
 
@@ -1053,8 +1072,6 @@ apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
       }
 
       const submitClaim = db.transaction(() => {
-        db.prepare("UPDATE swap_rewards SET status = 'requested' WHERE id = ?").run(reward.id);
-
         db.prepare(`
           INSERT INTO swap_reward_claims (
             id, reward_id, user_id, campaign_id, requested_amount_usd,
@@ -1068,7 +1085,7 @@ apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
           user.id,
           user.campaign_id,
           reward.amount_usd,
-          payoutAddress.trim(),
+          payoutAddress,
           preferredNetwork || 'BNB Smart Chain',
           preferredToken || 'USDT',
           reward.reward_type === 'cashback' ? reward.amount_usd : 0,
@@ -1077,16 +1094,18 @@ apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
           now,
           now
         );
+
+        db.prepare("UPDATE swap_rewards SET status = 'requested', claim_id = ? WHERE id = ?").run(claimId, reward.id);
       });
 
       submitClaim();
 
-      // Trigger admin email & in-app notification
+      // Trigger admin in-app notification
       sendAdminClaimNotification({
         claimId,
         walletAddress: normalizedAddress,
         requestedAmountUSD: reward.amount_usd,
-        payoutAddress: payoutAddress.trim(),
+        payoutAddress,
         preferredNetwork: preferredNetwork || 'BNB Smart Chain',
         preferredToken: preferredToken || 'USDT',
         cashbackAmountUSD: reward.reward_type === 'cashback' ? reward.amount_usd : 0,
@@ -1118,21 +1137,23 @@ apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
       else if (r.reward_type === 'referral') totalReferrals += r.amount_usd;
     });
 
-    const totalEligible = totalCashback + totalMilestones + totalReferrals;
+    const totalEligible = Number((totalCashback + totalMilestones + totalReferrals).toFixed(4));
+
+    if (totalEligible <= 0) {
+      return res.status(400).json({ error: 'No available unlocked reward balance to claim.' });
+    }
+
+    if (totalEligible < CLAIM_THRESHOLD_USD) {
+      return res.status(400).json({
+        error: `Claims unlock at $${CLAIM_THRESHOLD_USD.toFixed(2)}. Your claimable balance is $${totalEligible.toFixed(2)}.`,
+      });
+    }
+
     const requestedAmount = claimAmountUSD && typeof claimAmountUSD === 'number' && claimAmountUSD > 0
       ? Math.min(claimAmountUSD, totalEligible)
       : totalEligible;
 
-    if (requestedAmount <= 0) {
-      return res.status(400).json({ error: 'No available unlocked reward balance to claim.' });
-    }
-
     const submitThresholdClaim = db.transaction(() => {
-      // Mark unlocked rewards as requested
-      db.prepare(`
-        UPDATE swap_rewards SET status = 'requested' WHERE user_id = ? AND status = 'unlocked'
-      `).run(user.id);
-
       db.prepare(`
         INSERT INTO swap_reward_claims (
           id, reward_id, user_id, campaign_id, requested_amount_usd,
@@ -1145,7 +1166,7 @@ apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
         user.id,
         user.campaign_id,
         requestedAmount,
-        payoutAddress.trim(),
+        payoutAddress,
         preferredNetwork || 'BNB Smart Chain',
         preferredToken || 'USDT',
         totalCashback,
@@ -1154,16 +1175,21 @@ apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
         now,
         now
       );
+
+      // Mark unlocked rewards as requested and link them to this claim
+      db.prepare(`
+        UPDATE swap_rewards SET status = 'requested', claim_id = ? WHERE user_id = ? AND status = 'unlocked'
+      `).run(claimId, user.id);
     });
 
     submitThresholdClaim();
 
-    // Trigger admin email & in-app notification
+    // Trigger admin in-app notification
     sendAdminClaimNotification({
       claimId,
       walletAddress: normalizedAddress,
       requestedAmountUSD: requestedAmount,
-      payoutAddress: payoutAddress.trim(),
+      payoutAddress,
       preferredNetwork: preferredNetwork || 'BNB Smart Chain',
       preferredToken: preferredToken || 'USDT',
       cashbackAmountUSD: totalCashback,
@@ -1180,7 +1206,7 @@ apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
       message: 'Genesis Rewards claim submitted successfully. Admin has been notified for verification and manual payout.',
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'rewards/request');
   }
 });
 
@@ -1190,17 +1216,20 @@ apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
 
 // Admin login verification
 apiRouter.post('/admin/login', (req: Request, res: Response) => {
+  if (!ADMIN_KEY) {
+    return res.status(503).json({ error: 'Admin access is disabled: SWAP_ADMIN_KEY is not configured on the server.' });
+  }
   const { adminKey } = req.body;
-  if (!adminKey || adminKey !== ADMIN_KEY) {
+  if (!isValidAdminKey(adminKey)) {
     return res.status(403).json({ error: 'Invalid admin passkey' });
   }
-  res.json({ success: true, token: ADMIN_KEY });
+  res.json({ success: true });
 });
 
 // Admin overview analytics
 apiRouter.get('/admin/overview', verifyAdmin, (req: Request, res: Response) => {
   try {
-    const campaignId = 'campaign_genesis_001';
+    const campaignId = DEFAULT_CAMPAIGN_ID;
     const campaign = db.prepare('SELECT * FROM swap_campaigns WHERE id = ?').get(campaignId) as any;
 
     const userStats = db.prepare(`
@@ -1251,7 +1280,12 @@ apiRouter.get('/admin/overview', verifyAdmin, (req: Request, res: Response) => {
       WHERE campaign_id = ?
     `).get(campaignId) as any;
 
-    const remainingBudget = campaign ? Math.max(0, campaign.total_budget_usd - (rewardStats.total_paid_amount || 0)) : 0;
+    const payoutStats = db.prepare(`
+      SELECT COUNT(*) as paid_claims, COALESCE(SUM(amount_usd), 0) as total_paid_amount
+      FROM swap_reward_payouts
+    `).get() as any;
+
+    const remainingBudget = campaign ? Math.max(0, campaign.total_budget_usd - (campaign.spent_budget_usd || 0)) : 0;
 
     res.json({
       campaign,
@@ -1270,14 +1304,14 @@ apiRouter.get('/admin/overview', verifyAdmin, (req: Request, res: Response) => {
         milestonesUnlocked: rewardStats.unlocked_count || 0,
         pendingClaims: rewardStats.pending_requests || 0,
         approvedClaims: rewardStats.approved_count || 0,
-        paidClaims: rewardStats.paid_count || 0,
-        totalPaidAmountUSD: rewardStats.total_paid_amount || 0,
+        paidClaims: payoutStats.paid_claims || 0,
+        totalPaidAmountUSD: payoutStats.total_paid_amount || 0,
         totalBudgetUSD: campaign?.total_budget_usd || 10000.0,
         remainingBudgetUSD: remainingBudget,
       },
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -1298,7 +1332,7 @@ apiRouter.put('/admin/campaign', verifyAdmin, (req: Request, res: Response) => {
       cashbackPercentage,
     } = req.body;
 
-    const campaignId = 'campaign_genesis_001';
+    const campaignId = DEFAULT_CAMPAIGN_ID;
     const now = new Date().toISOString();
 
     db.prepare(`
@@ -1336,11 +1370,11 @@ apiRouter.put('/admin/campaign', verifyAdmin, (req: Request, res: Response) => {
     db.prepare(`
       INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
       VALUES (?, 'admin', 'update_campaign_settings', 'campaign', ?, ?, ?, ?)
-    `).run('log_' + crypto.randomUUID(), campaignId, JSON.stringify(req.body), String(req.ip || ''), now);
+    `).run('log_' + crypto.randomUUID(), campaignId, JSON.stringify(req.body), clientIp(req), now);
 
     res.json({ success: true, message: 'Campaign settings updated successfully' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -1348,7 +1382,7 @@ apiRouter.put('/admin/campaign', verifyAdmin, (req: Request, res: Response) => {
 apiRouter.post('/admin/milestones', verifyAdmin, (req: Request, res: Response) => {
   try {
     const { id, milestoneNumber, title, targetVolumeUSD, rewardAmountUSD, rewardDescription, isActive, sortOrder } = req.body;
-    const campaignId = 'campaign_genesis_001';
+    const campaignId = DEFAULT_CAMPAIGN_ID;
     const now = new Date().toISOString();
 
     if (id) {
@@ -1397,7 +1431,7 @@ apiRouter.post('/admin/milestones', verifyAdmin, (req: Request, res: Response) =
 
     res.json({ success: true, message: 'Milestone saved successfully' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -1408,7 +1442,7 @@ apiRouter.delete('/admin/milestones/:id', verifyAdmin, (req: Request, res: Respo
     db.prepare('DELETE FROM swap_campaign_milestones WHERE id = ?').run(id);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -1423,7 +1457,7 @@ apiRouter.get('/admin/claims', verifyAdmin, (req: Request, res: Response) => {
              p.payout_tx_hash, p.payout_network as paid_network, p.payout_token as paid_token, p.paid_at
       FROM swap_reward_claims c
       JOIN swap_campaign_users u ON u.id = c.user_id
-      JOIN swap_rewards r ON r.id = c.reward_id
+      LEFT JOIN swap_rewards r ON r.id = c.reward_id
       LEFT JOIN swap_campaign_milestones m ON m.id = r.milestone_id
       LEFT JOIN swap_reward_payouts p ON p.claim_id = c.id
       WHERE 1=1
@@ -1446,7 +1480,7 @@ apiRouter.get('/admin/claims', verifyAdmin, (req: Request, res: Response) => {
     const claims = db.prepare(query).all(...params);
     res.json({ claims });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -1487,11 +1521,20 @@ apiRouter.post('/admin/claims/:id/review', verifyAdmin, (req: Request, res: Resp
         WHERE id = ?
       `).run(newStatus, rejectionReason || null, adminNotes || null, now, claim.id);
 
-      db.prepare(`
-        UPDATE swap_rewards
-        SET status = ?
-        WHERE id = ?
-      `).run(rewardStatus, claim.reward_id);
+      if (action === 'reject') {
+        // Rejected rewards go back to the user's claimable balance so they can re-claim later
+        db.prepare(`
+          UPDATE swap_rewards
+          SET status = 'unlocked', claim_id = NULL
+          WHERE claim_id = ? OR (id = ? AND ? IS NOT NULL)
+        `).run(claim.id, claim.reward_id, claim.reward_id);
+      } else {
+        db.prepare(`
+          UPDATE swap_rewards
+          SET status = ?
+          WHERE claim_id = ? OR (id = ? AND ? IS NOT NULL)
+        `).run(rewardStatus, claim.id, claim.reward_id, claim.reward_id);
+      }
 
       db.prepare(`
         INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
@@ -1501,14 +1544,14 @@ apiRouter.post('/admin/claims/:id/review', verifyAdmin, (req: Request, res: Resp
         `claim_${action}`,
         claim.id,
         JSON.stringify({ action, rejectionReason, adminNotes }),
-        String(req.ip || ''),
+        clientIp(req),
         now
       );
     })();
 
     res.json({ success: true, status: newStatus });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -1529,6 +1572,10 @@ apiRouter.post('/admin/claims/:id/pay', verifyAdmin, (req: Request, res: Respons
 
     if (claim.status === 'paid') {
       return res.status(400).json({ error: 'Claim has already been marked as paid' });
+    }
+
+    if (claim.status !== 'approved') {
+      return res.status(400).json({ error: 'Only approved claims can be marked as paid. Please approve the claim first.' });
     }
 
     const now = new Date().toISOString();
@@ -1559,8 +1606,8 @@ apiRouter.post('/admin/claims/:id/pay', verifyAdmin, (req: Request, res: Respons
       // 2. Update claim status to paid
       db.prepare("UPDATE swap_reward_claims SET status = 'paid', updated_at = ? WHERE id = ?").run(now, claim.id);
 
-      // 3. Update reward status to paid
-      db.prepare("UPDATE swap_rewards SET status = 'paid' WHERE id = ?").run(claim.reward_id);
+      // 3. Update reward status to paid (single reward or all rewards in an accumulated claim)
+      db.prepare("UPDATE swap_rewards SET status = 'paid' WHERE claim_id = ? OR (id = ? AND ? IS NOT NULL)").run(claim.id, claim.reward_id, claim.reward_id);
 
       // 4. Update campaign spent budget
       db.prepare(`
@@ -1577,14 +1624,14 @@ apiRouter.post('/admin/claims/:id/pay', verifyAdmin, (req: Request, res: Respons
         'log_' + crypto.randomUUID(),
         payoutId,
         JSON.stringify({ claimId: claim.id, amountUSD: claim.requested_amount_usd, payoutTxHash, payoutNetwork }),
-        String(req.ip || ''),
+        clientIp(req),
         now
       );
     })();
 
     res.json({ success: true, payoutId, message: 'Payout recorded and status updated to Paid' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -1616,7 +1663,7 @@ apiRouter.get('/admin/users', verifyAdmin, (req: Request, res: Response) => {
     const users = db.prepare(query).all(...params);
     res.json({ users });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -1634,7 +1681,7 @@ apiRouter.post('/admin/users/:id/flag', verifyAdmin, (req: Request, res: Respons
 
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -1644,7 +1691,7 @@ apiRouter.get('/admin/audit-logs', verifyAdmin, (req: Request, res: Response) =>
     const logs = db.prepare('SELECT * FROM swap_admin_audit_logs ORDER BY created_at DESC LIMIT 100').all();
     res.json({ logs });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
 
@@ -1691,6 +1738,6 @@ apiRouter.get('/admin/export/:type', verifyAdmin, (req: Request, res: Response) 
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, 'swap api');
   }
 });
