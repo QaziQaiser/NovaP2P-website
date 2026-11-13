@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { X, Wallet, CheckCircle2, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
 import { affiliateApi } from '../../services/affiliateApi';
+import { useWallet } from '../../context/WalletContext';
+import { signWalletChallenge } from '../../services/walletAuth';
 
 interface PayoutRequestModalProps {
   isOpen: boolean;
@@ -36,6 +38,7 @@ export const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const { getMessageSigner } = useWallet();
 
   if (!isOpen) return null;
 
@@ -52,11 +55,15 @@ export const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
     setError(null);
 
     try {
+      // Free wallet signature proving this request comes from the affiliate's own wallet
+      const proof = await signWalletChallenge(getMessageSigner, walletAddress, 'affiliate_payout');
       const res = await affiliateApi.requestPayout({
-        walletAddress,
+        walletAddress: proof.signerAddress,
         payoutAddress,
         preferredNetwork,
         preferredToken,
+        signature: proof.signature,
+        signedMessage: proof.message,
       });
       setSuccessMsg(res.message);
       onSuccess();

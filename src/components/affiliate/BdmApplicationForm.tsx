@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Send, CheckCircle2, AlertCircle, Wallet, Loader2 } from 'lucide-react';
 import { affiliateApi } from '../../services/affiliateApi';
-import { sendAdminAffiliateApplicationEmail } from '../../services/emailNotifications';
+import { useWallet } from '../../context/WalletContext';
+import { signWalletChallenge } from '../../services/walletAuth';
 
 interface BdmApplicationFormProps {
   walletAddress: string;
@@ -28,6 +29,7 @@ export const BdmApplicationForm: React.FC<BdmApplicationFormProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [emailWarning, setEmailWarning] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const { getMessageSigner } = useWallet();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,9 +43,14 @@ export const BdmApplicationForm: React.FC<BdmApplicationFormProps> = ({
     setEmailWarning(null);
 
     try {
+      // Free wallet signature proving the applicant owns this wallet
+      const proof = await signWalletChallenge(getMessageSigner, walletAddress, 'affiliate_apply');
+
       const res = await affiliateApi.submitApplication({
         role: 'bdm',
-        walletAddress,
+        walletAddress: proof.signerAddress,
+        signature: proof.signature,
+        signedMessage: proof.message,
         fullName: formData.fullName,
         email: formData.email,
         telegramUsername: formData.telegramUsername,
@@ -55,26 +62,10 @@ export const BdmApplicationForm: React.FC<BdmApplicationFormProps> = ({
         message: formData.message,
       });
 
-      // Send admin email notification with direct signed Approve/Reject action links
-      const emailResult = await sendAdminAffiliateApplicationEmail({
-        applicationId: res.applicationId,
-        reviewToken: res.reviewToken,
-        role: 'bdm',
-        walletAddress,
-        fullName: formData.fullName,
-        email: formData.email,
-        telegramUsername: formData.telegramUsername,
-        twitterLink: formData.twitterLink,
-        youtubeLink: formData.youtubeLink || undefined,
-        telegramChannelLink: formData.telegramChannelLink,
-        marketingExperience: formData.marketingExperience,
-        manageablePartnersCount: formData.manageablePartnersCount,
-        message: formData.message,
-      });
-
-      if (!emailResult.sent) {
+      // Admin email (support@novap2p.com) with Approve / Reject links is sent by the server
+      if (!res.adminNotified) {
         setEmailWarning(
-          `Your application is saved in our review queue, though email delivery reported: ${emailResult.error || 'Email service unavailable'}`
+          'Your application is saved in our review queue. Our team will still review it, though the admin email notification could not be delivered right now.'
         );
       }
 

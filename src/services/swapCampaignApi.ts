@@ -221,6 +221,9 @@ export const swapCampaignApi = {
     preferredNetwork?: string;
     preferredToken?: string;
     claimAmountUSD?: number;
+    signature: string;
+    message: string;
+    signerAddress: string;
   }): Promise<{ success: boolean; claimId: string; message: string }> {
     const res = await fetch(`${API_BASE}/rewards/request`, {
       method: 'POST',
@@ -237,7 +240,7 @@ export const swapCampaignApi = {
   // -------------------------------------------------------------------------
   // ADMIN API CLIENT
   // -------------------------------------------------------------------------
-  async adminLogin(adminKey: string): Promise<{ success: boolean; token: string }> {
+  async adminLogin(adminKey: string): Promise<{ success: boolean }> {
     const res = await fetch(`${API_BASE}/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { BrowserProvider, JsonRpcSigner, Contract, formatUnits, parseUnits, MaxUint256 } from 'ethers';
 import { SUPPORTED_CHAINS, DEFAULT_CHAIN_ID } from '../constants/chains';
 import { NATIVE_TOKEN_ADDRESS } from '../constants/tokens';
@@ -28,7 +28,24 @@ interface WalletContextType {
   checkAllowance: (tokenAddress: string, spender: string) => Promise<bigint>;
   approveToken: (tokenAddress: string, spender: string, amount?: bigint) => Promise<boolean>;
   signMessage: (message: string) => Promise<string>;
+  getMessageSigner: (expectedAddress?: string | null) => Promise<MessageSigner>;
 }
+
+export interface MessageSigner {
+  /** Exact (case-preserved) address of the wallet that will sign */
+  address: string;
+  sign: (message: string) => Promise<string>;
+}
+
+const isEvmAddress = (addr?: string | null) => !!addr && /^0x[a-fA-F0-9]{40}$/.test(addr);
+
+const toHex = (bytes: Uint8Array) => Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+const isUserRejection = (err: any) =>
+  err?.code === 4001 || err?.code === 'ACTION_REJECTED' || /reject|denied|cancel/i.test(String(err?.message || ''));
+
+// Background wallet sync interval (subscriptions and focus/visibility events handle the fast path)
+const WALLET_SYNC_INTERVAL_MS = 3000;
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
@@ -39,6 +56,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isConnecting, setIsConnecting] = useState(false);
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
+  // Which connection supplied `account`, so the injected and AppKit sync loops never clear each other's wallet
+  const accountSourceRef = useRef<'injected' | 'appkit' | null>(null);
 
   const normalizeDisplayAddress = useCallback((addr: string) => {
     return addr.startsWith('0x') ? addr.toLowerCase() : addr;
@@ -79,9 +98,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const handleAccountsChanged = useCallback(async (accounts: string[]) => {
     if (accounts.length === 0) {
-      setAccount(null);
-      setSigner(null);
+      if (accountSourceRef.current !== 'appkit') {
+        accountSourceRef.current = null;
+        setAccount(null);
+        setSigner(null);
+      }
     } else {
+      if (accountSourceRef.current === 'appkit') return;
+      accountSourceRef.current = 'injected';
       setAccount(accounts[0]);
       const eth = getEthereumObject();
       if (eth) {
@@ -91,7 +115,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setSigner(s);
       }
     }
-  }, []);
+  }, [getEthereumObject]);
 
   const handleChainChanged = useCallback((chainIdHex: string) => {
     const numericChainId = parseInt(chainIdHex, 16);
@@ -104,10 +128,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (!eth) return;
 
     const checkConnection = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      // A WalletConnect / AppKit session owns the account; don't let the injected wallet override it
+      if (accountSourceRef.current === 'appkit') return;
       try {
         const accounts = await eth.request({ method: 'eth_accounts' });
         if (accounts && accounts.length > 0) {
           if (!account || accounts[0].toLowerCase() !== account.toLowerCase()) {
+            accountSourceRef.current = 'injected';
             setAccount(accounts[0]);
             const bp = new BrowserProvider(eth);
             setProvider(bp);
@@ -116,7 +144,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const network = await bp.getNetwork();
             setChainId(Number(network.chainId));
           }
-        } else if (account && (!accounts || accounts.length === 0)) {
+        } else if (account && (!accounts || accounts.length === 0) && accountSourceRef.current === 'injected') {
+          accountSourceRef.current = null;
           setAccount(null);
           setSigner(null);
         }
@@ -129,7 +158,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     checkConnection();
 
     // Poll periodically to catch connections made inside external widgets/modals
-    const pollInterval = setInterval(checkConnection, 1200);
+    const pollInterval = setInterval(checkConnection, WALLET_SYNC_INTERVAL_MS);
 
     eth.on('accountsChanged', handleAccountsChanged);
     eth.on('chainChanged', handleChainChanged);
@@ -149,16 +178,34 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const kit = getAppKit();
     if (!kit) return;
 
+    let lastAppliedAddress: string | null = null;
+
     const applyAppKitAddress = (addr?: string | null) => {
       if (!addr) return;
       const normalized = normalizeDisplayAddress(addr);
+      accountSourceRef.current = 'appkit';
       setAccount((prev) => (prev === normalized ? prev : normalized));
       setIsConnecting(false);
-      const eth = getEthereumObject();
-      if (eth) {
-        const bp = new BrowserProvider(eth);
+      if (lastAppliedAddress === normalized) return;
+      lastAppliedAddress = normalized;
+      // Use the provider of the wallet AppKit actually connected (WalletConnect, injected, ...)
+      const evmProvider = isEvmAddress(addr) ? ((kit as any).getProvider?.('eip155') || getEthereumObject()) : null;
+      if (evmProvider) {
+        const bp = new BrowserProvider(evmProvider);
         setProvider(bp);
-        bp.getSigner().then(setSigner).catch(() => {});
+        bp.getSigner(addr).then(setSigner).catch(() => {});
+      } else {
+        setSigner(null);
+      }
+    };
+
+    const clearAppKitAccount = () => {
+      setExternalWallet(null);
+      lastAppliedAddress = null;
+      if (accountSourceRef.current === 'appkit') {
+        accountSourceRef.current = null;
+        setAccount(null);
+        setSigner(null);
       }
     };
 
@@ -171,11 +218,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (addr) {
           applyAppKitAddress(addr);
         } else if (kit.getIsConnectedState?.() === false) {
-          setExternalWallet(null);
-          if (!getEthereumObject()) {
-            setAccount(null);
-            setSigner(null);
-          }
+          clearAppKitAccount();
         }
       } catch {
         // Ignore transient initialization errors
@@ -193,11 +236,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (state?.address) {
           applyAppKitAddress(state.address);
         } else if (state?.isConnected === false) {
-          setExternalWallet(null);
-          if (!getEthereumObject()) {
-            setAccount(null);
-            setSigner(null);
-          }
+          clearAppKitAccount();
         }
       });
 
@@ -226,8 +265,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     // Lightweight fallback poll for mobile WalletConnect relay completion
     const pollAppKit = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       syncAppKitNow();
-    }, 1200);
+    }, WALLET_SYNC_INTERVAL_MS);
 
     return () => {
       clearInterval(pollAppKit);
@@ -250,6 +290,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           const s = await bp.getSigner();
           const network = await bp.getNetwork();
 
+          accountSourceRef.current = 'injected';
           setAccount(accounts[0]);
           setProvider(bp);
           setSigner(s);
@@ -275,6 +316,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const disconnectWallet = () => {
+    accountSourceRef.current = null;
     setAccount(null);
     setExternalWallet(null);
     setSigner(null);
@@ -377,17 +419,95 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const signMessage = async (message: string): Promise<string> => {
-    if (!signer) {
+  /**
+   * Finds a connected wallet able to sign for `expectedAddress` (injected, WalletConnect via AppKit, or Solana).
+   * If none can, opens the connect modal and asks the user to connect that wallet.
+   */
+  const getMessageSigner = async (expectedAddress?: string | null): Promise<MessageSigner> => {
+    const target = (expectedAddress || activeAccount || '').trim();
+    const kit = getAppKit() as any;
+
+    if (!target || isEvmAddress(target)) {
+      const candidates: any[] = [];
+      try {
+        const kitAddr = kit?.getAddress?.('eip155');
+        const kitProvider = kit?.getProvider?.('eip155');
+        if (kitProvider && kitAddr && (!target || String(kitAddr).toLowerCase() === target.toLowerCase())) {
+          candidates.push(kitProvider);
+        }
+      } catch {}
       const eth = getEthereumObject();
-      if (eth) {
-        const bp = new BrowserProvider(eth);
-        const s = await bp.getSigner();
-        return await s.signMessage(message);
+      if (eth && !candidates.includes(eth)) candidates.push(eth);
+
+      for (const candidate of candidates) {
+        try {
+          const accounts: string[] = (await candidate.request({ method: 'eth_accounts' })) || [];
+          const match = accounts.find((a) => !target || a.toLowerCase() === target.toLowerCase());
+          if (!match) continue;
+          const bp = new BrowserProvider(candidate);
+          const s = await bp.getSigner(match);
+          return {
+            address: match,
+            sign: async (message: string) => {
+              try {
+                return await s.signMessage(message);
+              } catch (err: any) {
+                if (isUserRejection(err)) throw new Error('Signature request was rejected in your wallet.');
+                throw err;
+              }
+            },
+          };
+        } catch {
+          // Try the next connected provider
+        }
       }
-      throw new Error('Wallet not connected or signer unavailable');
+    } else {
+      // Solana wallets (AppKit / Phantom / Solflare)
+      const solCandidates: Array<{ address: string; provider: any }> = [];
+      try {
+        const kitSolAddr = kit?.getAddress?.('solana');
+        const kitSolProvider = kit?.getProvider?.('solana');
+        if (kitSolProvider && kitSolAddr && String(kitSolAddr).toLowerCase() === target.toLowerCase()) {
+          solCandidates.push({ address: String(kitSolAddr), provider: kitSolProvider });
+        }
+      } catch {}
+      const injectedSol = (window as any).phantom?.solana || (window as any).solflare || (window as any).solana;
+      const injectedSolAddr = injectedSol?.publicKey?.toString?.();
+      if (injectedSol?.signMessage && injectedSolAddr && injectedSolAddr.toLowerCase() === target.toLowerCase()) {
+        solCandidates.push({ address: injectedSolAddr, provider: injectedSol });
+      }
+
+      if (solCandidates.length > 0) {
+        const { address, provider: solProvider } = solCandidates[0];
+        return {
+          address,
+          sign: async (message: string) => {
+            try {
+              const result = await solProvider.signMessage(new TextEncoder().encode(message), 'utf8');
+              const bytes: Uint8Array = result instanceof Uint8Array ? result : result?.signature;
+              if (!bytes) throw new Error('Wallet did not return a signature');
+              return toHex(new Uint8Array(bytes));
+            } catch (err: any) {
+              if (isUserRejection(err)) throw new Error('Signature request was rejected in your wallet.');
+              throw err;
+            }
+          },
+        };
+      }
+
+      if (/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(target)) {
+        throw new Error('Please connect an EVM (e.g. MetaMask, Trust Wallet) or Solana wallet to sign this request.');
+      }
     }
-    return await signer.signMessage(message);
+
+    // No connected wallet can sign for this address: prompt the user to connect it
+    openAppKitModal('Connect').catch(() => {});
+    throw new Error('To confirm wallet ownership, please connect this wallet using the "Connect Wallet" option, then try again.');
+  };
+
+  const signMessage = async (message: string): Promise<string> => {
+    const messageSigner = await getMessageSigner(activeAccount);
+    return messageSigner.sign(message);
   };
 
   return (
@@ -407,6 +527,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         checkAllowance,
         approveToken,
         signMessage,
+        getMessageSigner,
       }}
     >
       {children}

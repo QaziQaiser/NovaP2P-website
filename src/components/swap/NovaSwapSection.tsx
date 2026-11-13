@@ -115,12 +115,13 @@ export const NovaSwapSection: React.FC = () => {
     }
   }, [effectiveAccount]);
 
-  // Periodic polling (every 4s) to ensure real-time update of volume, cashback & milestones
+  // Periodic polling to keep volume, cashback & milestones up to date (paused while the tab is hidden)
   useEffect(() => {
     if (!effectiveAccount) return;
     const pollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       refreshUserDashboard();
-    }, 4000);
+    }, 8000);
     return () => clearInterval(pollInterval);
   }, [effectiveAccount, refreshUserDashboard]);
 
@@ -168,7 +169,8 @@ export const NovaSwapSection: React.FC = () => {
                       if (txHash) break;
                     }
                   }
-                  if (!txHash) txHash = route.id ? `route_${route.id}` : '';
+                  // Only real on-chain hashes can be verified; others are credited by the server-side LI.FI sync
+                  if (!/^(0x[a-fA-F0-9]{64}|[1-9A-HJ-NP-Za-km-z]{43,100})$/.test(txHash)) txHash = '';
 
                   const rawVol =
                     route.fromAmountUSD ||
@@ -179,16 +181,22 @@ export const NovaSwapSection: React.FC = () => {
 
                   if (volumeUSD >= 1 && txHash) {
                     try {
-                      await swapCampaignApi.submitTransaction({
+                      const res = await swapCampaignApi.submitTransaction({
                         walletAddress: effectiveAccount,
                         chainId: route.fromChainId || route.steps?.[0]?.action?.fromChainId || 1,
                         txHash,
                         volumeUSD,
                         lifiRouteId: route.id,
                       });
-                      localStorage.setItem(syncedKey, 'true');
+                      // Still confirming on LI.FI: retry on a later sync instead of marking it done
+                      if (!res?.pending) {
+                        localStorage.setItem(syncedKey, 'true');
+                      }
                       await refreshUserDashboard();
-                    } catch {}
+                    } catch {
+                      // Rejected (duplicate / not eligible): don't retry it on every page load
+                      localStorage.setItem(syncedKey, 'true');
+                    }
                   }
                 }
               }
@@ -237,6 +245,20 @@ export const NovaSwapSection: React.FC = () => {
         ...txData,
         walletAddress: activeAccount,
       });
+
+      // LI.FI has not finalized the swap yet; the dashboard sync credits it automatically once final
+      if (res?.pending) {
+        try {
+          const cacheKey = `nova_swaps_${activeAccount.toLowerCase()}`;
+          const prev = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+          prev.push({ ...txData, date: new Date().toISOString() });
+          localStorage.setItem(cacheKey, JSON.stringify(prev));
+        } catch {}
+        setSwapSuccessNotice('⏳ Swap completed! Your Genesis Campaign volume will update as soon as LI.FI confirms it.');
+        setTimeout(() => setSwapSuccessNotice(null), 8000);
+        setTimeout(() => refreshUserDashboard(), 25000);
+        return;
+      }
 
       // Save to localStorage as immediate local cache
       try {

@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { affiliateApi } from '../../services/affiliateApi';
 import {
-  sendApplicantDecisionEmail,
   buildDecisionMailtoLink,
 } from '../../services/emailNotifications';
 
@@ -88,14 +87,8 @@ export const AffiliateReviewPage: React.FC = () => {
         adminNotes: selectedAction === 'reject' ? rejectionReason.trim() : undefined,
       });
 
-      const emailResult = await sendApplicantDecisionEmail({
-        decision: selectedAction === 'approve' ? 'approved' : 'rejected',
-        role: res.role,
-        applicantEmail: res.applicantEmail,
-        applicantName: res.applicantName,
-        walletAddress: res.walletAddress,
-        rejectionReason: selectedAction === 'reject' ? rejectionReason.trim() : null,
-      });
+      // The server emails the decision to the applicant from support@novap2p.com
+      const emailSent = Boolean(res.applicantNotified);
 
       setApplication((prev: any) => ({
         ...prev,
@@ -103,7 +96,7 @@ export const AffiliateReviewPage: React.FC = () => {
         admin_notes: res.rejectionReason || prev?.admin_notes,
       }));
 
-      if (emailResult.sent) {
+      if (emailSent) {
         setResultNotice(
           selectedAction === 'approve'
             ? `Approved! Dashboard unlocked for ${res.walletAddress} and confirmation email sent to ${res.applicantEmail}.`
@@ -112,8 +105,8 @@ export const AffiliateReviewPage: React.FC = () => {
       } else {
         setResultNotice(
           selectedAction === 'approve'
-            ? `Approved and dashboard unlocked for ${res.walletAddress}, but automatic EmailJS delivery failed (${emailResult.error || 'EmailJS config'}). Use the button below to email the applicant directly.`
-            : `Rejected in database, but automatic EmailJS delivery failed (${emailResult.error || 'EmailJS config'}). Use the button below to send the rejection reason to the applicant.`
+            ? `Approved and dashboard unlocked for ${res.walletAddress}, but the automatic email could not be delivered. Use the button below to email the applicant directly.`
+            : `Rejected in database, but the automatic email could not be delivered. Use the button below to send the rejection reason to the applicant.`
         );
         setFallbackMailto(
           buildDecisionMailtoLink({

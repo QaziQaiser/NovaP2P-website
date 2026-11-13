@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Gift, CheckCircle, AlertCircle, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 import { swapCampaignApi } from '../../services/swapCampaignApi';
+import { useWallet } from '../../context/WalletContext';
+import { signWalletChallenge } from '../../services/walletAuth';
 
 interface RewardClaimModalProps {
   isOpen: boolean;
@@ -27,6 +29,7 @@ export const RewardClaimModal: React.FC<RewardClaimModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const { getMessageSigner } = useWallet();
 
   useEffect(() => {
     setMounted(true);
@@ -50,12 +53,17 @@ export const RewardClaimModal: React.FC<RewardClaimModalProps> = ({
       setIsSubmitting(true);
       setError(null);
 
+      // Free wallet signature proving ownership; rewards are always paid to this verified wallet
+      const proof = await signWalletChallenge(getMessageSigner, reward.walletAddress, 'reward_claim');
       await swapCampaignApi.requestRewardClaim({
         walletAddress: reward.walletAddress,
         rewardId: reward.id,
-        payoutAddress: reward.walletAddress,
+        payoutAddress: proof.signerAddress,
         preferredNetwork,
         preferredToken,
+        signature: proof.signature,
+        message: proof.message,
+        signerAddress: proof.signerAddress,
       });
 
       setIsSuccess(true);

@@ -12,6 +12,31 @@ import {
   getAppKit,
 } from '../../config/appkit';
 
+// Real on-chain tx hash (EVM) or Solana / non-EVM signature; placeholders such as route ids are never submitted
+const REAL_TX_HASH = /^(0x[a-fA-F0-9]{64}|[1-9A-HJ-NP-Za-km-z]{43,100})$/;
+
+// Wallet detection scan cadence (the scan reads widget DOM text, so keep it light on mobile)
+const WALLET_SCAN_INTERVAL_MS = 1500;
+
+/**
+ * On phones without an injected MetaMask, restoring a previous MetaMask SDK session on page load
+ * makes the SDK open its connect prompt / deep link by itself. Forget that stale session before the
+ * widget mounts so the wallet prompt only opens when the user taps "Connect".
+ */
+function clearStaleMetaMaskSdkSession() {
+  try {
+    if (typeof window === 'undefined') return;
+    const recent = window.localStorage.getItem('wagmi.recentConnectorId') || '';
+    const hasInjectedMetaMask = Boolean((window as any).ethereum?.isMetaMask);
+    if (recent.toLowerCase().includes('metamasksdk') && !hasInjectedMetaMask) {
+      window.localStorage.removeItem('wagmi.recentConnectorId');
+    }
+  } catch {
+    // Storage unavailable (private mode): nothing to clear
+  }
+}
+clearStaleMetaMaskSdkSession();
+
 interface LiFiSwapWidgetProps {
   onSwapSuccess?: (txData: any) => void;
   onWalletChange?: (walletAddress: string | null) => void;
@@ -153,7 +178,8 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
         const kit = getAppKit();
         if (kit) {
           const addr = kit.getAddress();
-          if (addr && typeof addr === 'string') return addr.toLowerCase();
+          // Lowercase EVM addresses only; Solana / TRON addresses are case-sensitive
+          if (addr && typeof addr === 'string') return addr.startsWith('0x') ? addr.toLowerCase() : addr;
         }
       } catch {}
 
@@ -255,50 +281,69 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
       return null;
     };
 
+    let isScanning = false;
     const triggerCheck = async () => {
-      if (isDisposed) return;
-      const detected = await scanForWalletAddress();
-      if (detected !== lastDetectedAddress) {
-        lastDetectedAddress = detected;
-        setInternalConnected(Boolean(detected));
-        onWalletChange(detected);
+      if (isDisposed || isScanning) return;
+      isScanning = true;
+      try {
+        const detected = await scanForWalletAddress();
+        if (!isDisposed && detected !== lastDetectedAddress) {
+          lastDetectedAddress = detected;
+          setInternalConnected(Boolean(detected));
+          onWalletChange(detected);
+        }
+      } finally {
+        isScanning = false;
       }
+    };
+
+    // Debounced trigger for bursts of widget DOM mutations / storage events
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleCheck = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(triggerCheck, 300);
     };
 
     // Run immediately
     triggerCheck();
 
-    // Fast polling (400ms) to sync immediately upon wallet approval
-    const pollTimer = setInterval(triggerCheck, 400);
+    // Background polling to sync upon wallet approval (paused while the tab is hidden)
+    const pollTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      triggerCheck();
+    }, WALLET_SCAN_INTERVAL_MS);
 
-    // Mutation observer on widget DOM
+    // Mutation observer on widget DOM (structure changes only; attribute churn from animations is ignored)
     let observer: MutationObserver | null = null;
     if (containerRef.current && typeof MutationObserver !== 'undefined') {
-      observer = new MutationObserver(() => {
-        triggerCheck();
-      });
-      observer.observe(containerRef.current, { childList: true, subtree: true, attributes: true });
+      observer = new MutationObserver(scheduleCheck);
+      observer.observe(containerRef.current, { childList: true, subtree: true });
     }
 
     // Storage event listener
-    const handleStorage = () => triggerCheck();
-    window.addEventListener('storage', handleStorage);
+    window.addEventListener('storage', scheduleCheck);
 
     // Ethers / window.ethereum accountsChanged
-    if ((window as any).ethereum?.on) {
-      (window as any).ethereum.on('accountsChanged', (accs: string[]) => {
-        const addr = accs && accs.length > 0 ? accs[0].toLowerCase() : null;
-        lastDetectedAddress = addr;
-        setInternalConnected(Boolean(addr));
-        onWalletChange(addr);
-      });
+    const eth = (window as any).ethereum;
+    const handleAccountsChanged = (accs: string[]) => {
+      const addr = accs && accs.length > 0 ? accs[0].toLowerCase() : null;
+      lastDetectedAddress = addr;
+      setInternalConnected(Boolean(addr));
+      onWalletChange(addr);
+    };
+    if (eth?.on) {
+      eth.on('accountsChanged', handleAccountsChanged);
     }
 
     return () => {
       isDisposed = true;
       clearInterval(pollTimer);
+      if (debounceTimer) clearTimeout(debounceTimer);
       if (observer) observer.disconnect();
-      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('storage', scheduleCheck);
+      if (eth?.removeListener) {
+        eth.removeListener('accountsChanged', handleAccountsChanged);
+      }
     };
   }, [onWalletChange]);
 
@@ -344,7 +389,13 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
 
         // Fallback to route-level properties
         if (!txHash) {
-          txHash = route.txHash || (route as any).transactionHash || (route.id ? `route_${route.id}` : `tx_${Date.now()}`);
+          txHash = route.txHash || (route as any).transactionHash || '';
+        }
+
+        // Without a real on-chain hash the server cannot verify the swap; the dashboard auto-sync
+        // picks it up from LI.FI instead, so never submit placeholder ids (they caused double counting).
+        if (!txHash || !REAL_TX_HASH.test(String(txHash))) {
+          return;
         }
 
         const rawVol =

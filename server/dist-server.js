@@ -1,4 +1,5 @@
 // server/index.ts
+import "dotenv/config";
 import express from "express";
 
 // server/api.ts
@@ -11,7 +12,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path.dirname(__filename);
-var dataDir = path.resolve(__dirname, "../data");
+var dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve(__dirname, "../data");
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
@@ -351,6 +352,15 @@ function initDb() {
     }
   } catch (err) {
   }
+  try {
+    const rewardCols = db.prepare("PRAGMA table_info(swap_rewards)").all().map((col) => col.name);
+    if (!rewardCols.includes("claim_id")) {
+      db.exec("ALTER TABLE swap_rewards ADD COLUMN claim_id TEXT;");
+    }
+    db.exec("CREATE INDEX IF NOT EXISTS idx_rewards_claim ON swap_rewards(claim_id);");
+  } catch (err) {
+    console.error("[DB] swap_rewards.claim_id migration failed:", err);
+  }
   const campaignId = "campaign_genesis_001";
   const existingCampaign = db.prepare("SELECT id FROM swap_campaigns WHERE slug = ?").get("genesis");
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -454,16 +464,150 @@ function initDb() {
 initDb();
 
 // server/notifications.ts
-async function sendAdminClaimNotification(payload) {
-  const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL || "admin@novap2p.com";
+import crypto from "crypto";
+import nodemailer from "nodemailer";
+var ADMIN_EMAIL = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL || "support@novap2p.com";
+var SMTP_HOST = process.env.SMTP_HOST || "smtp.hostinger.com";
+var SMTP_PORT = Number(process.env.SMTP_PORT || 465);
+var SMTP_USER = process.env.SMTP_USER || "support@novap2p.com";
+var SMTP_PASS = process.env.SMTP_PASS || "";
+var MAIL_FROM = process.env.MAIL_FROM || `"Nova Swap" <${SMTP_USER}>`;
+var transporter = null;
+function getTransporter() {
+  if (!SMTP_PASS) return null;
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS }
+    });
+  }
+  return transporter;
+}
+if (!SMTP_PASS) {
+  console.warn("[Email] SMTP_PASS is not set. Application and decision emails will not be sent until it is configured.");
+}
+function escapeHtml(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function textToHtml(text) {
+  const escaped = escapeHtml(text);
+  const linked = escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#4F7DF3;word-break:break-all;">$1</a>');
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#111827;white-space:pre-wrap;">${linked}</div>`;
+}
+async function sendMail(params) {
+  const t = getTransporter();
+  if (!t) {
+    return { sent: false, error: "Email service is not configured (SMTP_PASS missing)." };
+  }
   try {
-    const eventId = "evt_" + Math.random().toString(36).substring(2, 12);
+    await t.sendMail({
+      from: MAIL_FROM,
+      to: params.to,
+      subject: params.subject,
+      text: params.text,
+      html: params.html || textToHtml(params.text),
+      replyTo: params.replyTo
+    });
+    return { sent: true };
+  } catch (err) {
+    console.error("[Email] Send failed:", err?.message || err);
+    return { sent: false, error: "Email delivery failed." };
+  }
+}
+async function sendAdminAffiliateApplicationEmail(params) {
+  const baseReviewUrl = `${params.siteOrigin}/affiliate-review?id=${encodeURIComponent(params.applicationId)}&token=${encodeURIComponent(params.reviewToken)}`;
+  const approveUrl = `${baseReviewUrl}&action=approve`;
+  const rejectUrl = `${baseReviewUrl}&action=reject`;
+  const roleLabel = params.role === "bdm" ? "Business Development Manager (BDM)" : "Partner";
+  const text = [
+    `NEW NOVA SWAP ${roleLabel.toUpperCase()} APPLICATION`,
+    `==================================================`,
+    `Application ID: ${params.applicationId}`,
+    `Role: ${roleLabel}`,
+    `Wallet Address: ${params.walletAddress}`,
+    `Full Name: ${params.fullName}`,
+    `Email: ${params.email}`,
+    `Telegram: ${params.telegramUsername}`,
+    `Twitter / X: ${params.twitterLink}`,
+    params.youtubeLink ? `YouTube: ${params.youtubeLink}` : null,
+    `Telegram Channel / Group: ${params.telegramChannelLink}`,
+    params.audienceSize ? `Estimated Audience Size: ${params.audienceSize}` : null,
+    params.marketingExperience ? `Marketing Experience: ${params.marketingExperience}` : null,
+    params.manageablePartnersCount ? `Manageable Partners: ${params.manageablePartnersCount}` : null,
+    params.message ? `Applicant Message: ${params.message}` : null,
+    ``,
+    `QUICK ADMIN ACTIONS (CLICK ONE BELOW):`,
+    `--------------------------------------------------`,
+    `[ APPROVE APPLICATION & ACTIVATE DASHBOARD ]:`,
+    approveUrl,
+    ``,
+    `[ REJECT APPLICATION & SEND REASON QUERY ]:`,
+    rejectUrl,
+    `--------------------------------------------------`,
+    `You can also review inside /swap-admin -> Partners & BDMs.`
+  ].filter((line) => line !== null).join("\n");
+  return sendMail({
+    to: ADMIN_EMAIL,
+    subject: `New ${params.role === "bdm" ? "BDM" : "Partner"} Application \u2014 ${params.fullName}`,
+    text,
+    replyTo: params.email
+  });
+}
+async function sendApplicantDecisionEmail(params) {
+  if (!params.applicantEmail) {
+    return { sent: false, error: "Applicant email address is missing." };
+  }
+  const origin = params.siteOrigin;
+  const roleTitle = params.role === "bdm" ? "Business Development Manager (BDM)" : "Partner";
+  const dashboardUrl = `${origin}${params.role === "bdm" ? "/bdm-dashboard" : "/partner-dashboard"}`;
+  const applyUrl = `${origin}${params.role === "bdm" ? "/become-bdm" : "/become-partner"}`;
+  const referralLink = `${origin}/swap?ref=${params.walletAddress}`;
+  const subject = params.decision === "approved" ? `Approved: Your Nova Swap ${roleTitle} Dashboard is Now Active!` : `Update on Your Nova Swap ${roleTitle} Application`;
+  const text = params.decision === "approved" ? [
+    `Hello ${params.applicantName || "Creator"},`,
+    ``,
+    `Congratulations! Your Nova Swap ${roleTitle} application has been APPROVED and your dashboard is now active.`,
+    ``,
+    `Registered Wallet: ${params.walletAddress}`,
+    `Your Dashboard Link: ${dashboardUrl}`,
+    `Your Unique Referral Link: ${referralLink}`,
+    ``,
+    params.role === "bdm" ? `Commission Tier: 10% BDM Override on your managed Partners' volume + 20% Commission on your direct referrals.` : `Commission Tier: 20% of the 0.5% platform trading fee (0.1% of referred swap volume) for life.`,
+    ``,
+    `Next Step: Visit ${dashboardUrl} and connect your registered wallet (${params.walletAddress}) to access live stats and request payouts.`,
+    ``,
+    `Welcome to Nova Swap!`,
+    `Nova Swap Affiliate Team`
+  ].join("\n") : [
+    `Hello ${params.applicantName || "Applicant"},`,
+    ``,
+    `Thank you for applying to the Nova Swap ${roleTitle} Program (${params.walletAddress}).`,
+    ``,
+    `After reviewing your application, we are unable to approve it at this time for the following reason / query:`,
+    `--------------------------------------------------`,
+    `${params.rejectionReason || "Your channels or verification requirements did not meet current criteria."}`,
+    `--------------------------------------------------`,
+    ``,
+    `You can address the query above and re-submit your updated application anytime at:`,
+    applyUrl,
+    ``,
+    `If you have questions, simply reply to this email or contact ${ADMIN_EMAIL}.`,
+    ``,
+    `Best regards,`,
+    `Nova Swap Affiliate Team`
+  ].join("\n");
+  return sendMail({ to: params.applicantEmail, subject, text, replyTo: ADMIN_EMAIL });
+}
+async function sendAdminClaimNotification(payload) {
+  try {
     db.prepare(`
       INSERT INTO swap_campaign_events (
         id, campaign_id, user_id, wallet_address, event_name, event_data, created_at
       ) VALUES (?, ?, NULL, ?, ?, ?, ?)
     `).run(
-      eventId,
+      "evt_" + crypto.randomUUID(),
       "campaign_genesis_001",
       payload.walletAddress,
       "claim_request_submitted",
@@ -478,55 +622,228 @@ async function sendAdminClaimNotification(payload) {
           milestones: payload.milestoneAmountUSD,
           referrals: payload.referralAmountUSD
         },
-        adminRecipient: adminEmail
+        adminRecipient: ADMIN_EMAIL
       }),
       (/* @__PURE__ */ new Date()).toISOString()
     );
   } catch (err) {
     console.error("Failed to log in-app admin notification:", err);
   }
-  try {
-    const smtpHost = process.env.SMTP_HOST;
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-    if (smtpHost && smtpUser && smtpPass) {
-      console.log(`[Email Notification] Sending claim alert email for ${payload.claimId} to ${adminEmail}`);
-    } else {
-      console.log(`[Admin Notification] Configured Admin Email: ${adminEmail} | Claim ID: ${payload.claimId} for $${payload.requestedAmountUSD.toFixed(2)} USDT by ${payload.walletAddress}`);
-    }
-  } catch (emailErr) {
-    console.warn("[Email Notification] Notification email delivery skipped/failed (claim safely recorded):", emailErr);
-  }
+  console.log(`[Admin Notification] Claim ID: ${payload.claimId} for $${payload.requestedAmountUSD.toFixed(2)} USDT by ${payload.walletAddress}`);
 }
 
 // server/affiliateApi.ts
 import { Router } from "express";
-import crypto from "crypto";
-var affiliateRouter = Router();
-var ADMIN_KEY = process.env.SWAP_ADMIN_KEY || "nova-genesis-admin-2026";
-function verifyAffiliateAdmin(req, res, next) {
+import crypto3 from "crypto";
+
+// server/auth.ts
+import crypto2 from "crypto";
+import { ethers } from "ethers";
+import bs58 from "bs58";
+var ADMIN_KEY = (process.env.SWAP_ADMIN_KEY || "").trim();
+if (!ADMIN_KEY) {
+  console.warn("[Nova Server] SWAP_ADMIN_KEY is not set. Admin endpoints and email review links are disabled until it is configured.");
+}
+function safeEqual(a, b) {
+  const ha = crypto2.createHash("sha256").update(String(a)).digest();
+  const hb = crypto2.createHash("sha256").update(String(b)).digest();
+  return crypto2.timingSafeEqual(ha, hb);
+}
+function isValidAdminKey(candidate) {
+  if (!ADMIN_KEY || typeof candidate !== "string" || !candidate) return false;
+  return safeEqual(candidate, ADMIN_KEY);
+}
+function verifyAdmin(req, res, next) {
+  if (!ADMIN_KEY) {
+    return res.status(503).json({ error: "Admin access is disabled: SWAP_ADMIN_KEY is not configured on the server." });
+  }
   const authHeader = req.headers["x-admin-key"] || req.headers["authorization"];
-  if (!authHeader) {
+  if (!authHeader || typeof authHeader !== "string") {
     return res.status(401).json({ error: "Admin authentication required" });
   }
-  const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
-  if (token !== ADMIN_KEY) {
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+  if (!isValidAdminKey(token)) {
     return res.status(403).json({ error: "Invalid admin credentials" });
   }
   next();
 }
-function signReviewToken(appId) {
-  return crypto.createHmac("sha256", ADMIN_KEY).update(`review:${appId}`).digest("hex");
+var REVIEW_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1e3;
+function reviewSecret() {
+  return crypto2.createHash("sha256").update(`nova-review-links:${ADMIN_KEY}`).digest("hex");
+}
+function signReviewToken(appId, issuedAt = Date.now()) {
+  if (!ADMIN_KEY) return "";
+  const exp = issuedAt + REVIEW_TOKEN_TTL_MS;
+  const mac = crypto2.createHmac("sha256", reviewSecret()).update(`review:${appId}:${exp}`).digest("hex");
+  return `${exp}.${mac}`;
 }
 function verifyReviewToken(appId, token) {
-  if (!appId || !token) return false;
-  const expected = signReviewToken(appId);
-  const a = Buffer.from(expected, "utf8");
-  const b = Buffer.from(String(token).trim(), "utf8");
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  if (!ADMIN_KEY || !appId || !token) return false;
+  const [expStr, mac] = String(token).trim().split(".");
+  const exp = Number(expStr);
+  if (!exp || !mac || Date.now() > exp) return false;
+  const expected = crypto2.createHmac("sha256", reviewSecret()).update(`review:${appId}:${exp}`).digest("hex");
+  return safeEqual(mac, expected);
+}
+var EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
+var SOLANA_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+var TRON_ADDRESS = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+function getWalletKind(address) {
+  if (typeof address !== "string") return null;
+  const a = address.trim();
+  if (EVM_ADDRESS.test(a)) return "evm";
+  if (TRON_ADDRESS.test(a)) return "tron";
+  if (SOLANA_ADDRESS.test(a)) return "solana";
+  return null;
+}
+function isValidWalletAddress(address) {
+  return getWalletKind(address) !== null;
+}
+var PURPOSE_TITLES = {
+  verify_wallet: "Verify wallet ownership for Nova Swap Genesis Campaign",
+  reward_claim: "Confirm Nova Swap Genesis reward claim",
+  affiliate_apply: "Confirm Nova Swap affiliate application",
+  affiliate_payout: "Confirm Nova Swap affiliate payout request"
+};
+var CHALLENGE_TTL_MS = 10 * 60 * 1e3;
+var challenges = /* @__PURE__ */ new Map();
+function challengeKey(address, purpose) {
+  return `${purpose}:${address.toLowerCase()}`;
+}
+function pruneChallenges() {
+  const now = Date.now();
+  for (const [key, c] of challenges) {
+    if (c.expiresAt < now) challenges.delete(key);
+  }
+}
+function isSignaturePurpose(value) {
+  return typeof value === "string" && value in PURPOSE_TITLES;
+}
+function issueChallenge(address, purpose) {
+  pruneChallenges();
+  const cleanAddress = address.trim();
+  const nonce = crypto2.randomBytes(16).toString("hex");
+  const displayAddress = cleanAddress.startsWith("0x") ? cleanAddress.toLowerCase() : cleanAddress;
+  const message = [
+    `${PURPOSE_TITLES[purpose]}.`,
+    "",
+    "This signature is free and does not send a transaction.",
+    "",
+    `Wallet: ${displayAddress}`,
+    `Nonce: ${nonce}`,
+    `Timestamp: ${(/* @__PURE__ */ new Date()).toISOString()}`
+  ].join("\n");
+  challenges.set(challengeKey(cleanAddress, purpose), {
+    address: cleanAddress,
+    purpose,
+    message,
+    expiresAt: Date.now() + CHALLENGE_TTL_MS
+  });
+  return { nonce, message };
+}
+function verifySolanaSignature(address, message, signature) {
+  try {
+    const pubKey = Buffer.from(bs58.decode(address));
+    if (pubKey.length !== 32) return false;
+    const sigBytes = /^(0x)?[0-9a-fA-F]{128}$/.test(signature) ? Buffer.from(signature.replace(/^0x/, ""), "hex") : Buffer.from(bs58.decode(signature));
+    if (sigBytes.length !== 64) return false;
+    const spki = Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), pubKey]);
+    const keyObject = crypto2.createPublicKey({ key: spki, format: "der", type: "spki" });
+    return crypto2.verify(null, Buffer.from(message, "utf8"), keyObject, sigBytes);
+  } catch {
+    return false;
+  }
+}
+function consumeSignedChallenge(params) {
+  const { purpose } = params;
+  const address = String(params.address || "").trim();
+  const message = typeof params.message === "string" ? params.message : "";
+  const signature = typeof params.signature === "string" ? params.signature.trim() : "";
+  if (!address || !message || !signature) {
+    return "Wallet signature is required. Please approve the signature request in your wallet.";
+  }
+  const key = challengeKey(address, purpose);
+  const challenge = challenges.get(key);
+  if (!challenge || challenge.expiresAt < Date.now()) {
+    challenges.delete(key);
+    return "Signature request expired. Please try again.";
+  }
+  if (challenge.message !== message) {
+    return "Signed message does not match the server request. Please try again.";
+  }
+  const kind = getWalletKind(challenge.address);
+  let valid = false;
+  if (kind === "evm") {
+    try {
+      valid = ethers.verifyMessage(message, signature).toLowerCase() === challenge.address.toLowerCase();
+    } catch {
+      valid = false;
+    }
+  } else if (kind === "solana") {
+    valid = verifySolanaSignature(challenge.address, message, signature);
+  } else {
+    return "Signature verification is supported for EVM and Solana wallets only.";
+  }
+  if (!valid) {
+    return "Signature verification failed: the signature does not belong to this wallet.";
+  }
+  challenges.delete(key);
+  return null;
+}
+function rateLimit(options) {
+  const hits = /* @__PURE__ */ new Map();
+  let lastSweep = Date.now();
+  return (req, res, next) => {
+    const now = Date.now();
+    if (now - lastSweep > options.windowMs) {
+      for (const [k, v] of hits) if (v.resetAt < now) hits.delete(k);
+      lastSweep = now;
+    }
+    const key = `${req.ip || "unknown"}:${req.baseUrl}${req.path}`;
+    const entry = hits.get(key);
+    if (!entry || entry.resetAt < now) {
+      hits.set(key, { count: 1, resetAt: now + options.windowMs });
+      return next();
+    }
+    entry.count += 1;
+    if (entry.count > options.max) {
+      res.setHeader("Retry-After", String(Math.ceil((entry.resetAt - now) / 1e3)));
+      return res.status(429).json({ error: "Too many requests. Please wait a moment and try again." });
+    }
+    next();
+  };
+}
+function sendServerError(res, err, context) {
+  console.error(`[Nova API] ${context}:`, err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: "Internal server error. Please try again later." });
+  }
+}
+
+// server/affiliateApi.ts
+var affiliateRouter = Router();
+function getSiteOrigin(req) {
+  const configured = (process.env.APP_URL || "").trim().replace(/\/+$/, "");
+  if (/^https?:\/\//.test(configured)) return configured;
+  const host = req.get("host");
+  return host ? `${req.protocol}://${host}` : "https://novap2p.com";
+}
+async function notifyApplicant(req, result) {
+  const emailResult = await sendApplicantDecisionEmail({
+    siteOrigin: getSiteOrigin(req),
+    decision: result.status,
+    role: result.role,
+    applicantEmail: result.applicantEmail,
+    applicantName: result.applicantName,
+    walletAddress: result.walletAddress,
+    rejectionReason: result.rejectionReason
+  });
+  return emailResult.sent;
 }
 function processApplicationDecision(params) {
+  return db.transaction(() => applyApplicationDecision(params))();
+}
+function applyApplicationDecision(params) {
   const { appRecord, action, assignRole, bdmWalletAddress, adminNotes } = params;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const cleanWallet = String(appRecord.wallet_address).toLowerCase();
@@ -562,7 +879,7 @@ function processApplicationDecision(params) {
         telegram_username, bdm_wallet_address, status, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
     `).run(
-      "aff_" + crypto.randomUUID(),
+      "aff_" + crypto3.randomUUID(),
       cleanWallet,
       targetRole,
       appRecord.id,
@@ -597,6 +914,9 @@ function bindAffiliateReferral(referredWallet, referrerWallet) {
     if (!cleanReferred || !cleanReferrer || cleanReferred === cleanReferrer) {
       return false;
     }
+    if (!isValidWalletAddress(referredWallet.trim()) || !isValidWalletAddress(referrerWallet.trim())) {
+      return false;
+    }
     const affiliate = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ? AND status = ?").get(cleanReferrer, "active");
     if (!affiliate) {
       return false;
@@ -606,7 +926,7 @@ function bindAffiliateReferral(referredWallet, referrerWallet) {
       return false;
     }
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const refId = "affref_" + crypto.randomUUID();
+    const refId = "affref_" + crypto3.randomUUID();
     const bdmWallet = affiliate.role === "partner" && affiliate.bdm_wallet_address ? String(affiliate.bdm_wallet_address).toLowerCase() : null;
     db.prepare(`
       INSERT INTO affiliate_referrals (
@@ -627,6 +947,13 @@ function bindAffiliateReferral(referredWallet, referrerWallet) {
 }
 function processAffiliateSwapCommission(params) {
   try {
+    db.transaction(() => creditAffiliateSwapCommission(params))();
+  } catch (err) {
+    console.warn("[Affiliate] processAffiliateSwapCommission error:", err);
+  }
+}
+function creditAffiliateSwapCommission(params) {
+  {
     const cleanTrader = params.traderWallet.trim().toLowerCase();
     if (!cleanTrader || params.volumeUSD <= 0 || !params.transactionId) return;
     const existingComm = db.prepare("SELECT id FROM affiliate_commissions WHERE transaction_id = ?").get(params.transactionId);
@@ -655,7 +982,7 @@ function processAffiliateSwapCommission(params) {
           status, payout_id, created_at
         ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?)
       `).run(
-        "comm_" + crypto.randomUUID(),
+        "comm_" + crypto3.randomUUID(),
         referrer.wallet_address,
         referrer.role,
         commissionType,
@@ -691,7 +1018,7 @@ function processAffiliateSwapCommission(params) {
               status, payout_id, created_at
             ) VALUES (?, ?, 'bdm', 'bdm_override', ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?)
           `).run(
-            "comm_" + crypto.randomUUID(),
+            "comm_" + crypto3.randomUUID(),
             bdm.wallet_address,
             referrer.wallet_address,
             cleanTrader,
@@ -713,8 +1040,6 @@ function processAffiliateSwapCommission(params) {
         }
       }
     }
-  } catch (err) {
-    console.warn("[Affiliate] processAffiliateSwapCommission error:", err);
   }
 }
 affiliateRouter.get("/status/:walletAddress", (req, res) => {
@@ -724,7 +1049,8 @@ affiliateRouter.get("/status/:walletAddress", (req, res) => {
       return res.status(400).json({ error: "Wallet address is required" });
     }
     const affiliate = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ?").get(cleanWallet);
-    const latestApplication = db.prepare("SELECT * FROM affiliate_applications WHERE LOWER(wallet_address) = ? ORDER BY created_at DESC LIMIT 1").get(cleanWallet);
+    const latestApplicationRow = db.prepare("SELECT * FROM affiliate_applications WHERE LOWER(wallet_address) = ? ORDER BY created_at DESC LIMIT 1").get(cleanWallet);
+    const latestApplication = latestApplicationRow ? { ...latestApplicationRow, email: void 0 } : null;
     if (affiliate) {
       return res.json({
         walletAddress: cleanWallet,
@@ -732,7 +1058,7 @@ affiliateRouter.get("/status/:walletAddress", (req, res) => {
         status: affiliate.status,
         role: affiliate.role,
         // 'partner' | 'bdm'
-        affiliate,
+        affiliate: { ...affiliate, email: void 0 },
         application: latestApplication || null
       });
     }
@@ -745,10 +1071,10 @@ affiliateRouter.get("/status/:walletAddress", (req, res) => {
       application: latestApplication || null
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
-affiliateRouter.post("/apply", (req, res) => {
+affiliateRouter.post("/apply", async (req, res) => {
   try {
     const {
       role,
@@ -763,12 +1089,29 @@ affiliateRouter.post("/apply", (req, res) => {
       marketingExperience,
       manageablePartnersCount,
       message,
-      bdmWalletAddress
+      bdmWalletAddress,
+      signature,
+      signedMessage
     } = req.body;
     const cleanRole = role === "bdm" ? "bdm" : "partner";
     const cleanWallet = String(walletAddress || "").trim().toLowerCase();
     if (!cleanWallet || !fullName || !email || !telegramUsername || !twitterLink || !telegramChannelLink) {
       return res.status(400).json({ error: "Please complete all required application fields" });
+    }
+    if (!isValidWalletAddress(String(walletAddress).trim())) {
+      return res.status(400).json({ error: "Please connect a valid wallet address." });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+      return res.status(400).json({ error: "Please enter a valid email address." });
+    }
+    const signatureError = consumeSignedChallenge({
+      address: String(walletAddress).trim(),
+      purpose: "affiliate_apply",
+      message: signedMessage,
+      signature
+    });
+    if (signatureError) {
+      return res.status(401).json({ error: signatureError });
     }
     const existingAffiliate = db.prepare("SELECT id, role, status FROM affiliates WHERE LOWER(wallet_address) = ?").get(cleanWallet);
     if (existingAffiliate) {
@@ -784,7 +1127,7 @@ affiliateRouter.post("/apply", (req, res) => {
       });
     }
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const appId = "app_" + crypto.randomUUID();
+    const appId = "app_" + crypto3.randomUUID();
     db.prepare(`
       INSERT INTO affiliate_applications (
         id, role, wallet_address, full_name, email, telegram_username,
@@ -796,12 +1139,12 @@ affiliateRouter.post("/apply", (req, res) => {
       appId,
       cleanRole,
       cleanWallet,
-      fullName.trim(),
-      email.trim(),
-      telegramUsername.trim(),
-      twitterLink.trim(),
+      String(fullName).trim(),
+      String(email).trim(),
+      String(telegramUsername).trim(),
+      String(twitterLink).trim(),
       youtubeLink ? String(youtubeLink).trim() : null,
-      telegramChannelLink.trim(),
+      String(telegramChannelLink).trim(),
       audienceSize ? String(audienceSize).trim() : null,
       marketingExperience ? String(marketingExperience).trim() : null,
       manageablePartnersCount ? String(manageablePartnersCount).trim() : null,
@@ -816,7 +1159,7 @@ affiliateRouter.post("/apply", (req, res) => {
           id, campaign_id, wallet_address, event_name, event_data, created_at
         ) VALUES (?, 'campaign_genesis_001', ?, ?, ?, ?)
       `).run(
-        "evt_" + crypto.randomUUID(),
+        "evt_" + crypto3.randomUUID(),
         cleanWallet,
         `affiliate_${cleanRole}_applied`,
         JSON.stringify({ appId, fullName, email, telegramUsername }),
@@ -824,16 +1167,40 @@ affiliateRouter.post("/apply", (req, res) => {
       );
     } catch {
     }
+    const reviewToken = signReviewToken(appId);
+    let adminNotified = false;
+    if (reviewToken) {
+      const emailResult = await sendAdminAffiliateApplicationEmail({
+        siteOrigin: getSiteOrigin(req),
+        applicationId: appId,
+        reviewToken,
+        role: cleanRole,
+        walletAddress: cleanWallet,
+        fullName: String(fullName).trim(),
+        email: String(email).trim(),
+        telegramUsername: String(telegramUsername).trim(),
+        twitterLink: String(twitterLink).trim(),
+        youtubeLink: youtubeLink ? String(youtubeLink).trim() : null,
+        telegramChannelLink: String(telegramChannelLink).trim(),
+        audienceSize: audienceSize ? String(audienceSize).trim() : null,
+        marketingExperience: marketingExperience ? String(marketingExperience).trim() : null,
+        manageablePartnersCount: manageablePartnersCount ? String(manageablePartnersCount).trim() : null,
+        message: message ? String(message).trim() : null
+      });
+      adminNotified = emailResult.sent;
+    } else {
+      console.warn(`[Affiliate] Application ${appId} saved, but admin email skipped: SWAP_ADMIN_KEY not configured (needed for review links).`);
+    }
     res.json({
       success: true,
       applicationId: appId,
-      reviewToken: signReviewToken(appId),
+      adminNotified,
       role: cleanRole,
       status: "pending",
       message: `Your ${cleanRole === "bdm" ? "BDM" : "Partner"} application has been submitted and will be reviewed within 24 hours.`
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
 affiliateRouter.post("/track-ref", (req, res) => {
@@ -843,6 +1210,9 @@ affiliateRouter.post("/track-ref", (req, res) => {
       return res.status(400).json({ error: "refWallet is required" });
     }
     const cleanRef = String(refWallet).trim().toLowerCase();
+    if (!isValidWalletAddress(String(refWallet).trim())) {
+      return res.json({ success: true, valid: false, referrerRole: null, bound: false });
+    }
     const affiliate = db.prepare("SELECT id, wallet_address, role, status FROM affiliates WHERE LOWER(wallet_address) = ? AND status = ?").get(cleanRef, "active");
     let bound = false;
     if (affiliate && traderWallet) {
@@ -855,7 +1225,7 @@ affiliateRouter.post("/track-ref", (req, res) => {
       bound
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
 affiliateRouter.get("/partner/dashboard/:walletAddress", (req, res) => {
@@ -893,7 +1263,6 @@ affiliateRouter.get("/partner/dashboard/:walletAddress", (req, res) => {
       partner: {
         walletAddress: partner.wallet_address,
         fullName: partner.full_name,
-        email: partner.email,
         telegramUsername: partner.telegram_username,
         status: partner.status,
         bdmWalletAddress: partner.bdm_wallet_address,
@@ -936,7 +1305,7 @@ affiliateRouter.get("/partner/dashboard/:walletAddress", (req, res) => {
       payouts
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
 affiliateRouter.get("/bdm/dashboard/:walletAddress", (req, res) => {
@@ -998,7 +1367,6 @@ affiliateRouter.get("/bdm/dashboard/:walletAddress", (req, res) => {
       bdm: {
         walletAddress: bdm.wallet_address,
         fullName: bdm.full_name,
-        email: bdm.email,
         telegramUsername: bdm.telegram_username,
         status: bdm.status,
         referralLink: `https://novap2p.com/swap?ref=${bdm.wallet_address}`,
@@ -1033,15 +1401,27 @@ affiliateRouter.get("/bdm/dashboard/:walletAddress", (req, res) => {
       payouts
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
 affiliateRouter.post("/payout/request", (req, res) => {
   try {
-    const { walletAddress, payoutAddress, preferredNetwork, preferredToken } = req.body;
+    const { walletAddress, payoutAddress, preferredNetwork, preferredToken, signature, signedMessage } = req.body;
     const cleanWallet = String(walletAddress || "").trim().toLowerCase();
     if (!cleanWallet || !payoutAddress || !preferredNetwork) {
       return res.status(400).json({ error: "Wallet address, payout destination, and network are required" });
+    }
+    if (String(payoutAddress).trim().length < 20 || String(payoutAddress).trim().length > 128) {
+      return res.status(400).json({ error: "Please enter a valid payout wallet address." });
+    }
+    const signatureError = consumeSignedChallenge({
+      address: String(walletAddress).trim(),
+      purpose: "affiliate_payout",
+      message: signedMessage,
+      signature
+    });
+    if (signatureError) {
+      return res.status(401).json({ error: signatureError });
     }
     const affiliate = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ? AND status = ?").get(cleanWallet, "active");
     if (!affiliate) {
@@ -1054,34 +1434,36 @@ affiliateRouter.post("/payout/request", (req, res) => {
       });
     }
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const payoutId = "affpay_" + crypto.randomUUID();
-    db.prepare(`
+    const payoutId = "affpay_" + crypto3.randomUUID();
+    db.transaction(() => {
+      db.prepare(`
       INSERT INTO affiliate_payouts (
         id, affiliate_wallet_address, affiliate_role, amount_usd,
         payout_address, preferred_network, preferred_token,
         status, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
     `).run(
-      payoutId,
-      cleanWallet,
-      affiliate.role,
-      availableBalance,
-      String(payoutAddress).trim(),
-      String(preferredNetwork).trim(),
-      preferredToken ? String(preferredToken).trim() : "USDT",
-      now,
-      now
-    );
-    db.prepare(`
+        payoutId,
+        cleanWallet,
+        affiliate.role,
+        availableBalance,
+        String(payoutAddress).trim(),
+        String(preferredNetwork).trim(),
+        preferredToken ? String(preferredToken).trim() : "USDT",
+        now,
+        now
+      );
+      db.prepare(`
       UPDATE affiliates
       SET pending_balance_usd = 0.0, updated_at = ?
       WHERE id = ?
     `).run(now, affiliate.id);
-    db.prepare(`
+      db.prepare(`
       UPDATE affiliate_commissions
       SET payout_id = ?
       WHERE LOWER(affiliate_wallet_address) = ? AND status = 'pending' AND payout_id IS NULL
     `).run(payoutId, cleanWallet);
+    })();
     res.json({
       success: true,
       payoutId,
@@ -1090,10 +1472,10 @@ affiliateRouter.post("/payout/request", (req, res) => {
       message: "Payout request submitted! Processing takes within 24 hours."
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
-affiliateRouter.get("/admin/overview", verifyAffiliateAdmin, (req, res) => {
+affiliateRouter.get("/admin/overview", verifyAdmin, (req, res) => {
   try {
     const applications = db.prepare("SELECT * FROM affiliate_applications ORDER BY created_at DESC").all();
     const affiliates = db.prepare("SELECT * FROM affiliates ORDER BY total_referred_volume_usd DESC, created_at DESC").all();
@@ -1104,10 +1486,10 @@ affiliateRouter.get("/admin/overview", verifyAffiliateAdmin, (req, res) => {
       payouts
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
-affiliateRouter.post("/admin/applications/:id/review", verifyAffiliateAdmin, (req, res) => {
+affiliateRouter.post("/admin/applications/:id/review", verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { action, assignRole, bdmWalletAddress, adminNotes } = req.body;
@@ -1128,9 +1510,10 @@ affiliateRouter.post("/admin/applications/:id/review", verifyAffiliateAdmin, (re
       bdmWalletAddress,
       adminNotes
     });
-    return res.json(result);
+    const applicantNotified = await notifyApplicant(req, result);
+    return res.json({ ...result, applicantNotified });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
 affiliateRouter.get("/review-info", (req, res) => {
@@ -1148,10 +1531,10 @@ affiliateRouter.get("/review-info", (req, res) => {
       application: appRecord
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
-affiliateRouter.post("/review-action", (req, res) => {
+affiliateRouter.post("/review-action", async (req, res) => {
   try {
     const { id, token, action, assignRole, bdmWalletAddress, adminNotes } = req.body;
     if (!verifyReviewToken(String(id || ""), String(token || ""))) {
@@ -1164,6 +1547,9 @@ affiliateRouter.post("/review-action", (req, res) => {
     if (!appRecord) {
       return res.status(404).json({ error: "Application not found." });
     }
+    if (appRecord.status !== "pending") {
+      return res.status(409).json({ error: `This application has already been ${appRecord.status}. Use the admin panel (/swap-admin) to make further changes.` });
+    }
     if (action === "reject" && (!adminNotes || !String(adminNotes).trim())) {
       return res.status(400).json({ error: "Rejection reason / query is required before rejecting." });
     }
@@ -1174,12 +1560,13 @@ affiliateRouter.post("/review-action", (req, res) => {
       bdmWalletAddress,
       adminNotes
     });
-    return res.json(result);
+    const applicantNotified = await notifyApplicant(req, result);
+    return res.json({ ...result, applicantNotified });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
-affiliateRouter.post("/admin/affiliates/:walletAddress/update", verifyAffiliateAdmin, (req, res) => {
+affiliateRouter.post("/admin/affiliates/:walletAddress/update", verifyAdmin, (req, res) => {
   try {
     const cleanWallet = String(req.params.walletAddress || "").trim().toLowerCase();
     const { status, bdmWalletAddress } = req.body;
@@ -1197,10 +1584,10 @@ affiliateRouter.post("/admin/affiliates/:walletAddress/update", verifyAffiliateA
     `).run(newStatus, newBdm, now, existing.id);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
-affiliateRouter.post("/admin/payouts/:id/pay", verifyAffiliateAdmin, (req, res) => {
+affiliateRouter.post("/admin/payouts/:id/pay", verifyAdmin, (req, res) => {
   try {
     const { id } = req.params;
     const { txHash, adminNotes } = req.body;
@@ -1208,56 +1595,67 @@ affiliateRouter.post("/admin/payouts/:id/pay", verifyAffiliateAdmin, (req, res) 
     if (!payout) {
       return res.status(404).json({ error: "Payout not found" });
     }
+    if (payout.status === "paid") {
+      return res.status(400).json({ error: "This payout has already been marked as paid." });
+    }
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    db.prepare(`
+    db.transaction(() => {
+      db.prepare(`
       UPDATE affiliate_payouts
       SET status = 'paid', tx_hash = ?, admin_notes = ?, paid_at = ?, updated_at = ?
       WHERE id = ?
     `).run(txHash || null, adminNotes || null, now, now, id);
-    db.prepare(`
+      db.prepare(`
       UPDATE affiliates
       SET paid_balance_usd = paid_balance_usd + ?, updated_at = ?
       WHERE LOWER(wallet_address) = ?
     `).run(payout.amount_usd, now, payout.affiliate_wallet_address.toLowerCase());
-    db.prepare(`
+      db.prepare(`
       UPDATE affiliate_commissions
       SET status = 'paid'
       WHERE payout_id = ?
     `).run(id);
+    })();
     res.json({ success: true, status: "paid" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "affiliate api");
   }
 });
 
 // server/api.ts
-import { ethers } from "ethers";
-import crypto2 from "crypto";
+import crypto4 from "crypto";
 var apiRouter = Router2();
-var ADMIN_KEY2 = process.env.SWAP_ADMIN_KEY || "nova-genesis-admin-2026";
 var ENABLED_CHAINS = [1, 56, 137, 42161, 10, 8453];
-var pendingNonces = /* @__PURE__ */ new Map();
-function getOrCreateNonce(walletAddress) {
-  const normalized = walletAddress.toLowerCase();
-  const now = Date.now();
-  const existing = pendingNonces.get(normalized);
-  if (existing && now - existing.timestamp < 10 * 60 * 1e3) {
-    return existing.nonce;
-  }
-  const nonce = crypto2.randomBytes(16).toString("hex");
-  pendingNonces.set(normalized, { nonce, timestamp: now });
-  return nonce;
+var DEFAULT_CAMPAIGN_ID = "campaign_genesis_001";
+var CLAIM_THRESHOLD_USD = 500;
+var LIFI_INTEGRATOR = (process.env.LIFI_INTEGRATOR || process.env.VITE_VELORA_PARTNER || "nova-p2p").toLowerCase();
+var TX_HASH_PATTERN = /^(0x[a-fA-F0-9]{64}|[1-9A-HJ-NP-Za-km-z]{43,100})$/;
+function clientIp(req) {
+  return String(req.ip || req.socket.remoteAddress || "");
 }
-function verifyAdmin(req, res, next) {
-  const authHeader = req.headers["x-admin-key"] || req.headers["authorization"];
-  if (!authHeader) {
-    return res.status(401).json({ error: "Admin authentication required" });
+function findOrCreateCampaignUser(normalizedAddress, campaignId, chainId = 1) {
+  let user = db.prepare("SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?").get(campaignId, normalizedAddress);
+  if (user) return user;
+  let newRefCode = "";
+  while (true) {
+    newRefCode = "NOVA" + crypto4.randomBytes(3).toString("hex").toUpperCase();
+    const exists = db.prepare("SELECT id FROM swap_campaign_users WHERE referral_code = ?").get(newRefCode);
+    if (!exists) break;
   }
-  const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
-  if (token !== ADMIN_KEY2) {
-    return res.status(403).json({ error: "Invalid admin credentials" });
-  }
-  next();
+  const userId = "usr_" + crypto4.randomUUID();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  db.prepare(`
+    INSERT OR IGNORE INTO swap_campaign_users (
+      id, campaign_id, wallet_address, chain_id, signature, verified_at,
+      referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
+      is_flagged, last_active_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(userId, campaignId, normalizedAddress, chainId, "auto_connected", now, newRefCode, null, 0, 0, 0, now, now);
+  return db.prepare("SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?").get(campaignId, normalizedAddress);
+}
+function isNovaIntegratorTransfer(record) {
+  const integrator = String(record?.metadata?.integrator || record?.integrator || "").toLowerCase();
+  return integrator === LIFI_INTEGRATOR;
 }
 apiRouter.get("/campaign", (req, res) => {
   try {
@@ -1317,7 +1715,7 @@ apiRouter.get("/campaign", (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.post("/track-referral", (req, res) => {
@@ -1328,13 +1726,13 @@ apiRouter.post("/track-referral", (req, res) => {
     }
     const cleanCode = String(refCode).trim().toUpperCase();
     const referrer = db.prepare("SELECT id, wallet_address FROM swap_campaign_users WHERE UPPER(referral_code) = ?").get(cleanCode);
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    const ip = clientIp(req);
     db.prepare(`
       INSERT INTO swap_campaign_events (id, campaign_id, user_id, event_name, event_data, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
-      "evt_" + crypto2.randomUUID(),
-      "campaign_genesis_001",
+      "evt_" + crypto4.randomUUID(),
+      DEFAULT_CAMPAIGN_ID,
       referrer ? referrer.id : null,
       "referral_captured",
       JSON.stringify({ refCode: cleanCode, valid: !!referrer }),
@@ -1347,7 +1745,7 @@ apiRouter.post("/track-referral", (req, res) => {
       referrerCode: cleanCode
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.post("/events", (req, res) => {
@@ -1356,13 +1754,13 @@ apiRouter.post("/events", (req, res) => {
     if (!eventName) {
       return res.status(400).json({ error: "Event name is required" });
     }
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    const ip = clientIp(req);
     db.prepare(`
       INSERT INTO swap_campaign_events (id, campaign_id, wallet_address, event_name, event_data, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
-      "evt_" + crypto2.randomUUID(),
-      "campaign_genesis_001",
+      "evt_" + crypto4.randomUUID(),
+      DEFAULT_CAMPAIGN_ID,
       walletAddress ? String(walletAddress).toLowerCase() : null,
       eventName,
       eventData ? JSON.stringify(eventData) : null,
@@ -1371,49 +1769,55 @@ apiRouter.post("/events", (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.get("/auth/nonce", (req, res) => {
   try {
     const { address } = req.query;
-    if (!address || typeof address !== "string") {
-      return res.status(400).json({ error: "Wallet address required" });
+    if (!address || typeof address !== "string" || !isValidWalletAddress(address)) {
+      return res.status(400).json({ error: "Valid wallet address required" });
     }
-    const nonce = getOrCreateNonce(address);
-    const message = `Sign this message to verify wallet ownership for Nova Swap Genesis Campaign.
-
-Wallet: ${address.toLowerCase()}
-Nonce: ${nonce}
-Timestamp: ${(/* @__PURE__ */ new Date()).toISOString()}`;
-    res.json({ nonce, message });
+    res.json(issueChallenge(address, "verify_wallet"));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "auth/nonce");
+  }
+});
+apiRouter.get("/auth/challenge", (req, res) => {
+  try {
+    const { address, purpose } = req.query;
+    if (!address || typeof address !== "string" || !isValidWalletAddress(address)) {
+      return res.status(400).json({ error: "Valid wallet address required" });
+    }
+    if (!isSignaturePurpose(purpose)) {
+      return res.status(400).json({ error: "Invalid signature purpose" });
+    }
+    if (getWalletKind(address) === "tron") {
+      return res.status(400).json({ error: "Please connect an EVM (e.g. MetaMask, Trust Wallet) or Solana wallet to sign this request." });
+    }
+    res.json(issueChallenge(address, purpose));
+  } catch (err) {
+    sendServerError(res, err, "auth/challenge");
   }
 });
 apiRouter.post("/auth/verify", async (req, res) => {
   try {
     const { address, signature, message, chainId, refCode } = req.body;
-    if (!address || !signature || !message) {
+    if (!address || !signature || !message || !isValidWalletAddress(address)) {
       return res.status(400).json({ error: "Address, signature and message are required" });
     }
-    const normalizedAddress = address.toLowerCase();
-    let recoveredAddress = "";
-    try {
-      recoveredAddress = ethers.verifyMessage(message, signature).toLowerCase();
-    } catch (e) {
-      return res.status(400).json({ error: "Signature verification failed: " + e.message });
-    }
-    if (recoveredAddress !== normalizedAddress) {
-      return res.status(400).json({ error: "Recovered address does not match claimed wallet address" });
+    const normalizedAddress = String(address).toLowerCase();
+    const signatureError = consumeSignedChallenge({ address, purpose: "verify_wallet", message, signature });
+    if (signatureError) {
+      return res.status(400).json({ error: signatureError });
     }
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const campaignId = "campaign_genesis_001";
+    const campaignId = DEFAULT_CAMPAIGN_ID;
     let user = db.prepare("SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?").get(campaignId, normalizedAddress);
     if (!user) {
       let newRefCode = "";
       while (true) {
-        newRefCode = "NP" + crypto2.randomBytes(3).toString("hex").toUpperCase();
+        newRefCode = "NP" + crypto4.randomBytes(3).toString("hex").toUpperCase();
         const exists = db.prepare("SELECT id FROM swap_campaign_users WHERE referral_code = ?").get(newRefCode);
         if (!exists) break;
       }
@@ -1426,7 +1830,7 @@ apiRouter.post("/auth/verify", async (req, res) => {
         }
         bindAffiliateReferral(normalizedAddress, String(refCode));
       }
-      const userId = "usr_" + crypto2.randomUUID();
+      const userId = "usr_" + crypto4.randomUUID();
       db.prepare(`
         INSERT INTO swap_campaign_users (
           id, campaign_id, wallet_address, chain_id, signature, verified_at,
@@ -1449,14 +1853,14 @@ apiRouter.post("/auth/verify", async (req, res) => {
         now
       );
       if (referredByUserId) {
-        const ip2 = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+        const ip2 = clientIp(req);
         db.prepare(`
           INSERT OR IGNORE INTO swap_referrals (
             id, campaign_id, referrer_user_id, referred_user_id, referral_code,
             visitor_ip, status, qualifying_volume_usd, reward_amount_usd, created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          "ref_" + crypto2.randomUUID(),
+          "ref_" + crypto4.randomUUID(),
           campaignId,
           referredByUserId,
           userId,
@@ -1476,12 +1880,11 @@ apiRouter.post("/auth/verify", async (req, res) => {
         WHERE id = ?
       `).run(signature, now, chainId ? Number(chainId) : user.chain_id, now, user.id);
     }
-    pendingNonces.delete(normalizedAddress);
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    const ip = clientIp(req);
     db.prepare(`
       INSERT INTO swap_campaign_events (id, campaign_id, user_id, wallet_address, event_name, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("evt_" + crypto2.randomUUID(), campaignId, user.id, normalizedAddress, "wallet_connected", String(ip || ""), now);
+    `).run("evt_" + crypto4.randomUUID(), campaignId, user.id, normalizedAddress, "wallet_connected", String(ip || ""), now);
     res.json({
       success: true,
       user: {
@@ -1496,210 +1899,195 @@ apiRouter.post("/auth/verify", async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 function recordSwapTransactionInternal(params) {
-  const existingTx = db.prepare("SELECT id FROM swap_transactions WHERE chain_id = ? AND tx_hash = ?").get(params.numericChainId, params.normalizedTxHash);
-  if (existingTx) {
-    return { success: false, newlyUnlocked: [], duplicate: true };
-  }
-  const campaign = db.prepare("SELECT * FROM swap_campaigns WHERE id = ?").get(params.campaignId);
-  const minSwapUSD = campaign ? campaign.min_swap_usd : 1;
-  if (params.volumeUSD < minSwapUSD) {
-    return { success: false, newlyUnlocked: [], belowMin: true };
-  }
-  const now = params.verifiedAt || (/* @__PURE__ */ new Date()).toISOString();
-  const txId = "tx_" + crypto2.randomUUID();
-  db.prepare(`
-    INSERT INTO swap_transactions (
-      id, campaign_id, user_id, wallet_address, chain_id, tx_hash,
-      lifi_route_id, from_token_symbol, from_token_address, to_token_symbol,
-      to_token_address, from_amount, to_amount, volume_usd, execution_status,
-      verification_status, verification_source, verified_at, raw_data, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    txId,
-    params.campaignId,
-    params.userId,
-    params.normalizedAddress,
-    params.numericChainId,
-    params.normalizedTxHash,
-    params.lifiRouteId || null,
-    typeof params.fromToken === "string" ? params.fromToken : params.fromToken?.symbol || null,
-    params.fromToken?.address || null,
-    typeof params.toToken === "string" ? params.toToken : params.toToken?.symbol || null,
-    params.toToken?.address || null,
-    params.fromAmount ? String(params.fromAmount) : null,
-    params.toAmount ? String(params.toAmount) : null,
-    params.volumeUSD,
-    "DONE",
-    "VERIFIED",
-    params.verificationSource || "lifi_api",
-    now,
-    params.rawRouteData ? JSON.stringify(params.rawRouteData) : null,
-    now
-  );
-  const user = db.prepare("SELECT * FROM swap_campaign_users WHERE id = ?").get(params.userId);
-  const newTotalVolume = Number(((user?.total_volume_usd || 0) + params.volumeUSD).toFixed(4));
-  const newSwapsCount = (user?.eligible_swaps_count || 0) + 1;
-  db.prepare(`
-    UPDATE swap_campaign_users 
-    SET total_volume_usd = ?, eligible_swaps_count = ?, last_active_at = ?
-    WHERE id = ?
-  `).run(newTotalVolume, newSwapsCount, now, params.userId);
-  if (campaign && campaign.cashback_enabled) {
-    const novaFeeCollectedUSD = params.volumeUSD * 5e-3;
-    const cashbackRate = (campaign.cashback_percentage || 5) / 100;
-    const creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
-    if (creditedCashbackUSD > 0) {
-      const cbId = "cb_" + crypto2.randomUUID();
-      db.prepare(`
-        INSERT INTO swap_cashback_ledger (
-          id, campaign_id, user_id, wallet_address, transaction_id,
-          swap_volume_usd, nova_fee_usd, cashback_rate, cashback_amount_usd,
-          status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'credited', ?)
-      `).run(
-        cbId,
-        params.campaignId,
-        params.userId,
-        params.normalizedAddress,
-        txId,
-        params.volumeUSD,
-        novaFeeCollectedUSD,
-        cashbackRate,
-        creditedCashbackUSD,
-        now
-      );
-      const cbRewardId = "rwd_cb_" + crypto2.randomUUID();
-      db.prepare(`
-        INSERT INTO swap_rewards (
-          id, campaign_id, user_id, milestone_id, reward_type,
-          amount_usd, status, unlocked_at, created_at
-        ) VALUES (?, ?, ?, NULL, 'cashback', ?, 'unlocked', ?, ?)
-      `).run(cbRewardId, params.campaignId, params.userId, creditedCashbackUSD, now, now);
+  const run = db.transaction(() => {
+    const existingTx = db.prepare("SELECT id FROM swap_transactions WHERE chain_id = ? AND tx_hash = ?").get(params.numericChainId, params.normalizedTxHash);
+    if (existingTx) {
+      return { success: false, newlyUnlocked: [], duplicate: true };
     }
-  }
-  const milestones = db.prepare(`
-    SELECT * FROM swap_campaign_milestones 
-    WHERE campaign_id = ? AND is_active = 1
-  `).all(params.campaignId);
-  const newlyUnlocked = [];
-  milestones.forEach((m) => {
-    if (newTotalVolume >= m.target_volume_usd) {
-      const existingReward = db.prepare(`
-        SELECT id FROM swap_rewards WHERE user_id = ? AND milestone_id = ?
-      `).get(params.userId, m.id);
-      if (!existingReward) {
-        const rewardId = "rwd_" + crypto2.randomUUID();
+    const campaign = db.prepare("SELECT * FROM swap_campaigns WHERE id = ?").get(params.campaignId);
+    const minSwapUSD = campaign ? campaign.min_swap_usd : 1;
+    if (params.volumeUSD < minSwapUSD) {
+      return { success: false, newlyUnlocked: [], belowMin: true };
+    }
+    const now = params.verifiedAt || (/* @__PURE__ */ new Date()).toISOString();
+    const txId = "tx_" + crypto4.randomUUID();
+    db.prepare(`
+      INSERT INTO swap_transactions (
+        id, campaign_id, user_id, wallet_address, chain_id, tx_hash,
+        lifi_route_id, from_token_symbol, from_token_address, to_token_symbol,
+        to_token_address, from_amount, to_amount, volume_usd, execution_status,
+        verification_status, verification_source, verified_at, raw_data, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      txId,
+      params.campaignId,
+      params.userId,
+      params.normalizedAddress,
+      params.numericChainId,
+      params.normalizedTxHash,
+      params.lifiRouteId || null,
+      typeof params.fromToken === "string" ? params.fromToken : params.fromToken?.symbol || null,
+      params.fromToken?.address || null,
+      typeof params.toToken === "string" ? params.toToken : params.toToken?.symbol || null,
+      params.toToken?.address || null,
+      params.fromAmount ? String(params.fromAmount) : null,
+      params.toAmount ? String(params.toAmount) : null,
+      params.volumeUSD,
+      "DONE",
+      "VERIFIED",
+      params.verificationSource || "lifi_api",
+      now,
+      params.rawRouteData ? JSON.stringify(params.rawRouteData) : null,
+      now
+    );
+    const user = db.prepare("SELECT * FROM swap_campaign_users WHERE id = ?").get(params.userId);
+    const newTotalVolume = Number(((user?.total_volume_usd || 0) + params.volumeUSD).toFixed(4));
+    const newSwapsCount = (user?.eligible_swaps_count || 0) + 1;
+    db.prepare(`
+      UPDATE swap_campaign_users
+      SET total_volume_usd = ?, eligible_swaps_count = ?, last_active_at = ?
+      WHERE id = ?
+    `).run(newTotalVolume, newSwapsCount, now, params.userId);
+    if (campaign && campaign.cashback_enabled) {
+      const novaFeeCollectedUSD = params.volumeUSD * 5e-3;
+      const cashbackRate = (campaign.cashback_percentage || 5) / 100;
+      const creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
+      if (creditedCashbackUSD > 0) {
+        const cbId = "cb_" + crypto4.randomUUID();
         db.prepare(`
-          INSERT INTO swap_rewards (
-            id, campaign_id, user_id, milestone_id, reward_type,
-            amount_usd, status, unlocked_at, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO swap_cashback_ledger (
+            id, campaign_id, user_id, wallet_address, transaction_id,
+            swap_volume_usd, nova_fee_usd, cashback_rate, cashback_amount_usd,
+            status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'credited', ?)
         `).run(
-          rewardId,
+          cbId,
           params.campaignId,
           params.userId,
-          m.id,
-          "milestone",
-          m.reward_amount_usd,
-          "unlocked",
-          now,
+          params.normalizedAddress,
+          txId,
+          params.volumeUSD,
+          novaFeeCollectedUSD,
+          cashbackRate,
+          creditedCashbackUSD,
           now
         );
-        newlyUnlocked.push(m.title);
-      }
-    }
-  });
-  if (user?.referred_by_user_id) {
-    const referral = db.prepare(`
-      SELECT * FROM swap_referrals 
-      WHERE campaign_id = ? AND referred_user_id = ?
-    `).get(params.campaignId, params.userId);
-    if (referral && referral.status === "connected") {
-      if (newTotalVolume >= campaign.referral_qualifying_vol_usd) {
-        const refRewardAmount = campaign.referral_reward_usd || 5;
-        db.prepare(`
-          UPDATE swap_referrals 
-          SET status = 'qualified', qualifying_volume_usd = ?, reward_amount_usd = ?, qualified_at = ?
-          WHERE id = ?
-        `).run(newTotalVolume, refRewardAmount, now, referral.id);
-        const refRewardId = "rwd_ref_" + crypto2.randomUUID();
+        const cbRewardId = "rwd_cb_" + crypto4.randomUUID();
         db.prepare(`
           INSERT INTO swap_rewards (
             id, campaign_id, user_id, milestone_id, reward_type,
             amount_usd, status, unlocked_at, created_at
-          ) VALUES (?, ?, ?, NULL, 'referral', ?, 'unlocked', ?, ?)
-        `).run(refRewardId, params.campaignId, user.referred_by_user_id, refRewardAmount, now, now);
+          ) VALUES (?, ?, ?, NULL, 'cashback', ?, 'unlocked', ?, ?)
+        `).run(cbRewardId, params.campaignId, params.userId, creditedCashbackUSD, now, now);
       }
     }
-  }
-  processAffiliateSwapCommission({
-    traderWallet: params.normalizedAddress,
-    transactionId: txId,
-    volumeUSD: params.volumeUSD,
-    verifiedAt: now
+    const milestones = db.prepare(`
+      SELECT * FROM swap_campaign_milestones
+      WHERE campaign_id = ? AND is_active = 1
+    `).all(params.campaignId);
+    const newlyUnlocked = [];
+    milestones.forEach((m) => {
+      if (newTotalVolume >= m.target_volume_usd) {
+        const existingReward = db.prepare(`
+          SELECT id FROM swap_rewards WHERE user_id = ? AND milestone_id = ?
+        `).get(params.userId, m.id);
+        if (!existingReward) {
+          const rewardId = "rwd_" + crypto4.randomUUID();
+          db.prepare(`
+            INSERT INTO swap_rewards (
+              id, campaign_id, user_id, milestone_id, reward_type,
+              amount_usd, status, unlocked_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            rewardId,
+            params.campaignId,
+            params.userId,
+            m.id,
+            "milestone",
+            m.reward_amount_usd,
+            "unlocked",
+            now,
+            now
+          );
+          newlyUnlocked.push(m.title);
+        }
+      }
+    });
+    if (campaign && user?.referred_by_user_id) {
+      const referral = db.prepare(`
+        SELECT * FROM swap_referrals
+        WHERE campaign_id = ? AND referred_user_id = ?
+      `).get(params.campaignId, params.userId);
+      if (referral && referral.status === "connected") {
+        if (newTotalVolume >= campaign.referral_qualifying_vol_usd) {
+          const refRewardAmount = campaign.referral_reward_usd || 5;
+          db.prepare(`
+            UPDATE swap_referrals
+            SET status = 'qualified', qualifying_volume_usd = ?, reward_amount_usd = ?, qualified_at = ?
+            WHERE id = ?
+          `).run(newTotalVolume, refRewardAmount, now, referral.id);
+          const refRewardId = "rwd_ref_" + crypto4.randomUUID();
+          db.prepare(`
+            INSERT INTO swap_rewards (
+              id, campaign_id, user_id, milestone_id, reward_type,
+              amount_usd, status, unlocked_at, created_at
+            ) VALUES (?, ?, ?, NULL, 'referral', ?, 'unlocked', ?, ?)
+          `).run(refRewardId, params.campaignId, user.referred_by_user_id, refRewardAmount, now, now);
+        }
+      }
+    }
+    processAffiliateSwapCommission({
+      traderWallet: params.normalizedAddress,
+      transactionId: txId,
+      volumeUSD: params.volumeUSD,
+      verifiedAt: now
+    });
+    return { success: true, newlyUnlocked, txId };
   });
-  return { success: true, newlyUnlocked, txId };
+  try {
+    return run();
+  } catch (err) {
+    if (String(err?.message || "").includes("UNIQUE constraint failed: swap_transactions")) {
+      return { success: false, newlyUnlocked: [], duplicate: true };
+    }
+    throw err;
+  }
 }
 var userSyncCache = /* @__PURE__ */ new Map();
-async function syncUserTransfersFromLiFi(walletAddress, campaignId = "campaign_genesis_001") {
+var LIFI_SYNC_INTERVAL_MS = 2e4;
+async function syncUserTransfersFromLiFi(walletAddress, campaignId = DEFAULT_CAMPAIGN_ID) {
   const normalized = walletAddress.toLowerCase();
   const now = Date.now();
   const lastSync = userSyncCache.get(normalized) || 0;
-  if (now - lastSync < 3500) return;
+  if (now - lastSync < LIFI_SYNC_INTERVAL_MS) return;
   userSyncCache.set(normalized, now);
   try {
-    let user = db.prepare("SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?").get(campaignId, normalized);
-    if (!user) {
-      let newRefCode = "";
-      while (true) {
-        newRefCode = "NOVA" + crypto2.randomBytes(3).toString("hex").toUpperCase();
-        const exists = db.prepare("SELECT id FROM swap_campaign_users WHERE referral_code = ?").get(newRefCode);
-        if (!exists) break;
-      }
-      const userId = "usr_" + crypto2.randomUUID();
-      const isoNow = (/* @__PURE__ */ new Date()).toISOString();
-      db.prepare(`
-        INSERT INTO swap_campaign_users (
-          id, campaign_id, wallet_address, chain_id, signature, verified_at,
-          referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
-          is_flagged, last_active_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        userId,
-        campaignId,
-        normalized,
-        1,
-        "auto_connected",
-        isoNow,
-        newRefCode,
-        null,
-        0,
-        0,
-        0,
-        isoNow,
-        isoNow
-      );
-      user = db.prepare("SELECT * FROM swap_campaign_users WHERE id = ?").get(userId);
-    }
+    const user = findOrCreateCampaignUser(normalized, campaignId, 1);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6e3);
-    const lifiRes = await fetch(`https://li.quest/v1/analytics/transfers?wallet=${encodeURIComponent(normalized)}`, {
-      headers: { "Accept": "application/json" },
-      signal: controller.signal
-    });
+    const lifiRes = await fetch(
+      `https://li.quest/v1/analytics/transfers?integrator=${encodeURIComponent(LIFI_INTEGRATOR)}&wallet=${encodeURIComponent(walletAddress)}`,
+      {
+        headers: { "Accept": "application/json" },
+        signal: controller.signal
+      }
+    );
     clearTimeout(timeoutId);
     if (lifiRes.ok) {
       const data = await lifiRes.json();
       const transfers = Array.isArray(data?.transfers) ? data.transfers : [];
       for (const t of transfers) {
         if (t.status !== "DONE") continue;
+        if (!isNovaIntegratorTransfer(t)) continue;
+        if (String(t.fromAddress || "").toLowerCase() !== normalized) continue;
         const txHash = (t.sending?.txHash || t.receiving?.txHash || t.transactionId || "").toLowerCase();
         if (!txHash) continue;
-        const chainId = Number(t.sending?.chainId || t.receiving?.chainId || 56);
+        const chainId = Number(t.sending?.chainId || t.receiving?.chainId || 0);
+        if (!chainId) continue;
         const volumeUSD = parseFloat(t.sending?.amountUSD || t.receiving?.amountUSD || "0");
         if (isNaN(volumeUSD) || volumeUSD <= 0) continue;
         const fromToken = t.sending?.token?.symbol || "USDT";
@@ -1733,55 +2121,24 @@ async function syncUserTransfersFromLiFi(walletAddress, campaignId = "campaign_g
 apiRouter.get("/user/:walletAddress", async (req, res) => {
   try {
     const { walletAddress } = req.params;
-    if (!walletAddress) {
-      return res.status(400).json({ error: "Wallet address required" });
+    if (!walletAddress || !isValidWalletAddress(walletAddress)) {
+      return res.status(400).json({ error: "Valid wallet address required" });
     }
     const normalizedAddress = walletAddress.toLowerCase();
-    const campaignId = "campaign_genesis_001";
-    await syncUserTransfersFromLiFi(normalizedAddress, campaignId);
-    let user = db.prepare("SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?").get(campaignId, normalizedAddress);
-    if (!user) {
-      let newRefCode = "";
-      while (true) {
-        newRefCode = "NOVA" + crypto2.randomBytes(3).toString("hex").toUpperCase();
-        const exists = db.prepare("SELECT id FROM swap_campaign_users WHERE referral_code = ?").get(newRefCode);
-        if (!exists) break;
-      }
-      const userId = "usr_" + crypto2.randomUUID();
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      db.prepare(`
-        INSERT INTO swap_campaign_users (
-          id, campaign_id, wallet_address, chain_id, signature, verified_at,
-          referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
-          is_flagged, last_active_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        userId,
-        campaignId,
-        normalizedAddress,
-        1,
-        "auto_connected",
-        now,
-        newRefCode,
-        null,
-        0,
-        0,
-        0,
-        now,
-        now
-      );
-      user = db.prepare("SELECT * FROM swap_campaign_users WHERE id = ?").get(userId);
-    }
+    const campaignId = DEFAULT_CAMPAIGN_ID;
+    await syncUserTransfersFromLiFi(walletAddress, campaignId);
+    const user = findOrCreateCampaignUser(normalizedAddress, campaignId, 1);
+    const campaign = db.prepare("SELECT * FROM swap_campaigns WHERE id = ?").get(campaignId);
     const milestones = db.prepare(`
-      SELECT * FROM swap_campaign_milestones 
-      WHERE campaign_id = ? AND is_active = 1 
+      SELECT * FROM swap_campaign_milestones
+      WHERE campaign_id = ? AND is_active = 1
       ORDER BY sort_order ASC, target_volume_usd ASC
     `).all(campaignId);
     const rewards = db.prepare(`
       SELECT r.*, c.id as claim_id, c.status as claim_status, c.payout_address, c.preferred_network, c.preferred_token,
              p.payout_tx_hash, p.payout_network as paid_network, p.paid_at
       FROM swap_rewards r
-      LEFT JOIN swap_reward_claims c ON c.reward_id = r.id
+      LEFT JOIN swap_reward_claims c ON c.id = COALESCE(r.claim_id, (SELECT c2.id FROM swap_reward_claims c2 WHERE c2.reward_id = r.id ORDER BY c2.created_at DESC LIMIT 1))
       LEFT JOIN swap_reward_payouts p ON p.claim_id = c.id
       WHERE r.user_id = ?
     `).all(user.id);
@@ -1796,12 +2153,15 @@ apiRouter.get("/user/:walletAddress", async (req, res) => {
       const rewardRecord = rewardsMap.get(m.id);
       let status = "locked";
       if (rewardRecord) {
-        if (rewardRecord.status === "paid" || rewardRecord.claim_status === "paid") status = "paid";
-        else if (rewardRecord.claim_status === "approved") status = "approved";
-        else if (rewardRecord.claim_status === "under_review") status = "under_review";
-        else if (rewardRecord.claim_status === "pending") status = "requested";
-        else if (rewardRecord.status === "unlocked") status = "unlocked";
-        else if (rewardRecord.status === "rejected") status = "rejected";
+        const claimStatus = rewardRecord.claim_status;
+        const rewardStatus = rewardRecord.status;
+        if (rewardStatus === "paid" || claimStatus === "paid") status = "paid";
+        else if (claimStatus === "approved" || rewardStatus === "approved") status = "approved";
+        else if (claimStatus === "under_review" || rewardStatus === "under_review") status = "under_review";
+        else if (claimStatus === "frozen" || rewardStatus === "frozen") status = "frozen";
+        else if (claimStatus === "pending" || rewardStatus === "requested") status = "requested";
+        else if (rewardStatus === "rejected") status = "rejected";
+        else status = "unlocked";
       } else if (isReached) {
         status = "unlocked";
       } else {
@@ -1836,7 +2196,7 @@ apiRouter.get("/user/:walletAddress", async (req, res) => {
       };
     });
     const referralStats = db.prepare(`
-      SELECT 
+      SELECT
         COUNT(*) as total_referred_users,
         COALESCE(SUM(CASE WHEN status IN ('qualified', 'rewarded') THEN 1 ELSE 0 END), 0) as qualified_referrals,
         COALESCE(SUM(reward_amount_usd), 0) as total_referral_rewards
@@ -1857,8 +2217,13 @@ apiRouter.get("/user/:walletAddress", async (req, res) => {
     const milestoneBonusUSD = Number((milestoneBonusRow?.total_milestone_bonus || 0).toFixed(2));
     const referralBonusUSD = Number((referralStats?.total_referral_rewards || 0).toFixed(2));
     const totalBonusUSD = Number((milestoneBonusUSD + referralBonusUSD).toFixed(2));
-    const totalAccumulatedRewardsUSD = Number((totalCashbackUSD + totalBonusUSD).toFixed(2));
-    const claimThresholdUSD = 500;
+    const claimableRow = db.prepare(`
+      SELECT COALESCE(SUM(amount_usd), 0) as claimable
+      FROM swap_rewards
+      WHERE user_id = ? AND status = 'unlocked'
+    `).get(user.id);
+    const totalAccumulatedRewardsUSD = Number((claimableRow?.claimable || 0).toFixed(2));
+    const claimThresholdUSD = CLAIM_THRESHOLD_USD;
     const progressPercent = Math.min(100, Math.round(totalAccumulatedRewardsUSD / claimThresholdUSD * 100));
     const isClaimEligible = totalAccumulatedRewardsUSD >= claimThresholdUSD;
     const userClaims = db.prepare(`
@@ -1901,7 +2266,7 @@ apiRouter.get("/user/:walletAddress", async (req, res) => {
       milestones: milestoneProgress,
       cashbackStats: {
         totalCashbackUSD,
-        cashbackPercentage: 5
+        cashbackPercentage: campaign?.cashback_percentage ?? 5
       },
       bonusStats: {
         milestoneBonusUSD,
@@ -1947,7 +2312,7 @@ apiRouter.get("/user/:walletAddress", async (req, res) => {
       }))
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "user dashboard");
   }
 });
 apiRouter.post("/submit-transaction", async (req, res) => {
@@ -1960,74 +2325,77 @@ apiRouter.post("/submit-transaction", async (req, res) => {
       toToken,
       fromAmount,
       toAmount,
-      volumeUSD,
       lifiRouteId,
       rawRouteData
     } = req.body;
     if (!walletAddress || !chainId || !txHash) {
       return res.status(400).json({ error: "walletAddress, chainId and txHash are required" });
     }
-    const normalizedAddress = walletAddress.toLowerCase();
-    const normalizedTxHash = txHash.toLowerCase();
+    if (!isValidWalletAddress(walletAddress)) {
+      return res.status(400).json({ error: "Invalid wallet address" });
+    }
+    if (typeof txHash !== "string" || !TX_HASH_PATTERN.test(txHash.trim())) {
+      return res.status(400).json({ error: "Invalid transaction hash" });
+    }
+    const normalizedAddress = String(walletAddress).toLowerCase();
+    const rawTxHash = txHash.trim();
+    const normalizedTxHash = rawTxHash.toLowerCase();
     const numericChainId = Number(chainId);
     if (!numericChainId || isNaN(numericChainId) || numericChainId <= 0) {
       return res.status(400).json({ error: `Invalid Chain ID ${chainId}` });
     }
-    const campaignId = "campaign_genesis_001";
-    let user = db.prepare("SELECT * FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?").get(campaignId, normalizedAddress);
-    if (!user) {
-      let newRefCode = "";
-      while (true) {
-        newRefCode = "NOVA" + crypto2.randomBytes(3).toString("hex").toUpperCase();
-        const exists = db.prepare("SELECT id FROM swap_campaign_users WHERE referral_code = ?").get(newRefCode);
-        if (!exists) break;
-      }
-      const userId = "usr_" + crypto2.randomUUID();
-      const now2 = (/* @__PURE__ */ new Date()).toISOString();
-      db.prepare(`
-        INSERT INTO swap_campaign_users (
-          id, campaign_id, wallet_address, chain_id, signature, verified_at,
-          referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
-          is_flagged, last_active_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        userId,
-        campaignId,
-        normalizedAddress,
-        numericChainId,
-        "auto_connected",
-        now2,
-        newRefCode,
-        null,
-        0,
-        0,
-        0,
-        now2,
-        now2
-      );
-      user = db.prepare("SELECT * FROM swap_campaign_users WHERE id = ?").get(userId);
-    }
+    const campaignId = DEFAULT_CAMPAIGN_ID;
     const existingTx = db.prepare("SELECT id FROM swap_transactions WHERE chain_id = ? AND tx_hash = ?").get(numericChainId, normalizedTxHash);
     if (existingTx) {
       return res.status(409).json({ error: "Transaction hash has already been credited for this chain" });
     }
-    let verifiedVolume = typeof volumeUSD === "number" && volumeUSD > 0 ? volumeUSD : 0;
-    let lifiVerified = false;
+    let lifiData = null;
     try {
-      const lifiStatusRes = await fetch(`https://li.quest/v1/status?txHash=${normalizedTxHash}&fromChain=${numericChainId}`, {
-        headers: { "Accept": "application/json" }
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8e3);
+      const lifiStatusRes = await fetch(
+        `https://li.quest/v1/status?txHash=${encodeURIComponent(rawTxHash)}&fromChain=${numericChainId}`,
+        { headers: { "Accept": "application/json" }, signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
       if (lifiStatusRes.ok) {
-        const lifiData = await lifiStatusRes.json();
-        if (lifiData.status === "DONE") {
-          lifiVerified = true;
-          if (lifiData.sending?.amountUSD) {
-            verifiedVolume = parseFloat(lifiData.sending.amountUSD);
-          }
-        }
+        lifiData = await lifiStatusRes.json();
       }
     } catch (e) {
+      lifiData = null;
     }
+    if (!lifiData || lifiData.status !== "DONE") {
+      return res.status(202).json({
+        success: false,
+        pending: true,
+        message: "Swap is being confirmed by LI.FI. Your volume will update automatically once it is final."
+      });
+    }
+    if (!isNovaIntegratorTransfer(lifiData)) {
+      return res.status(400).json({ error: "This swap was not executed through Nova Swap and is not eligible for the campaign." });
+    }
+    const senderAddress = String(lifiData.fromAddress || lifiData.sending?.fromAddress || "").toLowerCase();
+    if (!senderAddress || senderAddress !== normalizedAddress) {
+      return res.status(400).json({ error: "This swap was not sent from the connected wallet." });
+    }
+    const canonicalTxHash = String(lifiData.sending?.txHash || "").toLowerCase();
+    const canonicalChainId = Number(lifiData.sending?.chainId || numericChainId);
+    if (!canonicalTxHash) {
+      return res.status(202).json({
+        success: false,
+        pending: true,
+        message: "Swap is being confirmed by LI.FI. Your volume will update automatically once it is final."
+      });
+    }
+    const verifiedVolume = parseFloat(lifiData.sending?.amountUSD || "0");
+    if (isNaN(verifiedVolume) || verifiedVolume <= 0) {
+      return res.status(202).json({
+        success: false,
+        pending: true,
+        message: "Swap volume is still being priced by LI.FI. It will be credited automatically."
+      });
+    }
+    const user = findOrCreateCampaignUser(normalizedAddress, campaignId, canonicalChainId);
     const campaign = db.prepare("SELECT * FROM swap_campaigns WHERE id = ?").get(campaignId);
     const minSwapUSD = campaign ? campaign.min_swap_usd : 1;
     const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -2035,16 +2403,16 @@ apiRouter.post("/submit-transaction", async (req, res) => {
       campaignId,
       userId: user.id,
       normalizedAddress,
-      numericChainId,
-      normalizedTxHash,
+      numericChainId: canonicalChainId,
+      normalizedTxHash: canonicalTxHash,
       volumeUSD: verifiedVolume,
       fromToken,
       toToken,
       fromAmount,
       toAmount,
-      lifiRouteId,
+      lifiRouteId: typeof lifiRouteId === "string" ? lifiRouteId : null,
       rawRouteData,
-      verificationSource: lifiVerified ? "lifi_status_api" : "validated_route",
+      verificationSource: "lifi_status_api",
       verifiedAt: now
     });
     if (result.duplicate) {
@@ -2064,29 +2432,41 @@ apiRouter.post("/submit-transaction", async (req, res) => {
       newlyUnlockedMilestones: result.newlyUnlocked
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "submit-transaction");
   }
 });
 apiRouter.post("/rewards/request", async (req, res) => {
   try {
-    const { walletAddress, rewardId, payoutAddress, preferredNetwork, preferredToken, claimAmountUSD } = req.body;
-    if (!walletAddress || !payoutAddress) {
-      return res.status(400).json({ error: "walletAddress and payoutAddress are required" });
+    const { walletAddress, rewardId, preferredNetwork, preferredToken, claimAmountUSD, signature, message, signerAddress } = req.body;
+    if (!walletAddress || !isValidWalletAddress(walletAddress)) {
+      return res.status(400).json({ error: "walletAddress is required" });
     }
-    const normalizedAddress = walletAddress.toLowerCase();
-    const user = db.prepare("SELECT id, campaign_id FROM swap_campaign_users WHERE wallet_address = ?").get(normalizedAddress);
+    const normalizedAddress = String(walletAddress).toLowerCase();
+    const signingAddress = typeof signerAddress === "string" && signerAddress.trim() ? signerAddress.trim() : String(walletAddress).trim();
+    if (signingAddress.toLowerCase() !== normalizedAddress) {
+      return res.status(400).json({ error: "Signing wallet does not match the claim wallet." });
+    }
+    const signatureError = consumeSignedChallenge({ address: signingAddress, purpose: "reward_claim", message, signature });
+    if (signatureError) {
+      return res.status(401).json({ error: signatureError });
+    }
+    const payoutAddress = signingAddress;
+    const user = db.prepare("SELECT id, campaign_id, is_flagged FROM swap_campaign_users WHERE campaign_id = ? AND wallet_address = ?").get(DEFAULT_CAMPAIGN_ID, normalizedAddress);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
+    if (user.is_flagged) {
+      return res.status(403).json({ error: "This wallet is under review and cannot submit claims at the moment. Please contact support@novap2p.com." });
+    }
     const pendingClaim = db.prepare(`
-      SELECT id FROM swap_reward_claims 
+      SELECT id FROM swap_reward_claims
       WHERE user_id = ? AND status IN ('pending', 'under_review')
     `).get(user.id);
     if (pendingClaim) {
       return res.status(400).json({ error: "You already have an active claim under review. Please wait for admin approval before submitting another claim." });
     }
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const claimId = "clm_" + crypto2.randomUUID();
+    const claimId = "clm_" + crypto4.randomUUID();
     if (rewardId && rewardId !== "threshold_500" && rewardId !== "accumulated_rewards") {
       const reward = db.prepare("SELECT * FROM swap_rewards WHERE id = ? AND user_id = ?").get(rewardId, user.id);
       if (!reward) {
@@ -2096,7 +2476,6 @@ apiRouter.post("/rewards/request", async (req, res) => {
         return res.status(400).json({ error: `Reward cannot be requested in status: ${reward.status}` });
       }
       const submitClaim = db.transaction(() => {
-        db.prepare("UPDATE swap_rewards SET status = 'requested' WHERE id = ?").run(reward.id);
         db.prepare(`
           INSERT INTO swap_reward_claims (
             id, reward_id, user_id, campaign_id, requested_amount_usd,
@@ -2110,7 +2489,7 @@ apiRouter.post("/rewards/request", async (req, res) => {
           user.id,
           user.campaign_id,
           reward.amount_usd,
-          payoutAddress.trim(),
+          payoutAddress,
           preferredNetwork || "BNB Smart Chain",
           preferredToken || "USDT",
           reward.reward_type === "cashback" ? reward.amount_usd : 0,
@@ -2119,13 +2498,14 @@ apiRouter.post("/rewards/request", async (req, res) => {
           now,
           now
         );
+        db.prepare("UPDATE swap_rewards SET status = 'requested', claim_id = ? WHERE id = ?").run(claimId, reward.id);
       });
       submitClaim();
       sendAdminClaimNotification({
         claimId,
         walletAddress: normalizedAddress,
         requestedAmountUSD: reward.amount_usd,
-        payoutAddress: payoutAddress.trim(),
+        payoutAddress,
         preferredNetwork: preferredNetwork || "BNB Smart Chain",
         preferredToken: preferredToken || "USDT",
         cashbackAmountUSD: reward.reward_type === "cashback" ? reward.amount_usd : 0,
@@ -2152,15 +2532,17 @@ apiRouter.post("/rewards/request", async (req, res) => {
       else if (r.reward_type === "milestone") totalMilestones += r.amount_usd;
       else if (r.reward_type === "referral") totalReferrals += r.amount_usd;
     });
-    const totalEligible = totalCashback + totalMilestones + totalReferrals;
-    const requestedAmount = claimAmountUSD && typeof claimAmountUSD === "number" && claimAmountUSD > 0 ? Math.min(claimAmountUSD, totalEligible) : totalEligible;
-    if (requestedAmount <= 0) {
+    const totalEligible = Number((totalCashback + totalMilestones + totalReferrals).toFixed(4));
+    if (totalEligible <= 0) {
       return res.status(400).json({ error: "No available unlocked reward balance to claim." });
     }
+    if (totalEligible < CLAIM_THRESHOLD_USD) {
+      return res.status(400).json({
+        error: `Claims unlock at $${CLAIM_THRESHOLD_USD.toFixed(2)}. Your claimable balance is $${totalEligible.toFixed(2)}.`
+      });
+    }
+    const requestedAmount = claimAmountUSD && typeof claimAmountUSD === "number" && claimAmountUSD > 0 ? Math.min(claimAmountUSD, totalEligible) : totalEligible;
     const submitThresholdClaim = db.transaction(() => {
-      db.prepare(`
-        UPDATE swap_rewards SET status = 'requested' WHERE user_id = ? AND status = 'unlocked'
-      `).run(user.id);
       db.prepare(`
         INSERT INTO swap_reward_claims (
           id, reward_id, user_id, campaign_id, requested_amount_usd,
@@ -2173,7 +2555,7 @@ apiRouter.post("/rewards/request", async (req, res) => {
         user.id,
         user.campaign_id,
         requestedAmount,
-        payoutAddress.trim(),
+        payoutAddress,
         preferredNetwork || "BNB Smart Chain",
         preferredToken || "USDT",
         totalCashback,
@@ -2182,13 +2564,16 @@ apiRouter.post("/rewards/request", async (req, res) => {
         now,
         now
       );
+      db.prepare(`
+        UPDATE swap_rewards SET status = 'requested', claim_id = ? WHERE user_id = ? AND status = 'unlocked'
+      `).run(claimId, user.id);
     });
     submitThresholdClaim();
     sendAdminClaimNotification({
       claimId,
       walletAddress: normalizedAddress,
       requestedAmountUSD: requestedAmount,
-      payoutAddress: payoutAddress.trim(),
+      payoutAddress,
       preferredNetwork: preferredNetwork || "BNB Smart Chain",
       preferredToken: preferredToken || "USDT",
       cashbackAmountUSD: totalCashback,
@@ -2205,19 +2590,22 @@ apiRouter.post("/rewards/request", async (req, res) => {
       message: "Genesis Rewards claim submitted successfully. Admin has been notified for verification and manual payout."
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "rewards/request");
   }
 });
 apiRouter.post("/admin/login", (req, res) => {
+  if (!ADMIN_KEY) {
+    return res.status(503).json({ error: "Admin access is disabled: SWAP_ADMIN_KEY is not configured on the server." });
+  }
   const { adminKey } = req.body;
-  if (!adminKey || adminKey !== ADMIN_KEY2) {
+  if (!isValidAdminKey(adminKey)) {
     return res.status(403).json({ error: "Invalid admin passkey" });
   }
-  res.json({ success: true, token: ADMIN_KEY2 });
+  res.json({ success: true });
 });
 apiRouter.get("/admin/overview", verifyAdmin, (req, res) => {
   try {
-    const campaignId = "campaign_genesis_001";
+    const campaignId = DEFAULT_CAMPAIGN_ID;
     const campaign = db.prepare("SELECT * FROM swap_campaigns WHERE id = ?").get(campaignId);
     const userStats = db.prepare(`
       SELECT 
@@ -2262,7 +2650,11 @@ apiRouter.get("/admin/overview", verifyAdmin, (req, res) => {
       FROM swap_rewards
       WHERE campaign_id = ?
     `).get(campaignId);
-    const remainingBudget = campaign ? Math.max(0, campaign.total_budget_usd - (rewardStats.total_paid_amount || 0)) : 0;
+    const payoutStats = db.prepare(`
+      SELECT COUNT(*) as paid_claims, COALESCE(SUM(amount_usd), 0) as total_paid_amount
+      FROM swap_reward_payouts
+    `).get();
+    const remainingBudget = campaign ? Math.max(0, campaign.total_budget_usd - (campaign.spent_budget_usd || 0)) : 0;
     res.json({
       campaign,
       analytics: {
@@ -2280,14 +2672,14 @@ apiRouter.get("/admin/overview", verifyAdmin, (req, res) => {
         milestonesUnlocked: rewardStats.unlocked_count || 0,
         pendingClaims: rewardStats.pending_requests || 0,
         approvedClaims: rewardStats.approved_count || 0,
-        paidClaims: rewardStats.paid_count || 0,
-        totalPaidAmountUSD: rewardStats.total_paid_amount || 0,
+        paidClaims: payoutStats.paid_claims || 0,
+        totalPaidAmountUSD: payoutStats.total_paid_amount || 0,
         totalBudgetUSD: campaign?.total_budget_usd || 1e4,
         remainingBudgetUSD: remainingBudget
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.put("/admin/campaign", verifyAdmin, (req, res) => {
@@ -2305,7 +2697,7 @@ apiRouter.put("/admin/campaign", verifyAdmin, (req, res) => {
       cashbackEnabled,
       cashbackPercentage
     } = req.body;
-    const campaignId = "campaign_genesis_001";
+    const campaignId = DEFAULT_CAMPAIGN_ID;
     const now = (/* @__PURE__ */ new Date()).toISOString();
     db.prepare(`
       UPDATE swap_campaigns
@@ -2340,16 +2732,16 @@ apiRouter.put("/admin/campaign", verifyAdmin, (req, res) => {
     db.prepare(`
       INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
       VALUES (?, 'admin', 'update_campaign_settings', 'campaign', ?, ?, ?, ?)
-    `).run("log_" + crypto2.randomUUID(), campaignId, JSON.stringify(req.body), String(req.ip || ""), now);
+    `).run("log_" + crypto4.randomUUID(), campaignId, JSON.stringify(req.body), clientIp(req), now);
     res.json({ success: true, message: "Campaign settings updated successfully" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.post("/admin/milestones", verifyAdmin, (req, res) => {
   try {
     const { id, milestoneNumber, title, targetVolumeUSD, rewardAmountUSD, rewardDescription, isActive, sortOrder } = req.body;
-    const campaignId = "campaign_genesis_001";
+    const campaignId = DEFAULT_CAMPAIGN_ID;
     const now = (/* @__PURE__ */ new Date()).toISOString();
     if (id) {
       db.prepare(`
@@ -2373,7 +2765,7 @@ apiRouter.post("/admin/milestones", verifyAdmin, (req, res) => {
         id
       );
     } else {
-      const newId = "ms_" + crypto2.randomUUID();
+      const newId = "ms_" + crypto4.randomUUID();
       db.prepare(`
         INSERT INTO swap_campaign_milestones (
           id, campaign_id, milestone_number, title, target_volume_usd,
@@ -2394,7 +2786,7 @@ apiRouter.post("/admin/milestones", verifyAdmin, (req, res) => {
     }
     res.json({ success: true, message: "Milestone saved successfully" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.delete("/admin/milestones/:id", verifyAdmin, (req, res) => {
@@ -2403,7 +2795,7 @@ apiRouter.delete("/admin/milestones/:id", verifyAdmin, (req, res) => {
     db.prepare("DELETE FROM swap_campaign_milestones WHERE id = ?").run(id);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.get("/admin/claims", verifyAdmin, (req, res) => {
@@ -2415,7 +2807,7 @@ apiRouter.get("/admin/claims", verifyAdmin, (req, res) => {
              p.payout_tx_hash, p.payout_network as paid_network, p.payout_token as paid_token, p.paid_at
       FROM swap_reward_claims c
       JOIN swap_campaign_users u ON u.id = c.user_id
-      JOIN swap_rewards r ON r.id = c.reward_id
+      LEFT JOIN swap_rewards r ON r.id = c.reward_id
       LEFT JOIN swap_campaign_milestones m ON m.id = r.milestone_id
       LEFT JOIN swap_reward_payouts p ON p.claim_id = c.id
       WHERE 1=1
@@ -2433,7 +2825,7 @@ apiRouter.get("/admin/claims", verifyAdmin, (req, res) => {
     const claims = db.prepare(query).all(...params);
     res.json({ claims });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.post("/admin/claims/:id/review", verifyAdmin, (req, res) => {
@@ -2466,26 +2858,34 @@ apiRouter.post("/admin/claims/:id/review", verifyAdmin, (req, res) => {
         SET status = ?, rejection_reason = ?, admin_notes = ?, updated_at = ?
         WHERE id = ?
       `).run(newStatus, rejectionReason || null, adminNotes || null, now, claim.id);
-      db.prepare(`
-        UPDATE swap_rewards
-        SET status = ?
-        WHERE id = ?
-      `).run(rewardStatus, claim.reward_id);
+      if (action === "reject") {
+        db.prepare(`
+          UPDATE swap_rewards
+          SET status = 'unlocked', claim_id = NULL
+          WHERE claim_id = ? OR (id = ? AND ? IS NOT NULL)
+        `).run(claim.id, claim.reward_id, claim.reward_id);
+      } else {
+        db.prepare(`
+          UPDATE swap_rewards
+          SET status = ?
+          WHERE claim_id = ? OR (id = ? AND ? IS NOT NULL)
+        `).run(rewardStatus, claim.id, claim.reward_id, claim.reward_id);
+      }
       db.prepare(`
         INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
         VALUES (?, 'admin', ?, 'claim', ?, ?, ?, ?)
       `).run(
-        "log_" + crypto2.randomUUID(),
+        "log_" + crypto4.randomUUID(),
         `claim_${action}`,
         claim.id,
         JSON.stringify({ action, rejectionReason, adminNotes }),
-        String(req.ip || ""),
+        clientIp(req),
         now
       );
     })();
     res.json({ success: true, status: newStatus });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.post("/admin/claims/:id/pay", verifyAdmin, (req, res) => {
@@ -2502,8 +2902,11 @@ apiRouter.post("/admin/claims/:id/pay", verifyAdmin, (req, res) => {
     if (claim.status === "paid") {
       return res.status(400).json({ error: "Claim has already been marked as paid" });
     }
+    if (claim.status !== "approved") {
+      return res.status(400).json({ error: "Only approved claims can be marked as paid. Please approve the claim first." });
+    }
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const payoutId = "pay_" + crypto2.randomUUID();
+    const payoutId = "pay_" + crypto4.randomUUID();
     db.transaction(() => {
       db.prepare(`
         INSERT INTO swap_reward_payouts (
@@ -2525,7 +2928,7 @@ apiRouter.post("/admin/claims/:id/pay", verifyAdmin, (req, res) => {
         now
       );
       db.prepare("UPDATE swap_reward_claims SET status = 'paid', updated_at = ? WHERE id = ?").run(now, claim.id);
-      db.prepare("UPDATE swap_rewards SET status = 'paid' WHERE id = ?").run(claim.reward_id);
+      db.prepare("UPDATE swap_rewards SET status = 'paid' WHERE claim_id = ? OR (id = ? AND ? IS NOT NULL)").run(claim.id, claim.reward_id, claim.reward_id);
       db.prepare(`
         UPDATE swap_campaigns
         SET spent_budget_usd = spent_budget_usd + ?
@@ -2535,16 +2938,16 @@ apiRouter.post("/admin/claims/:id/pay", verifyAdmin, (req, res) => {
         INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
         VALUES (?, 'admin', 'record_payout', 'payout', ?, ?, ?, ?)
       `).run(
-        "log_" + crypto2.randomUUID(),
+        "log_" + crypto4.randomUUID(),
         payoutId,
         JSON.stringify({ claimId: claim.id, amountUSD: claim.requested_amount_usd, payoutTxHash, payoutNetwork }),
-        String(req.ip || ""),
+        clientIp(req),
         now
       );
     })();
     res.json({ success: true, payoutId, message: "Payout recorded and status updated to Paid" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.get("/admin/users", verifyAdmin, (req, res) => {
@@ -2569,7 +2972,7 @@ apiRouter.get("/admin/users", verifyAdmin, (req, res) => {
     const users = db.prepare(query).all(...params);
     res.json({ users });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.post("/admin/users/:id/flag", verifyAdmin, (req, res) => {
@@ -2583,7 +2986,7 @@ apiRouter.post("/admin/users/:id/flag", verifyAdmin, (req, res) => {
     `).run(isFlagged ? 1 : 0, flagReason || null, id);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.get("/admin/audit-logs", verifyAdmin, (req, res) => {
@@ -2591,7 +2994,7 @@ apiRouter.get("/admin/audit-logs", verifyAdmin, (req, res) => {
     const logs = db.prepare("SELECT * FROM swap_admin_audit_logs ORDER BY created_at DESC LIMIT 100").all();
     res.json({ logs });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 apiRouter.get("/admin/export/:type", verifyAdmin, (req, res) => {
@@ -2632,13 +3035,21 @@ apiRouter.get("/admin/export/:type", verifyAdmin, (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(csv);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err, "swap api");
   }
 });
 
 // server/index.ts
 var apiApp = express();
-apiApp.use(express.json());
+apiApp.set("trust proxy", 1);
+apiApp.use(express.json({ limit: "1mb" }));
+var writeLimiter = rateLimit({ windowMs: 60 * 1e3, max: 60 });
+var sensitiveLimiter = rateLimit({ windowMs: 15 * 60 * 1e3, max: 20 });
+apiApp.use((req, res, next) => req.method === "POST" || req.method === "PUT" || req.method === "DELETE" ? writeLimiter(req, res, next) : next());
+apiApp.use(
+  ["/swap/admin/login", "/affiliate/apply", "/affiliate/review-action", "/affiliate/payout/request", "/swap/rewards/request"],
+  (req, res, next) => req.method === "POST" ? sensitiveLimiter(req, res, next) : next()
+);
 apiApp.use("/swap", apiRouter);
 apiApp.use("/affiliate", affiliateRouter);
 var index_default = apiApp;
