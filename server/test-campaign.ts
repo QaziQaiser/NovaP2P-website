@@ -50,7 +50,7 @@ async function runTestSuite() {
 
   initDb();
 
-  const ADMIN_KEY = process.env.SWAP_ADMIN_KEY || 'nova-genesis-admin-2026';
+  const ADMIN_KEY = process.env.SWAP_ADMIN_KEY || '';
 
   let passedTests = 0;
   let totalTests = 0;

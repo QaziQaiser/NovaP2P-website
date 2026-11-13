@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, XCircle, Loader2, Users, DollarSign, ShieldCheck, Mail, X } from 'lucide-react';
 import { affiliateApi } from '../../services/affiliateApi';
-import { sendApplicantDecisionEmail, buildDecisionMailtoLink } from '../../services/emailNotifications';
+import { buildDecisionMailtoLink } from '../../services/emailNotifications';
 
 interface AffiliateAdminPanelProps {
   adminKey: string;
@@ -69,17 +69,8 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
         adminNotes: action === 'reject' ? rejectReason.trim() : undefined,
       });
 
-      // Automatically send Confirmation or Rejection email to applicant
-      const emailStatus = await sendApplicantDecisionEmail({
-        decision: action === 'approve' ? 'approved' : 'rejected',
-        role: res.role || app.role,
-        applicantEmail: res.applicantEmail || app.email,
-        applicantName: res.applicantName || app.full_name,
-        walletAddress: res.walletAddress || app.wallet_address,
-        rejectionReason: action === 'reject' ? rejectReason.trim() : null,
-      });
-
-      if (emailStatus.sent) {
+      // The server automatically emails the confirmation / rejection to the applicant
+      if (res.applicantNotified) {
         setNotice(
           action === 'approve'
             ? `Application approved, dashboard activated, and confirmation email sent to ${app.email}.`
@@ -87,7 +78,7 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
         );
       } else {
         setNotice(
-          `Application ${action === 'approve' ? 'approved (dashboard active)' : 'rejected'} in DB, but automatic EmailJS email to ${app.email} failed (${emailStatus.error || 'template recipient setting'}).`
+          `Application ${action === 'approve' ? 'approved (dashboard active)' : 'rejected'} in DB, but the automatic email to ${app.email} could not be delivered. Use the button below to email the applicant.`
         );
         setFallbackMailto(
           buildDecisionMailtoLink({

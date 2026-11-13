@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -12,33 +12,28 @@ import {
 } from 'lucide-react';
 import { ContactForm } from './components/ContactForm';
 import emailjs from '@emailjs/browser';
-import { LiFiSwapWidget } from './components/swap/LiFiSwapWidget';
 import { WalletProvider, useWallet } from './context/WalletContext';
-import { GenesisCampaignBanner } from './components/campaign/GenesisCampaignBanner';
-import { CampaignDetailsModal } from './components/campaign/CampaignDetailsModal';
-import { GenesisRewardsDashboard } from './components/campaign/GenesisRewardsDashboard';
-import { RewardClaimModal } from './components/campaign/RewardClaimModal';
-import { SwapAdminDashboard } from './components/admin/SwapAdminDashboard';
-import { NovaSwapSection } from './components/swap/NovaSwapSection';
-import { swapCampaignApi, CampaignData, MilestoneItem, UserDashboardData } from './services/swapCampaignApi';
 import logoImg from './assets/logo.png';
 import promotionalBannerImg from './assets/images/promotional-banner.jpeg';
-import { SwapPage } from './pages/SwapPage';
-import { BecomePartnerPage } from './pages/affiliate/BecomePartnerPage';
-import { BecomeBdmPage } from './pages/affiliate/BecomeBdmPage';
-import { PartnerDashboardPage } from './pages/affiliate/PartnerDashboardPage';
-import { BdmDashboardPage } from './pages/affiliate/BdmDashboardPage';
-import { AffiliateReviewPage } from './pages/affiliate/AffiliateReviewPage';
-import {
-  HowSwapWorksPage,
-  SupportedChainsPage,
-  SwapFeesPage,
-} from './pages/info/SwapInfoPages';
-import {
-  PartnerOverviewPage,
-  CommissionStructurePage,
-  PartnerFaqPage,
-} from './pages/info/PartnerInfoPages';
+
+// Heavy sections and secondary pages load on demand so the home page renders quickly (especially on mobile)
+const NovaSwapSection = lazy(() => import('./components/swap/NovaSwapSection').then((m) => ({ default: m.NovaSwapSection })));
+const SwapAdminDashboard = lazy(() => import('./components/admin/SwapAdminDashboard').then((m) => ({ default: m.SwapAdminDashboard })));
+const SwapPage = lazy(() => import('./pages/SwapPage').then((m) => ({ default: m.SwapPage })));
+const BecomePartnerPage = lazy(() => import('./pages/affiliate/BecomePartnerPage').then((m) => ({ default: m.BecomePartnerPage })));
+const BecomeBdmPage = lazy(() => import('./pages/affiliate/BecomeBdmPage').then((m) => ({ default: m.BecomeBdmPage })));
+const PartnerDashboardPage = lazy(() => import('./pages/affiliate/PartnerDashboardPage').then((m) => ({ default: m.PartnerDashboardPage })));
+const BdmDashboardPage = lazy(() => import('./pages/affiliate/BdmDashboardPage').then((m) => ({ default: m.BdmDashboardPage })));
+const AffiliateReviewPage = lazy(() => import('./pages/affiliate/AffiliateReviewPage').then((m) => ({ default: m.AffiliateReviewPage })));
+const HowSwapWorksPage = lazy(() => import('./pages/info/SwapInfoPages').then((m) => ({ default: m.HowSwapWorksPage })));
+const SupportedChainsPage = lazy(() => import('./pages/info/SwapInfoPages').then((m) => ({ default: m.SupportedChainsPage })));
+const SwapFeesPage = lazy(() => import('./pages/info/SwapInfoPages').then((m) => ({ default: m.SwapFeesPage })));
+const PartnerOverviewPage = lazy(() => import('./pages/info/PartnerInfoPages').then((m) => ({ default: m.PartnerOverviewPage })));
+const CommissionStructurePage = lazy(() => import('./pages/info/PartnerInfoPages').then((m) => ({ default: m.CommissionStructurePage })));
+const PartnerFaqPage = lazy(() => import('./pages/info/PartnerInfoPages').then((m) => ({ default: m.PartnerFaqPage })));
+
+// Empty space with the page's own height while a lazily loaded page downloads (prevents footer jump)
+const RouteLoadingFallback = () => <div className="min-h-screen" aria-busy="true" />;
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -231,7 +226,9 @@ const Hero = () => {
         </div>
 
         {/* NovaP2P Swap Section with Genesis Campaign & Rewards Dashboard */}
-        <NovaSwapSection />
+        <Suspense fallback={<div id="swap" className="mt-16 scroll-mt-28 w-full min-h-[640px]" aria-busy="true" />}>
+          <NovaSwapSection />
+        </Suspense>
       </div>
     </section>
   );
@@ -479,7 +476,7 @@ const WhyDifferent = () => {
 
 const Security = () => {
   return (
-    <section id="security" className="py-24 bg-white">
+    <section id="security" className="py-24 bg-white overflow-x-clip">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col lg:flex-row items-center gap-16">
           <motion.div 
@@ -3073,6 +3070,7 @@ const AppShell = () => {
     >
       {!isStandaloneDarkPortal && <Navbar />}
       {!isStandaloneDarkPortal && <PromotionalPopup />}
+      <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/swap" element={<SwapPage />} />
@@ -3106,6 +3104,7 @@ const AppShell = () => {
         <Route path="/swap-admin" element={<SwapAdminDashboard />} />
         <Route path="*" element={<Home />} />
       </Routes>
+      </Suspense>
       {!isStandaloneDarkPortal && <Footer />}
     </div>
   );
