@@ -150,10 +150,78 @@ export async function sendAdminAffiliateApplicationEmail(params: {
     .filter((line): line is string => line !== null)
     .join('\n');
 
+  // HTML version: one field per row with bold labels, plus green Approve / red Reject buttons.
+  // Table layout + inline styles so it renders the same in Gmail, Outlook and mobile mail apps.
+  const fieldRows: Array<[string, string | null | undefined, boolean?]> = [
+    ['Application ID', params.applicationId],
+    ['Role', roleLabel],
+    ['Wallet Address', params.walletAddress],
+    ['Full Name', params.fullName],
+    ['Email', params.email],
+    ['Telegram', params.telegramUsername],
+    ['Twitter / X', params.twitterLink, true],
+    ['YouTube', params.youtubeLink, true],
+    ['Telegram Channel / Group', params.telegramChannelLink, true],
+    ['Estimated Audience Size', params.audienceSize],
+    ['Marketing Experience', params.marketingExperience],
+    ['Manageable Partners', params.manageablePartnersCount],
+    ['Applicant Message', params.message],
+  ];
+
+  const rowsHtml = fieldRows
+    .filter(([, value]) => value)
+    .map(([label, value, isLink]) => {
+      const safe = escapeHtml(String(value));
+      const valueHtml =
+        isLink && /^https?:\/\//i.test(String(value))
+          ? `<a href="${safe}" style="color:#4F7DF3;text-decoration:none;word-break:break-all;">${safe}</a>`
+          : `<span style="word-break:break-word;white-space:pre-wrap;">${safe}</span>`;
+      return `<tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #eef0f4;font-weight:700;color:#111827;width:38%;vertical-align:top;">${escapeHtml(label)}:</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #eef0f4;color:#374151;vertical-align:top;">${valueHtml}</td>
+        </tr>`;
+    })
+    .join('');
+
+  const button = (href: string, label: string, color: string) =>
+    `<td align="center" style="padding:6px;">
+        <a href="${escapeHtml(href)}" target="_blank" style="display:inline-block;background:${color};color:#ffffff;font-weight:700;font-size:15px;text-decoration:none;padding:13px 16px;border-radius:10px;min-width:120px;text-align:center;white-space:nowrap;">${label}</a>
+      </td>`;
+
+  const html = `<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#f3f4f6;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb;">
+        <tr><td style="background:#4F7DF3;padding:20px 24px;color:#ffffff;">
+          <div style="font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:0.9;">Nova Swap</div>
+          <div style="font-size:20px;font-weight:700;margin-top:4px;">New ${escapeHtml(roleLabel)} Application</div>
+        </td></tr>
+        <tr><td style="padding:16px 12px 4px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:1.5;">
+            ${rowsHtml}
+          </table>
+        </td></tr>
+        <tr><td style="padding:20px 24px 8px;text-align:center;font-weight:700;color:#111827;font-size:15px;">Quick Admin Actions</td></tr>
+        <tr><td align="center" style="padding:0 8px 12px;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            ${button(approveUrl, '&#10003; Approve', '#16a34a')}
+            ${button(rejectUrl, '&#10007; Reject', '#dc2626')}
+          </tr></table>
+        </td></tr>
+        <tr><td style="padding:8px 24px 22px;text-align:center;color:#6b7280;font-size:12px;">
+          You can also review this application inside /swap-admin &rarr; Partners &amp; BDMs.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
   return sendMail({
     to: ADMIN_EMAIL,
     subject: `New ${params.role === 'bdm' ? 'BDM' : 'Partner'} Application — ${params.fullName}`,
     text,
+    html,
     replyTo: params.email,
   });
 }
