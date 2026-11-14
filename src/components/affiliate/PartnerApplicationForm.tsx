@@ -6,11 +6,14 @@ import { signWalletChallenge } from '../../services/walletAuth';
 
 interface PartnerApplicationFormProps {
   walletAddress: string;
+  /** BDM wallet from a BDM's partner recruitment link (?bdm=...), if any */
+  bdmWalletAddress?: string | null;
   onSubmitted: () => void;
 }
 
 export const PartnerApplicationForm: React.FC<PartnerApplicationFormProps> = ({
   walletAddress,
+  bdmWalletAddress,
   onSubmitted,
 }) => {
   const [formData, setFormData] = useState({
@@ -54,10 +57,11 @@ export const PartnerApplicationForm: React.FC<PartnerApplicationFormProps> = ({
         email: formData.email,
         telegramUsername: formData.telegramUsername,
         twitterLink: formData.twitterLink,
-        youtubeLink: formData.youtubeLink,
+        youtubeLink: formData.youtubeLink || undefined,
         telegramChannelLink: formData.telegramChannelLink,
         audienceSize: formData.audienceSize,
         message: formData.message,
+        bdmWalletAddress: bdmWalletAddress || undefined,
       });
 
       // Admin email (support@novap2p.com) with Approve / Reject links is sent by the server
@@ -205,10 +209,9 @@ export const PartnerApplicationForm: React.FC<PartnerApplicationFormProps> = ({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">YouTube Channel Link *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">YouTube Channel Link</label>
           <input
             type="url"
-            required
             value={formData.youtubeLink}
             onChange={(e) => setFormData({ ...formData, youtubeLink: e.target.value })}
             placeholder="https://youtube.com/@yourchannel"

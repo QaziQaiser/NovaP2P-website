@@ -430,6 +430,28 @@ export const BdmDashboardPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
+
+                {/* BDM Partner Recruitment Link */}
+                {dashboard.bdm.partnerInviteLink && (
+                  <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-2 text-xs text-slate-400 shrink-0">
+                      <Link2 size={15} className="text-teal-400" />
+                      <span>Partner Recruitment Link (10% Override):</span>
+                    </div>
+                    <div className="flex-1 min-w-0 w-full flex items-center gap-2">
+                      <div className="flex-1 min-w-0 bg-[#060c14] border border-slate-700/80 rounded-lg px-3 py-2 font-mono text-xs text-slate-200 truncate">
+                        {dashboard.bdm.partnerInviteLink}
+                      </div>
+                      <button
+                        onClick={() => handleCopy('bdm_partner_link', dashboard.bdm.partnerInviteLink as string)}
+                        className="px-3.5 py-2 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 border border-teal-500/30 text-xs font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                      >
+                        {copiedId === 'bdm_partner_link' ? <Check size={14} /> : <Copy size={14} />}
+                        {copiedId === 'bdm_partner_link' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 4 Stat Cards */}

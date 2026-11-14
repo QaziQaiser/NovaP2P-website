@@ -6,9 +6,27 @@ import { affiliateApi, AffiliateStatusResponse } from '../../services/affiliateA
 import { WalletConnectGate } from '../../components/affiliate/WalletConnectGate';
 import { PartnerApplicationForm } from '../../components/affiliate/PartnerApplicationForm';
 
+const BDM_REF_STORAGE_KEY = 'nova_partner_bdm_ref';
+
+/** BDM wallet from a BDM's partner recruitment link (/become-partner?bdm=0x...), remembered across wallet connect */
+function readBdmReferral(): string | null {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('bdm');
+    if (fromUrl && /^0x[a-fA-F0-9]{40}$/.test(fromUrl.trim())) {
+      const clean = fromUrl.trim().toLowerCase();
+      window.localStorage.setItem(BDM_REF_STORAGE_KEY, clean);
+      return clean;
+    }
+    return window.localStorage.getItem(BDM_REF_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export const BecomePartnerPage: React.FC = () => {
   const { account, isConnected, disconnectWallet } = useWallet();
   const navigate = useNavigate();
+  const [bdmReferral] = useState<string | null>(() => (typeof window !== 'undefined' ? readBdmReferral() : null));
 
   const [statusData, setStatusData] = useState<AffiliateStatusResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -158,6 +176,7 @@ export const BecomePartnerPage: React.FC = () => {
         ) : (
           <PartnerApplicationForm
             walletAddress={account}
+            bdmWalletAddress={bdmReferral && bdmReferral !== account.toLowerCase() ? bdmReferral : null}
             onSubmitted={() => {
               setReapplying(false);
               checkStatus();

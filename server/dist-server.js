@@ -1195,6 +1195,12 @@ affiliateRouter.post("/apply", async (req, res) => {
         error: `An application for this wallet (${existingPending.role.toUpperCase()}) is already pending review.`
       });
     }
+    let referringBdm = null;
+    if (cleanRole === "partner" && bdmWalletAddress) {
+      const candidate = String(bdmWalletAddress).trim().toLowerCase();
+      const activeBdm = candidate !== cleanWallet ? db.prepare("SELECT id FROM affiliates WHERE LOWER(wallet_address) = ? AND role = 'bdm' AND status = 'active'").get(candidate) : null;
+      if (activeBdm) referringBdm = candidate;
+    }
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const appId = "app_" + crypto3.randomUUID();
     db.prepare(`
@@ -1218,7 +1224,7 @@ affiliateRouter.post("/apply", async (req, res) => {
       marketingExperience ? String(marketingExperience).trim() : null,
       manageablePartnersCount ? String(manageablePartnersCount).trim() : null,
       message ? String(message).trim() : null,
-      bdmWalletAddress ? String(bdmWalletAddress).trim().toLowerCase() : null,
+      referringBdm,
       now,
       now
     );
@@ -1439,6 +1445,7 @@ affiliateRouter.get("/bdm/dashboard/:walletAddress", (req, res) => {
         telegramUsername: bdm.telegram_username,
         status: bdm.status,
         referralLink: `https://novap2p.com/swap?ref=${bdm.wallet_address}`,
+        partnerInviteLink: `https://novap2p.com/become-partner?bdm=${bdm.wallet_address}`,
         directCommissionRatePct: 20,
         // 20% of fee on direct BDM link
         overrideRatePct: 10,

@@ -129,6 +129,8 @@ export interface BdmDashboardData {
     telegramUsername: string;
     status: string;
     referralLink: string;
+    /** Link for recruiting Partners under this BDM (/become-partner?bdm=...) */
+    partnerInviteLink?: string;
     directCommissionRatePct: number;
     overrideRatePct: number;
     createdAt: string;
