@@ -23,12 +23,10 @@ export const BecomePartnerPage: React.FC = () => {
       setIsLoading(true);
       const data = await affiliateApi.getWalletStatus(account);
       setStatusData(data);
-      if (data.isApproved) {
-        if (data.role === 'partner') {
-          navigate('/partner-dashboard', { replace: true });
-        } else if (data.role === 'bdm') {
-          navigate('/bdm-dashboard', { replace: true });
-        }
+      // Approved Partners go straight to their dashboard. Approved BDMs stay here and see a notice
+      // with a link to the BDM Dashboard instead of being redirected away from the Partner page.
+      if (data.isApproved && data.role === 'partner') {
+        navigate('/partner-dashboard', { replace: true });
       }
     } catch (err) {
       console.error('Failed to check affiliate status:', err);
@@ -95,6 +93,24 @@ export const BecomePartnerPage: React.FC = () => {
             <Loader2 size={36} className="animate-spin text-primary mx-auto mb-4" />
             <p className="text-gray-600 font-medium">Checking wallet approval status...</p>
           </div>
+        ) : statusData?.isApproved && statusData.role === 'bdm' ? (
+          <div className="bg-white border border-teal-200 rounded-3xl p-8 md:p-10 text-center shadow-lg">
+            <div className="w-16 h-16 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto mb-5">
+              <ShieldCheck size={32} />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">This Wallet Is Already an Approved BDM</h2>
+            <p className="text-gray-600 max-w-lg mx-auto mb-6">
+              Wallet{' '}
+              <span className="font-mono font-semibold text-gray-900 break-all">{account}</span> is registered as a
+              Business Development Manager. To apply as a Partner, disconnect and connect a different wallet.
+            </p>
+            <Link
+              to="/bdm-dashboard"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-semibold text-sm shadow-md"
+            >
+              Go to BDM Dashboard <ArrowRight size={16} />
+            </Link>
+          </div>
         ) : statusData?.status === 'pending' ? (
           <div className="bg-white border border-amber-200 rounded-3xl p-8 md:p-10 text-center shadow-lg">
             <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center mx-auto mb-5">
@@ -118,7 +134,7 @@ export const BecomePartnerPage: React.FC = () => {
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Application Not Approved</h2>
               <p className="text-sm text-gray-600 max-w-lg mx-auto">
-                Your previous Partner application for wallet{' '}
+                Your previous {statusData.role === 'bdm' ? 'BDM' : 'Partner'} application for wallet{' '}
                 <span className="font-mono font-semibold text-gray-900 break-all">{account}</span> was reviewed and not approved.
               </p>
             </div>
