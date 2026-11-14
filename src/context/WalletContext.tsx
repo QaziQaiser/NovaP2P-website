@@ -47,6 +47,24 @@ const isUserRejection = (err: any) =>
 // Background wallet sync interval (subscriptions and focus/visibility events handle the fast path)
 const WALLET_SYNC_INTERVAL_MS = 3000;
 
+// Set when the user clicks "Disconnect": stops auto-reconnecting until they press "Connect" again
+const DISCONNECT_FLAG_KEY = 'nova_wallet_disconnected';
+const isManuallyDisconnected = () => {
+  try {
+    return typeof window !== 'undefined' && window.localStorage.getItem(DISCONNECT_FLAG_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+const setManuallyDisconnected = (value: boolean) => {
+  try {
+    if (value) window.localStorage.setItem(DISCONNECT_FLAG_KEY, '1');
+    else window.localStorage.removeItem(DISCONNECT_FLAG_KEY);
+  } catch {
+    // Storage unavailable (private mode): in-memory state still disconnects for this page view
+  }
+};
+
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -65,6 +83,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const syncExternalWallet = useCallback(
     (address: string | null) => {
+      if (address && isManuallyDisconnected()) return;
       setExternalWallet(address ? normalizeDisplayAddress(address) : null);
     },
     [normalizeDisplayAddress]
@@ -104,7 +123,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setSigner(null);
       }
     } else {
-      if (accountSourceRef.current === 'appkit') return;
+      if (accountSourceRef.current === 'appkit' || isManuallyDisconnected()) return;
       accountSourceRef.current = 'injected';
       setAccount(accounts[0]);
       const eth = getEthereumObject();
@@ -131,6 +150,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       // A WalletConnect / AppKit session owns the account; don't let the injected wallet override it
       if (accountSourceRef.current === 'appkit') return;
+      // User clicked "Disconnect": don't silently reconnect the still-authorized injected wallet
+      if (isManuallyDisconnected()) return;
       try {
         const accounts = await eth.request({ method: 'eth_accounts' });
         if (accounts && accounts.length > 0) {
@@ -181,7 +202,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let lastAppliedAddress: string | null = null;
 
     const applyAppKitAddress = (addr?: string | null) => {
-      if (!addr) return;
+      if (!addr || isManuallyDisconnected()) return;
       const normalized = normalizeDisplayAddress(addr);
       accountSourceRef.current = 'appkit';
       setAccount((prev) => (prev === normalized ? prev : normalized));
@@ -280,6 +301,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   }, [normalizeDisplayAddress, getEthereumObject]);
 
   const connectWallet = async () => {
+    // An explicit "Connect" click re-enables automatic wallet sync
+    setManuallyDisconnected(false);
     const eth = getEthereumObject();
     if (eth) {
       try {
@@ -316,13 +339,22 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const disconnectWallet = () => {
+    setManuallyDisconnected(true);
     accountSourceRef.current = null;
     setAccount(null);
     setExternalWallet(null);
     setSigner(null);
+    setProvider(null);
     try {
       const kit = getAppKit();
       kit?.disconnect();
+    } catch {}
+    // Also revoke the site's permission in the wallet itself (MetaMask & compatible wallets); best effort
+    try {
+      const eth = getEthereumObject();
+      eth
+        ?.request?.({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] })
+        ?.catch?.(() => {});
     } catch {}
   };
 
