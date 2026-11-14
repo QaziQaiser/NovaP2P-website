@@ -37,6 +37,28 @@ function clearStaleMetaMaskSdkSession() {
 }
 clearStaleMetaMaskSdkSession();
 
+/**
+ * The widget's TRON wallet provider auto-connects the last chosen TRON wallet on every page load.
+ * If that wallet (e.g. TronLink) is not already connected to this site, auto-connect opens its
+ * "Requests to connect" popup on every refresh. Forget the saved choice in that case so TRON
+ * wallets only open when the user clicks "Connect"; already-connected wallets still reconnect silently.
+ */
+function clearStaleTronWalletSession() {
+  try {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem('tronAdapterName');
+    if (!saved || saved === 'null') return;
+    const w = window as any;
+    const tronAlreadyConnected = Boolean(w.tronLink?.ready || w.tronWeb?.defaultAddress?.base58);
+    if (!tronAlreadyConnected) {
+      window.localStorage.removeItem('tronAdapterName');
+    }
+  } catch {
+    // Storage unavailable (private mode): nothing to clear
+  }
+}
+clearStaleTronWalletSession();
+
 interface LiFiSwapWidgetProps {
   onSwapSuccess?: (txData: any) => void;
   onWalletChange?: (walletAddress: string | null) => void;
@@ -48,6 +70,12 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
   onWalletChange,
   isWalletConnected = false,
 }) => {
+  // Re-check on every mount (e.g. navigating back to a page with the widget), before the widget's wallet providers render
+  useState(() => {
+    clearStaleMetaMaskSdkSession();
+    clearStaleTronWalletSession();
+    return null;
+  });
   const containerRef = useRef<HTMLDivElement>(null);
   const [internalConnected, setInternalConnected] = useState<boolean>(false);
   const hasConnectedWallet = Boolean(isWalletConnected || internalConnected);
