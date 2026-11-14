@@ -480,13 +480,26 @@ function getTransporter() {
       host: SMTP_HOST,
       port: SMTP_PORT,
       secure: SMTP_PORT === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS }
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+      // Fail fast instead of holding the applicant's request open for minutes
+      connectionTimeout: 15e3,
+      greetingTimeout: 15e3,
+      socketTimeout: 2e4
     });
   }
   return transporter;
 }
+function describeSmtpError(err) {
+  const code = err?.code || "";
+  const detail = `${code} ${err?.responseCode || ""} ${err?.response || err?.message || ""}`.trim();
+  if (code === "EAUTH") return `login rejected - SMTP_PASS (or SMTP_USER=${SMTP_USER}) is wrong. [${detail}]`;
+  if (code === "ETIMEDOUT" || code === "ECONNECTION" || code === "ESOCKET") return `cannot reach ${SMTP_HOST}:${SMTP_PORT}. [${detail}]`;
+  return detail;
+}
 if (!SMTP_PASS) {
   console.warn("[Email] SMTP_PASS is not set. Application and decision emails will not be sent until it is configured.");
+} else {
+  getTransporter()?.verify().then(() => console.log(`[Email] SMTP login OK (${SMTP_USER} via ${SMTP_HOST}:${SMTP_PORT}). Admin emails go to ${ADMIN_EMAIL}.`)).catch((err) => console.error(`[Email] SMTP login FAILED: ${describeSmtpError(err)}`));
 }
 function escapeHtml(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -510,9 +523,10 @@ async function sendMail(params) {
       html: params.html || textToHtml(params.text),
       replyTo: params.replyTo
     });
+    console.log(`[Email] Sent "${params.subject}" to ${params.to}`);
     return { sent: true };
   } catch (err) {
-    console.error("[Email] Send failed:", err?.message || err);
+    console.error(`[Email] Send to ${params.to} failed: ${describeSmtpError(err)}`);
     return { sent: false, error: "Email delivery failed." };
   }
 }

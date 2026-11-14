@@ -23,13 +23,32 @@ function getTransporter(): Transporter | null {
       port: SMTP_PORT,
       secure: SMTP_PORT === 465,
       auth: { user: SMTP_USER, pass: SMTP_PASS },
+      // Fail fast instead of holding the applicant's request open for minutes
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
     });
   }
   return transporter;
 }
 
+/** Explains common SMTP failures in plain language for the server log. */
+function describeSmtpError(err: any): string {
+  const code = err?.code || '';
+  const detail = `${code} ${err?.responseCode || ''} ${err?.response || err?.message || ''}`.trim();
+  if (code === 'EAUTH') return `login rejected - SMTP_PASS (or SMTP_USER=${SMTP_USER}) is wrong. [${detail}]`;
+  if (code === 'ETIMEDOUT' || code === 'ECONNECTION' || code === 'ESOCKET') return `cannot reach ${SMTP_HOST}:${SMTP_PORT}. [${detail}]`;
+  return detail;
+}
+
 if (!SMTP_PASS) {
   console.warn('[Email] SMTP_PASS is not set. Application and decision emails will not be sent until it is configured.');
+} else {
+  // Check the mailbox login once at startup so a wrong password shows up immediately in the server log
+  getTransporter()
+    ?.verify()
+    .then(() => console.log(`[Email] SMTP login OK (${SMTP_USER} via ${SMTP_HOST}:${SMTP_PORT}). Admin emails go to ${ADMIN_EMAIL}.`))
+    .catch((err) => console.error(`[Email] SMTP login FAILED: ${describeSmtpError(err)}`));
 }
 
 export interface EmailSendResult {
@@ -67,9 +86,10 @@ async function sendMail(params: { to: string; subject: string; text: string; htm
       html: params.html || textToHtml(params.text),
       replyTo: params.replyTo,
     });
+    console.log(`[Email] Sent "${params.subject}" to ${params.to}`);
     return { sent: true };
   } catch (err: any) {
-    console.error('[Email] Send failed:', err?.message || err);
+    console.error(`[Email] Send to ${params.to} failed: ${describeSmtpError(err)}`);
     return { sent: false, error: 'Email delivery failed.' };
   }
 }
