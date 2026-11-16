@@ -177,28 +177,19 @@ const Navbar = () => {
 
 const Hero = () => {
   return (
-    <section id="home" className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-x-clip">
+    <section id="home" className="relative pt-28 pb-20 lg:pt-32 lg:pb-32 overflow-x-clip">
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
       <div className="absolute left-0 right-0 top-0 -z-10 m-auto h-[310px] w-[310px] rounded-full bg-primary opacity-20 blur-[100px]"></div>
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center max-w-4xl mx-auto">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-sm mb-8"
-          >
-            <span className="animate-pulse">🚀</span> NovaP2P is live now
-          </motion.div>
-          
-          <motion.h1 
+          <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
             className="text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight text-gray-900 mb-6"
           >
-            The Future of <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">Peer-to-Peer</span> Crypto Trading
+            Universal <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">Cross-Chain Swap</span> (DEX + Bridge)
           </motion.h1>
           
           <motion.p 
@@ -207,7 +198,7 @@ const Hero = () => {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="text-xl text-gray-600 mb-10 max-w-2xl mx-auto leading-relaxed"
           >
-            NovaP2P is a secure and simple marketplace to buy and sell USDT directly with other users using our built-in escrow system.
+            Swap USDT, USDC, ETH and more between Ethereum, BNB Chain, Arbitrum, Base and 70+ networks. Nova Swap compares routes across leading DEXs and bridges, shows the full cost before you confirm, and never takes custody of your funds.
           </motion.p>
           
           <motion.div 
@@ -216,18 +207,18 @@ const Hero = () => {
             transition={{ duration: 0.5, delay: 0.3 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
-            <a href="https://app.novap2p.com/register" className="w-full sm:w-auto px-8 py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-semibold text-lg transition-all shadow-lg shadow-primary/30 hover:shadow-primary/50 flex items-center justify-center gap-2">
-              Sign In / Sign Up <ArrowRight size={20} />
-            </a>
-            <Link to="/merchant" className="w-full sm:w-auto px-8 py-4 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-xl font-semibold text-lg transition-all flex items-center justify-center">
-              Apply for Merchant
+            <Link to="/become-bdm" className="w-full sm:w-auto px-8 py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-semibold text-lg transition-all shadow-lg shadow-primary/30 hover:shadow-primary/50 flex items-center justify-center gap-2">
+              Become a BDM <ArrowRight size={20} />
+            </Link>
+            <Link to="/become-partner" className="w-full sm:w-auto px-8 py-4 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-xl font-semibold text-lg transition-all flex items-center justify-center">
+              Become a Partner
             </Link>
           </motion.div>
         </div>
 
         {/* NovaP2P Swap Section with Genesis Campaign & Rewards Dashboard */}
         <Suspense fallback={<div id="swap" className="mt-16 scroll-mt-28 w-full min-h-[640px]" aria-busy="true" />}>
-          <NovaSwapSection />
+          <NovaSwapSection showHeader={false} />
         </Suspense>
       </div>
     </section>

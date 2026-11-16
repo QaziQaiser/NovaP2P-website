@@ -15,7 +15,12 @@ import {
 } from '../../services/swapCampaignApi';
 import { affiliateApi } from '../../services/affiliateApi';
 
-export const NovaSwapSection: React.FC = () => {
+interface NovaSwapSectionProps {
+  /** Show the "Multi-Chain DEX / NovaP2P Swap" header above the swap box (hidden on the homepage) */
+  showHeader?: boolean;
+}
+
+export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = true }) => {
   const { account, chainId, isConnected, connectWallet, disconnectWallet, syncExternalWallet, signMessage } = useWallet();
   const [detectedWallet, setDetectedWallet] = useState<string | null>(null);
 
@@ -294,17 +299,19 @@ export const NovaSwapSection: React.FC = () => {
   return (
     <div id="swap" className="mt-16 scroll-mt-28 w-full">
       {/* Swap Header */}
-      <div className="text-center mb-6 px-4">
-        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20 mb-2">
-          <Sparkles size={14} /> Multi-Chain DEX
-        </span>
-        <h2 className="text-3xl md:text-4xl font-bold text-gray-900 tracking-tight">
-          NovaP2P Swap
-        </h2>
-        <p className="text-sm md:text-base text-gray-500 mt-1 max-w-md mx-auto">
-          Swap crypto assets seamlessly across multiple blockchains.
-        </p>
-      </div>
+      {showHeader && (
+        <div className="text-center mb-6 px-4">
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20 mb-2">
+            <Sparkles size={14} /> Multi-Chain DEX
+          </span>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 tracking-tight">
+            NovaP2P Swap
+          </h2>
+          <p className="text-sm md:text-base text-gray-500 mt-1 max-w-md mx-auto">
+            Swap crypto assets seamlessly across multiple blockchains.
+          </p>
+        </div>
+      )}
 
       {/* Floating Success Notice */}
       {swapSuccessNotice && (
