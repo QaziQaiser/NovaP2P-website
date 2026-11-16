@@ -24,9 +24,10 @@ export const NovaSwapSection: React.FC = () => {
     syncExternalWallet(addr);
   };
 
-  // Sync wallet from either WalletContext or direct LI.FI injected provider
-  const effectiveAccount = account || detectedWallet;
-  const isWalletConnected = isConnected || !!effectiveAccount;
+  // The rewards cards follow the wallet connected inside the swap widget, so both always show the same state.
+  // (A wallet only authorized for the site, e.g. from another page, is not the widget's wallet.)
+  const effectiveAccount = detectedWallet;
+  const isWalletConnected = !!effectiveAccount;
 
   // Campaign state
   const [campaign, setCampaign] = useState<CampaignData | null>(null);

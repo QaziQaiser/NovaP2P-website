@@ -9,7 +9,6 @@ import {
   WALLET_CONNECT_PROJECT_ID,
   APPKIT_METADATA,
   FEATURED_WALLET_IDS,
-  getAppKit,
 } from '../../config/appkit';
 
 // Real on-chain tx hash (EVM) or Solana / non-EVM signature; placeholders such as route ids are never submitted
@@ -201,36 +200,21 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
     const scanForWalletAddress = async (): Promise<string | null> => {
       if (typeof window === 'undefined') return null;
 
-      // 1. Check AppKit instance
-      try {
-        const kit = getAppKit();
-        if (kit) {
-          const addr = kit.getAddress();
-          // Lowercase EVM addresses only; Solana / TRON addresses are case-sensitive
-          if (addr && typeof addr === 'string') return addr.startsWith('0x') ? addr.toLowerCase() : addr;
-        }
-      } catch {}
+      // The rewards cards must follow the wallet that is connected INSIDE the swap widget.
+      // Wallets that are merely authorized for the site (MetaMask permission, an AppKit session
+      // from another page, ...) are not the widget's wallet, so they are not used here.
 
-      // 2. Check window.ethereum directly (EVM)
+      // 1. EVM: the widget's own wallet connection (wagmi state persisted by the LI.FI widget)
       try {
-        const eth = (window as any).ethereum;
-        if (eth) {
-          if (eth.selectedAddress && typeof eth.selectedAddress === 'string' && eth.selectedAddress.startsWith('0x')) {
-            return eth.selectedAddress.toLowerCase();
-          }
-          if (Array.isArray(eth.accounts) && eth.accounts.length > 0 && typeof eth.accounts[0] === 'string') {
-            return eth.accounts[0].toLowerCase();
-          }
-          if (Array.isArray(eth.providers)) {
-            for (const p of eth.providers) {
-              if (p?.selectedAddress && typeof p.selectedAddress === 'string') {
-                return p.selectedAddress.toLowerCase();
-              }
-            }
-          }
-          const accs = await eth.request({ method: 'eth_accounts' });
-          if (accs && Array.isArray(accs) && accs.length > 0 && typeof accs[0] === 'string') {
-            return accs[0].toLowerCase();
+        const raw = localStorage.getItem('wagmi.store');
+        if (raw) {
+          const state = JSON.parse(raw)?.state;
+          const currentId = state?.current;
+          const connections: any[] = state?.connections?.value || [];
+          const current = currentId ? connections.find((entry: any) => entry?.[0] === currentId)?.[1] : null;
+          const evmAddress = current?.accounts?.[0];
+          if (typeof evmAddress === 'string' && /^0x[a-fA-F0-9]{40}$/.test(evmAddress)) {
+            return evmAddress.toLowerCase();
           }
         }
       } catch {}
@@ -243,66 +227,12 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
         }
       } catch {}
 
-      // 3. Check Tron wallets (TronLink)
+      // 3. TRON wallets: only when a TRON wallet was chosen in the widget and is connected
       try {
+        const tronChosen = localStorage.getItem('tronAdapterName');
         const tron = (window as any).tronWeb;
-        if (tron?.defaultAddress?.base58) {
+        if (tronChosen && tronChosen !== 'null' && tron?.defaultAddress?.base58) {
           return tron.defaultAddress.base58;
-        }
-      } catch {}
-
-      // 4. Check other popular Web3 wallet extensions
-      try {
-        const altProviders = [
-          (window as any).coinbaseWalletExtension,
-          (window as any).okxwallet,
-          (window as any).trustwallet?.ethereum,
-          (window as any).phantom?.ethereum,
-          (window as any).rabby,
-          (window as any).binancew3w?.ethereum,
-          (window as any).bitkeep?.ethereum,
-        ];
-        for (const p of altProviders) {
-          if (p?.selectedAddress && typeof p.selectedAddress === 'string') {
-            return p.selectedAddress.toLowerCase();
-          }
-          if (p?.request) {
-            try {
-              const accs = await p.request({ method: 'eth_accounts' });
-              if (accs && accs.length > 0) return accs[0].toLowerCase();
-            } catch {}
-          }
-        }
-      } catch {}
-
-      // 5. Check localStorage for Wagmi store or wallet connectors
-      try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && (key.startsWith('wagmi') || key.startsWith('wc@2:') || key.includes('walletconnect') || key.includes('lifi') || key.includes('solana'))) {
-            const val = localStorage.getItem(key);
-            if (val) {
-              const ethMatch = val.match(/0x[a-fA-F0-9]{40}/);
-              if (ethMatch) return ethMatch[0].toLowerCase();
-            }
-          }
-        }
-      } catch {}
-
-      // 6. Check DOM inside LI.FI widget container
-      try {
-        if (containerRef.current) {
-          const innerText = containerRef.current.innerText || '';
-          const match = innerText.match(/0x[a-fA-F0-9]{40}/);
-          if (match) return match[0].toLowerCase();
-
-          const elements = containerRef.current.querySelectorAll('[title*="0x"], [aria-label*="0x"], [data-value*="0x"]');
-          for (let i = 0; i < elements.length; i++) {
-            const el = elements[i];
-            const str = (el.getAttribute('title') || el.getAttribute('aria-label') || el.getAttribute('data-value') || '');
-            const m = str.match(/0x[a-fA-F0-9]{40}/);
-            if (m) return m[0].toLowerCase();
-          }
         }
       } catch {}
 
@@ -351,14 +281,9 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
     // Storage event listener
     window.addEventListener('storage', scheduleCheck);
 
-    // Ethers / window.ethereum accountsChanged
+    // window.ethereum accountsChanged: re-read the widget's connection (the widget updates its own state)
     const eth = (window as any).ethereum;
-    const handleAccountsChanged = (accs: string[]) => {
-      const addr = accs && accs.length > 0 ? accs[0].toLowerCase() : null;
-      lastDetectedAddress = addr;
-      setInternalConnected(Boolean(addr));
-      onWalletChange(addr);
-    };
+    const handleAccountsChanged = () => scheduleCheck();
     if (eth?.on) {
       eth.on('accountsChanged', handleAccountsChanged);
     }
