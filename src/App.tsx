@@ -1088,6 +1088,7 @@ const Footer = () => {
                 <li><a href="/#features" className="text-gray-500 hover:text-primary transition-colors">Features</a></li>
                 <li><Link to="/merchant" className="text-gray-500 hover:text-primary transition-colors">Apply for Merchant</Link></li>
                 <li><Link to="/risk-disclosure" className="text-gray-500 hover:text-primary transition-colors">Risk Disclosure</Link></li>
+                <li><a href="/blog/" className="text-gray-500 hover:text-primary transition-colors">Blog</a></li>
               </ul>
             </div>
 
