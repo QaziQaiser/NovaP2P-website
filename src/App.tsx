@@ -51,13 +51,11 @@ const Navbar = () => {
 
   const navLinks = [
     { name: 'Home', href: '/#home' },
-    { name: 'Swap', href: '/#swap' },
     { name: 'About Us', href: '/about' },
+    { name: 'Become a Partner', href: '/become-partner' },
     { name: 'Merchant', href: '/merchant' },
     { name: 'Fee Structure', href: '/fee-structure' },
-    { name: 'Become a Partner', href: '/become-partner' },
     { name: 'Contact Us', href: '/contact' },
-    { name: 'FAQ', href: '/#faq' },
   ];
 
   return (
