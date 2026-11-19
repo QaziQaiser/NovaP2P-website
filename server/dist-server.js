@@ -3218,10 +3218,11 @@ var ADMIN_ALERT_THROTTLE_MS = 10 * 60 * 1e3;
 var GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim().replace(/^["']+|["']+$/g, "").trim();
 var AI_CONFIGURED = !!GEMINI_API_KEY && GEMINI_API_KEY !== "MY_GEMINI_API_KEY";
 var GEMINI_API_BASE = (process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com").replace(/\/+$/, "");
-var USE_VERTEX = GEMINI_API_KEY.startsWith("AQ.") || (process.env.GEMINI_API_MODE || "").toLowerCase() === "vertex";
 var VERTEX_API_BASE = (process.env.VERTEX_API_BASE || "https://aiplatform.googleapis.com").replace(/\/+$/, "");
-function geminiRequest(model) {
-  if (USE_VERTEX) {
+var AI_ENDPOINTS = (process.env.GEMINI_API_MODE || "").toLowerCase() === "vertex" ? ["vertex"] : GEMINI_API_KEY.startsWith("AQ.") ? ["gemini", "vertex"] : ["gemini"];
+var workingEndpoint = null;
+function geminiRequest(endpoint, model) {
+  if (endpoint === "vertex") {
     return {
       url: `${VERTEX_API_BASE}/v1/publishers/google/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,
       headers: { "Content-Type": "application/json" }
@@ -3238,7 +3239,7 @@ var GEMINI_MODELS = Array.from(
 if (!AI_CONFIGURED) {
   console.warn("[Chat] GEMINI_API_KEY is not set. Live chat works, but messages go to the support team without AI answers.");
 } else {
-  console.log(`[Chat] AI assistant enabled via ${USE_VERTEX ? "Vertex AI (express-mode key)" : "Gemini API"} (models: ${GEMINI_MODELS.join(", ")}).`);
+  console.log(`[Chat] AI assistant enabled (endpoints: ${AI_ENDPOINTS.join(" -> ")}; models: ${GEMINI_MODELS.join(", ")}).`);
 }
 var aiStatus = {
   lastSuccessAt: null,
@@ -3246,7 +3247,7 @@ var aiStatus = {
   lastError: null
 };
 function recordAiError(message) {
-  aiStatus.lastError = message.slice(0, 400);
+  aiStatus.lastError = message.slice(0, 900);
   aiStatus.lastErrorAt = (/* @__PURE__ */ new Date()).toISOString();
   console.warn(`[Chat] ${message}`);
 }
@@ -3265,45 +3266,55 @@ function explainGeminiError(status, body) {
 }
 async function callGemini(history) {
   if (!AI_CONFIGURED || !history.length) return null;
-  for (const model of GEMINI_MODELS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 25e3);
-    try {
-      const target = geminiRequest(model);
-      const response = await fetch(target.url, {
-        method: "POST",
-        headers: target.headers,
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: CHAT_SYSTEM_PROMPT }] },
-          contents: history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
-          generationConfig: {
-            temperature: 0.4,
-            maxOutputTokens: 1024,
-            // Thinking off on 2.5 models for fast chat replies
-            ...model.startsWith("gemini-2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}
+  const endpoints = workingEndpoint ? [workingEndpoint, ...AI_ENDPOINTS.filter((e) => e !== workingEndpoint)] : AI_ENDPOINTS;
+  const keyErrors = [];
+  for (const endpoint of endpoints) {
+    const label = endpoint === "vertex" ? "Vertex AI" : "Gemini API";
+    for (const model of GEMINI_MODELS) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 25e3);
+      try {
+        const target = geminiRequest(endpoint, model);
+        const response = await fetch(target.url, {
+          method: "POST",
+          headers: target.headers,
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: CHAT_SYSTEM_PROMPT }] },
+            contents: history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
+            generationConfig: {
+              temperature: 0.4,
+              maxOutputTokens: 1024,
+              // Thinking off on 2.5 models for fast chat replies
+              ...model.startsWith("gemini-2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}
+            }
+          }),
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          const message = `[${label} / ${model}] ${explainGeminiError(response.status, await response.text().catch(() => ""))}`;
+          if (/rejected the API key|server's region/.test(message)) {
+            keyErrors.push(message);
+            break;
           }
-        }),
-        signal: controller.signal
-      });
-      if (!response.ok) {
-        const message = explainGeminiError(response.status, await response.text().catch(() => ""));
-        recordAiError(`[${model}] ${message}`);
-        if (/rejected the API key|server's region/.test(message)) return null;
-        continue;
+          recordAiError(message);
+          continue;
+        }
+        const data = await response.json();
+        const text = (data?.candidates?.[0]?.content?.parts || []).map((p) => p?.thought ? "" : p?.text || "").join("").trim();
+        if (text) {
+          workingEndpoint = endpoint;
+          aiStatus.lastSuccessAt = (/* @__PURE__ */ new Date()).toISOString();
+          return text;
+        }
+        recordAiError(`[${label} / ${model}] Gemini returned no text (finishReason: ${data?.candidates?.[0]?.finishReason || "n/a"}).`);
+      } catch (err) {
+        recordAiError(`[${label} / ${model}] Could not reach Gemini: ${err?.name === "AbortError" ? "timeout after 25s" : err?.message || err}`);
+      } finally {
+        clearTimeout(timer);
       }
-      const data = await response.json();
-      const text = (data?.candidates?.[0]?.content?.parts || []).map((p) => p?.thought ? "" : p?.text || "").join("").trim();
-      if (text) {
-        aiStatus.lastSuccessAt = (/* @__PURE__ */ new Date()).toISOString();
-        return text;
-      }
-      recordAiError(`[${model}] Gemini returned no text (finishReason: ${data?.candidates?.[0]?.finishReason || "n/a"}).`);
-    } catch (err) {
-      recordAiError(`[${model}] Could not reach Gemini: ${err?.name === "AbortError" ? "timeout after 25s" : err?.message || err}`);
-    } finally {
-      clearTimeout(timer);
     }
   }
+  if (keyErrors.length) recordAiError(keyErrors.join("  |  "));
   return null;
 }
 function cleanAiText(text) {

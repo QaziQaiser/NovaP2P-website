@@ -136,6 +136,7 @@ export const LiveChatWidget: React.FC = () => {
   const [isStarting, setIsStarting] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmNewChat, setConfirmNewChat] = useState(false);
 
   const lastIdRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -281,8 +282,16 @@ export const LiveChatWidget: React.FC = () => {
     }
   };
 
-  const handleNewChat = () => {
-    if (window.confirm('Start a new conversation? The current chat will be closed on this device.')) resetSession();
+  // Never leave the confirmation open behind a closed chat window
+  useEffect(() => {
+    if (!isOpen) setConfirmNewChat(false);
+  }, [isOpen]);
+
+  const handleNewChat = () => setConfirmNewChat(true);
+  const confirmStartNewChat = () => {
+    setConfirmNewChat(false);
+    setError(null);
+    resetSession();
   };
 
   const showTyping = isSending && (conversation?.aiEnabled ?? false);
@@ -345,6 +354,36 @@ export const LiveChatWidget: React.FC = () => {
               <X size={20} />
             </button>
           </div>
+
+          {/* "Start a new chat?" confirmation, styled inside the chat window */}
+          {confirmNewChat && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center p-5 bg-slate-900/40 backdrop-blur-[2px]">
+              <div role="alertdialog" aria-label="Start a new chat" className="w-full max-w-[300px] rounded-2xl bg-white shadow-2xl border border-gray-100 p-5 text-center">
+                <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                  <RotateCcw size={22} />
+                </div>
+                <h4 className="text-base font-bold text-secondary">Start a new chat?</h4>
+                <p className="mt-1.5 text-sm text-gray-500 leading-relaxed">This conversation will be closed on this device and a fresh chat will begin.</p>
+                <div className="mt-5 flex gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmNewChat(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmStartNewChat}
+                    autoFocus
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-primary to-primary-dark text-white text-sm font-semibold shadow-md shadow-primary/25 hover:brightness-105 transition-all cursor-pointer"
+                  >
+                    Start new chat
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {!session ? (
             /* Start form */

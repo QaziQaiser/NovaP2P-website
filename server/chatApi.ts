@@ -87,13 +87,21 @@ const ADMIN_ALERT_THROTTLE_MS = 10 * 60 * 1000;
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']+|["']+$/g, '').trim();
 const AI_CONFIGURED = !!GEMINI_API_KEY && GEMINI_API_KEY !== 'MY_GEMINI_API_KEY';
 const GEMINI_API_BASE = (process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
-// Google Cloud / Vertex AI express-mode keys start with "AQ." and only work on the Vertex AI endpoint;
-// Google AI Studio keys ("AIza...") use the Gemini API endpoint.
-const USE_VERTEX = GEMINI_API_KEY.startsWith('AQ.') || (process.env.GEMINI_API_MODE || '').toLowerCase() === 'vertex';
+// Google AI Studio keys ("AIza..." and the newer "AQ..." format) work on the free Gemini API endpoint.
+// Google Cloud express-mode keys may only work on Vertex AI, which is tried as a fallback when the
+// Gemini API rejects the key (Vertex AI requires billing on the Google Cloud project).
 const VERTEX_API_BASE = (process.env.VERTEX_API_BASE || 'https://aiplatform.googleapis.com').replace(/\/+$/, '');
+type AiEndpoint = 'gemini' | 'vertex';
+const AI_ENDPOINTS: AiEndpoint[] =
+  (process.env.GEMINI_API_MODE || '').toLowerCase() === 'vertex'
+    ? ['vertex']
+    : GEMINI_API_KEY.startsWith('AQ.')
+      ? ['gemini', 'vertex']
+      : ['gemini'];
+let workingEndpoint: AiEndpoint | null = null;
 
-function geminiRequest(model: string): { url: string; headers: Record<string, string> } {
-  if (USE_VERTEX) {
+function geminiRequest(endpoint: AiEndpoint, model: string): { url: string; headers: Record<string, string> } {
+  if (endpoint === 'vertex') {
     return {
       url: `${VERTEX_API_BASE}/v1/publishers/google/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,
       headers: { 'Content-Type': 'application/json' },
@@ -112,7 +120,7 @@ const GEMINI_MODELS = Array.from(
 if (!AI_CONFIGURED) {
   console.warn('[Chat] GEMINI_API_KEY is not set. Live chat works, but messages go to the support team without AI answers.');
 } else {
-  console.log(`[Chat] AI assistant enabled via ${USE_VERTEX ? 'Vertex AI (express-mode key)' : 'Gemini API'} (models: ${GEMINI_MODELS.join(', ')}).`);
+  console.log(`[Chat] AI assistant enabled (endpoints: ${AI_ENDPOINTS.join(' -> ')}; models: ${GEMINI_MODELS.join(', ')}).`);
 }
 
 // Last AI outcome, shown in the admin Live Chat tab so problems (bad key, quota, region) are visible without server logs
@@ -123,7 +131,7 @@ const aiStatus: { lastSuccessAt: string | null; lastErrorAt: string | null; last
 };
 
 function recordAiError(message: string) {
-  aiStatus.lastError = message.slice(0, 400);
+  aiStatus.lastError = message.slice(0, 900);
   aiStatus.lastErrorAt = new Date().toISOString();
   console.warn(`[Chat] ${message}`);
 }
@@ -145,49 +153,60 @@ function explainGeminiError(status: number, body: string): string {
 
 async function callGemini(history: { role: 'user' | 'model'; text: string }[]): Promise<string | null> {
   if (!AI_CONFIGURED || !history.length) return null;
-  for (const model of GEMINI_MODELS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 25000);
-    try {
-      const target = geminiRequest(model);
-      const response = await fetch(target.url, {
-        method: 'POST',
-        headers: target.headers,
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: CHAT_SYSTEM_PROMPT }] },
-          contents: history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
-          generationConfig: {
-            temperature: 0.4,
-            maxOutputTokens: 1024,
-            // Thinking off on 2.5 models for fast chat replies
-            ...(model.startsWith('gemini-2.5') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
-          },
-        }),
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        const message = explainGeminiError(response.status, await response.text().catch(() => ''));
-        recordAiError(`[${model}] ${message}`);
-        // A bad key or unsupported region fails the same way on every model
-        if (/rejected the API key|server's region/.test(message)) return null;
-        continue;
+  const endpoints = workingEndpoint ? [workingEndpoint, ...AI_ENDPOINTS.filter((e) => e !== workingEndpoint)] : AI_ENDPOINTS;
+  const keyErrors: string[] = [];
+
+  for (const endpoint of endpoints) {
+    const label = endpoint === 'vertex' ? 'Vertex AI' : 'Gemini API';
+    for (const model of GEMINI_MODELS) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 25000);
+      try {
+        const target = geminiRequest(endpoint, model);
+        const response = await fetch(target.url, {
+          method: 'POST',
+          headers: target.headers,
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: CHAT_SYSTEM_PROMPT }] },
+            contents: history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
+            generationConfig: {
+              temperature: 0.4,
+              maxOutputTokens: 1024,
+              // Thinking off on 2.5 models for fast chat replies
+              ...(model.startsWith('gemini-2.5') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+            },
+          }),
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const message = `[${label} / ${model}] ${explainGeminiError(response.status, await response.text().catch(() => ''))}`;
+          // A rejected key or unsupported region fails the same way on every model of this endpoint
+          if (/rejected the API key|server's region/.test(message)) {
+            keyErrors.push(message);
+            break;
+          }
+          recordAiError(message);
+          continue;
+        }
+        const data: any = await response.json();
+        const text = (data?.candidates?.[0]?.content?.parts || [])
+          .map((p: any) => (p?.thought ? '' : p?.text || ''))
+          .join('')
+          .trim();
+        if (text) {
+          workingEndpoint = endpoint;
+          aiStatus.lastSuccessAt = new Date().toISOString();
+          return text;
+        }
+        recordAiError(`[${label} / ${model}] Gemini returned no text (finishReason: ${data?.candidates?.[0]?.finishReason || 'n/a'}).`);
+      } catch (err: any) {
+        recordAiError(`[${label} / ${model}] Could not reach Gemini: ${err?.name === 'AbortError' ? 'timeout after 25s' : err?.message || err}`);
+      } finally {
+        clearTimeout(timer);
       }
-      const data: any = await response.json();
-      const text = (data?.candidates?.[0]?.content?.parts || [])
-        .map((p: any) => (p?.thought ? '' : p?.text || ''))
-        .join('')
-        .trim();
-      if (text) {
-        aiStatus.lastSuccessAt = new Date().toISOString();
-        return text;
-      }
-      recordAiError(`[${model}] Gemini returned no text (finishReason: ${data?.candidates?.[0]?.finishReason || 'n/a'}).`);
-    } catch (err: any) {
-      recordAiError(`[${model}] Could not reach Gemini: ${err?.name === 'AbortError' ? 'timeout after 25s' : err?.message || err}`);
-    } finally {
-      clearTimeout(timer);
     }
   }
+  if (keyErrors.length) recordAiError(keyErrors.join('  |  '));
   return null;
 }
 
