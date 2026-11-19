@@ -3121,8 +3121,8 @@ import { Router as Router3 } from "express";
 import crypto5 from "crypto";
 
 // server/chatKnowledge.ts
-var CHAT_SYSTEM_PROMPT = `You are "Sara", the friendly virtual support assistant of the NovaP2P Support Team in the live chat on the NovaP2P website (novap2p.com).
-- Introduce yourself as Sara from the NovaP2P Support Team when relevant. If a visitor sincerely asks whether they are talking to a bot, an AI or a real person, be honest: say you are Sara, NovaP2P's virtual assistant, and offer to connect them with a team member.
+var CHAT_SYSTEM_PROMPT = `You are "Nova Assistant", the friendly virtual assistant of the NovaP2P Support Team in the live chat on the NovaP2P website (novap2p.com).
+- If a visitor sincerely asks whether they are talking to a bot, an AI or a real person, be honest: say you are Nova Assistant, NovaP2P's virtual assistant, and offer to connect them with a team member (they can tap "Talk to a Human").
 
 # How to answer
 - Be concise: 1-4 short paragraphs or a short list. Plain text only (no markdown headings, no tables). Use "-" for bullet points.
@@ -3218,13 +3218,27 @@ var ADMIN_ALERT_THROTTLE_MS = 10 * 60 * 1e3;
 var GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim().replace(/^["']+|["']+$/g, "").trim();
 var AI_CONFIGURED = !!GEMINI_API_KEY && GEMINI_API_KEY !== "MY_GEMINI_API_KEY";
 var GEMINI_API_BASE = (process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com").replace(/\/+$/, "");
+var USE_VERTEX = GEMINI_API_KEY.startsWith("AQ.") || (process.env.GEMINI_API_MODE || "").toLowerCase() === "vertex";
+var VERTEX_API_BASE = (process.env.VERTEX_API_BASE || "https://aiplatform.googleapis.com").replace(/\/+$/, "");
+function geminiRequest(model) {
+  if (USE_VERTEX) {
+    return {
+      url: `${VERTEX_API_BASE}/v1/publishers/google/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,
+      headers: { "Content-Type": "application/json" }
+    };
+  }
+  return {
+    url: `${GEMINI_API_BASE}/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY }
+  };
+}
 var GEMINI_MODELS = Array.from(
   new Set([(process.env.GEMINI_MODEL || "").trim(), "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"].filter(Boolean))
 );
 if (!AI_CONFIGURED) {
   console.warn("[Chat] GEMINI_API_KEY is not set. Live chat works, but messages go to the support team without AI answers.");
 } else {
-  console.log(`[Chat] AI assistant enabled (models: ${GEMINI_MODELS.join(", ")}).`);
+  console.log(`[Chat] AI assistant enabled via ${USE_VERTEX ? "Vertex AI (express-mode key)" : "Gemini API"} (models: ${GEMINI_MODELS.join(", ")}).`);
 }
 var aiStatus = {
   lastSuccessAt: null,
@@ -3255,9 +3269,10 @@ async function callGemini(history) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25e3);
     try {
-      const response = await fetch(`${GEMINI_API_BASE}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      const target = geminiRequest(model);
+      const response = await fetch(target.url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
+        headers: target.headers,
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: CHAT_SYSTEM_PROMPT }] },
           contents: history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
@@ -3536,7 +3551,7 @@ chatRouter.post("/start", startLimiter, async (req, res) => {
     addMessage(
       id,
       "ai",
-      AI_CONFIGURED ? `Hi ${firstName}! I'm Sara from the NovaP2P Support Team. Ask me anything about Nova Swap, the Genesis rewards, or the Partner and BDM programs. How can I help you today?` : `Hi ${firstName}! Thanks for contacting NovaP2P. Send us your question and our support team will reply here and by email.`
+      AI_CONFIGURED ? `Hi ${firstName}! I'm Nova Assistant. Ask me anything about Nova Swap, the Genesis rewards, or the Partner and BDM programs.` : `Hi ${firstName}! Thanks for contacting NovaP2P. Send us your question and our support team will reply here and by email.`
     );
     if (message) {
       addMessage(id, "visitor", message);
@@ -3668,6 +3683,11 @@ var ADMIN_ADDRESSES = new Set(
   [IMAP_USER, ADMIN_EMAIL, ...(process.env.CHAT_ADMIN_REPLY_EMAILS || "").split(",")].map((a) => a.trim().toLowerCase()).filter(Boolean)
 );
 var TOKEN_RE = /\[NovaChat #([A-F0-9]{6,12})\]/i;
+var SYSTEM_SUBJECT_RE = /^\s*(New Live Chat|Live Chat:|Reply from NovaP2P Support)\b/i;
+var SYSTEM_BODY_RE = /^\s*(NEW LIVE CHAT|LIVE CHAT:)|reply in the admin panel|swap-admin\?tab=livechat|\[\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC\] (Visitor|System|Nova Assistant)/i;
+function isSystemChatEmail(subject, text) {
+  return SYSTEM_SUBJECT_RE.test(subject || "") || SYSTEM_BODY_RE.test(text || "");
+}
 function extractReplyText(text) {
   const lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
   const out = [];
@@ -3704,6 +3724,7 @@ async function importChatEmail(mail) {
   const from = addresses(mail.from)[0] || "";
   const body = extractReplyText(mail.text || "");
   if (!body) return { result: "empty", conversationId: conv.id };
+  if (isSystemChatEmail(mail.subject || "", body)) return { result: "own-notification", conversationId: conv.id };
   if (from && from === conv.visitor_email.toLowerCase()) {
     addMessage(conv.id, "visitor", body);
     db.prepare("UPDATE chat_conversations SET status = 'open' WHERE id = ?").run(conv.id);
@@ -3787,7 +3808,26 @@ async function syncChatEmailsOnce() {
   }
   return imported;
 }
+function removeWronglyImportedNotifications() {
+  const rows = db.prepare("SELECT id, conversation_id, body FROM chat_messages WHERE sender = 'admin'").all();
+  const bad = rows.filter((r) => isSystemChatEmail("", r.body));
+  if (!bad.length) return;
+  const del = db.prepare("DELETE FROM chat_messages WHERE id = ?");
+  db.transaction(() => {
+    for (const r of bad) del.run(r.id);
+    for (const convId of new Set(bad.map((r) => r.conversation_id))) {
+      const stillHuman = db.prepare("SELECT 1 FROM chat_messages WHERE conversation_id = ? AND sender = 'admin' LIMIT 1").get(convId);
+      if (!stillHuman) db.prepare("UPDATE chat_conversations SET ai_enabled = 1 WHERE id = ?").run(convId);
+    }
+  })();
+  console.log(`[ChatEmail] Removed ${bad.length} notification email(s) that were wrongly added to chats.`);
+}
 function startChatEmailSync() {
+  try {
+    removeWronglyImportedNotifications();
+  } catch (err) {
+    console.warn("[ChatEmail] Cleanup of wrongly imported notifications failed:", err);
+  }
   emailSyncStatus.enabled = ENABLED;
   if (!ENABLED) {
     console.warn("[ChatEmail] Email reply sync is off (no SMTP_PASS / IMAP_PASS, or CHAT_EMAIL_SYNC=off). Reply from the admin panel instead.");

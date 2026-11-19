@@ -459,7 +459,7 @@ export const LiveChatWidget: React.FC = () => {
                               onClick={handleHandoff}
                               className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-primary-dark px-4 py-2.5 text-[13px] font-semibold text-white shadow-md shadow-primary/25 hover:shadow-lg hover:brightness-105 transition-all cursor-pointer"
                             >
-                              <Headphones size={15} /> Talk to a real person
+                              <Headphones size={15} /> Talk to a Human
                             </button>
                           )}
                         </div>

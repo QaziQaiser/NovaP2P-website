@@ -87,6 +87,23 @@ const ADMIN_ALERT_THROTTLE_MS = 10 * 60 * 1000;
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']+|["']+$/g, '').trim();
 const AI_CONFIGURED = !!GEMINI_API_KEY && GEMINI_API_KEY !== 'MY_GEMINI_API_KEY';
 const GEMINI_API_BASE = (process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
+// Google Cloud / Vertex AI express-mode keys start with "AQ." and only work on the Vertex AI endpoint;
+// Google AI Studio keys ("AIza...") use the Gemini API endpoint.
+const USE_VERTEX = GEMINI_API_KEY.startsWith('AQ.') || (process.env.GEMINI_API_MODE || '').toLowerCase() === 'vertex';
+const VERTEX_API_BASE = (process.env.VERTEX_API_BASE || 'https://aiplatform.googleapis.com').replace(/\/+$/, '');
+
+function geminiRequest(model: string): { url: string; headers: Record<string, string> } {
+  if (USE_VERTEX) {
+    return {
+      url: `${VERTEX_API_BASE}/v1/publishers/google/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,
+      headers: { 'Content-Type': 'application/json' },
+    };
+  }
+  return {
+    url: `${GEMINI_API_BASE}/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+  };
+}
 // Tried in order; the next model is used when one is unavailable or out of free quota.
 const GEMINI_MODELS = Array.from(
   new Set([(process.env.GEMINI_MODEL || '').trim(), 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'].filter(Boolean))
@@ -95,7 +112,7 @@ const GEMINI_MODELS = Array.from(
 if (!AI_CONFIGURED) {
   console.warn('[Chat] GEMINI_API_KEY is not set. Live chat works, but messages go to the support team without AI answers.');
 } else {
-  console.log(`[Chat] AI assistant enabled (models: ${GEMINI_MODELS.join(', ')}).`);
+  console.log(`[Chat] AI assistant enabled via ${USE_VERTEX ? 'Vertex AI (express-mode key)' : 'Gemini API'} (models: ${GEMINI_MODELS.join(', ')}).`);
 }
 
 // Last AI outcome, shown in the admin Live Chat tab so problems (bad key, quota, region) are visible without server logs
@@ -132,9 +149,10 @@ async function callGemini(history: { role: 'user' | 'model'; text: string }[]): 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25000);
     try {
-      const response = await fetch(`${GEMINI_API_BASE}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      const target = geminiRequest(model);
+      const response = await fetch(target.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+        headers: target.headers,
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: CHAT_SYSTEM_PROMPT }] },
           contents: history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
@@ -485,7 +503,7 @@ chatRouter.post('/start', startLimiter, async (req, res) => {
       id,
       'ai',
       AI_CONFIGURED
-        ? `Hi ${firstName}! I'm Sara from the NovaP2P Support Team. Ask me anything about Nova Swap, the Genesis rewards, or the Partner and BDM programs. How can I help you today?`
+        ? `Hi ${firstName}! I'm Nova Assistant. Ask me anything about Nova Swap, the Genesis rewards, or the Partner and BDM programs.`
         : `Hi ${firstName}! Thanks for contacting NovaP2P. Send us your question and our support team will reply here and by email.`
     );
 
