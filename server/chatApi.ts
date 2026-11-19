@@ -48,7 +48,7 @@ db.exec(`
 
 type Sender = 'visitor' | 'ai' | 'admin' | 'system';
 
-interface ConversationRow {
+export interface ConversationRow {
   id: string;
   code: string;
   token_hash: string;
@@ -205,6 +205,9 @@ function cleanText(value: unknown, max: number): string {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, max);
 }
 
+export const getConversationByCode = (code: string) =>
+  db.prepare('SELECT * FROM chat_conversations WHERE code = ?').get(code.toUpperCase()) as ConversationRow | undefined;
+
 const getConversation = (id: string) => db.prepare('SELECT * FROM chat_conversations WHERE id = ?').get(id) as ConversationRow | undefined;
 
 function getMessages(conversationId: string, afterId = 0): MessageRow[] {
@@ -213,7 +216,7 @@ function getMessages(conversationId: string, afterId = 0): MessageRow[] {
     .all(conversationId, afterId) as MessageRow[];
 }
 
-function addMessage(conversationId: string, sender: Sender, body: string): MessageRow {
+export function addMessage(conversationId: string, sender: Sender, body: string): MessageRow {
   const createdAt = nowIso();
   const result = db.prepare('INSERT INTO chat_messages (conversation_id, sender, body, created_at) VALUES (?, ?, ?, ?)').run(conversationId, sender, body, createdAt);
   db.prepare(
@@ -287,6 +290,24 @@ function emailShell(title: string, intro: string, bodyRows: string, button?: { h
   </table></td></tr></table></body></html>`;
 }
 
+/** Email reply sync state (updated by chatEmailSync.ts), shown in the admin Live Chat tab. */
+export const emailSyncStatus: { enabled: boolean; lastRunAt: string | null; lastOkAt: string | null; lastError: string | null; imported: number } = {
+  enabled: false,
+  lastRunAt: null,
+  lastOkAt: null,
+  lastError: null,
+  imported: 0,
+};
+
+/** Marks emails sent by the chat system itself so the mailbox sync never imports them as replies. */
+export const CHAT_EMAIL_HEADER = 'X-Nova-Chat';
+
+/** Public site origin for links in emails sent outside a request (email sync). */
+export function defaultSiteOrigin(): string {
+  const configured = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  return /^https?:\/\//.test(configured) ? configured : 'https://novap2p.com';
+}
+
 function adminChatUrl(origin: string, conv: ConversationRow) {
   return `${origin}/swap-admin?tab=livechat&chat=${encodeURIComponent(conv.id)}`;
 }
@@ -299,7 +320,7 @@ function sendAdminChatEmail(req: Request, conv: ConversationRow, kind: 'new' | '
   const subject = `${heading} - ${conv.visitor_name} [NovaChat #${conv.code}]`;
   const info = `<b>Name:</b> ${escapeHtml(conv.visitor_name)}<br><b>Email:</b> ${escapeHtml(conv.visitor_email)}<br><b>Chat ID:</b> #${escapeHtml(conv.code)}${
     conv.page_url ? `<br><b>Page:</b> ${escapeHtml(conv.page_url)}` : ''
-  }${kind === 'handoff' ? '<br><br><b style="color:#dc2626;">The visitor needs a support team member.</b>' : ''}`;
+  }${kind === 'handoff' ? '<br><br><b style="color:#dc2626;">The visitor needs a support team member.</b>' : ''}<br><br><span style="color:#2563eb;"><b>Reply to this email</b> to answer the visitor (write above the quoted text). Your reply is added to the live chat and emailed to the visitor automatically within about a minute.</span>`;
   const text = [
     `${heading.toUpperCase()} [NovaChat #${conv.code}]`,
     `Name: ${conv.visitor_name}`,
@@ -307,7 +328,8 @@ function sendAdminChatEmail(req: Request, conv: ConversationRow, kind: 'new' | '
     conv.page_url ? `Page: ${conv.page_url}` : '',
     kind === 'handoff' ? 'The visitor needs a support team member.' : '',
     '',
-    `Reply in the admin panel: ${adminChatUrl(origin, conv)}`,
+    `Reply to this email to answer ${conv.visitor_name} (write above the quoted text). Your reply is added to the live chat and emailed to the visitor automatically within about a minute.`,
+    `Or reply in the admin panel: ${adminChatUrl(origin, conv)}`,
     '',
     'Conversation:',
     transcriptText(messages),
@@ -320,12 +342,13 @@ function sendAdminChatEmail(req: Request, conv: ConversationRow, kind: 'new' | '
     subject,
     text,
     html: emailShell(heading, info, transcriptHtml(messages), { href: adminChatUrl(origin, conv), label: 'Reply in Admin Panel' }),
-    replyTo: conv.visitor_email,
+    // Replies come back to the support mailbox; the email sync posts them to the chat and emails the visitor a clean copy
+    replyTo: ADMIN_EMAIL,
+    headers: { [CHAT_EMAIL_HEADER]: 'admin-notification' },
   }).catch(() => {});
 }
 
-async function sendVisitorReplyEmail(req: Request, conv: ConversationRow, reply: string): Promise<boolean> {
-  const origin = getSiteOrigin(req);
+export async function sendVisitorReplyEmail(origin: string, conv: ConversationRow, reply: string): Promise<boolean> {
   const chatUrl = `${origin}/?chat=open`;
   const intro = `Hi ${escapeHtml(conv.visitor_name)},<br><br>Our support team replied to your live chat on NovaP2P:`;
   const row = `<tr><td style="padding:6px 0;"><div style="background:#ecfdf5;border:1px solid #d1fae5;border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.6;color:#111827;white-space:pre-wrap;">${escapeHtml(reply)}</div></td></tr>
@@ -336,6 +359,7 @@ async function sendVisitorReplyEmail(req: Request, conv: ConversationRow, reply:
     text: `Hi ${conv.visitor_name},\n\nOur support team replied to your live chat on NovaP2P:\n\n${reply}\n\nYou can reply to this email or continue the conversation on our website: ${chatUrl}\n\nNovaP2P Support`,
     html: emailShell('NovaP2P Support', intro, row, { href: chatUrl, label: 'Open Live Chat' }),
     replyTo: ADMIN_EMAIL,
+    headers: { [CHAT_EMAIL_HEADER]: 'support-reply' },
   });
   return result.sent;
 }
@@ -534,7 +558,7 @@ chatRouter.get('/admin/conversations', verifyAdmin, (_req, res) => {
          FROM chat_conversations c ORDER BY c.updated_at DESC LIMIT 300`
       )
       .all();
-    res.json({ aiConfigured: AI_CONFIGURED, aiStatus, conversations: rows });
+    res.json({ aiConfigured: AI_CONFIGURED, aiStatus, emailSync: emailSyncStatus, conversations: rows });
   } catch (err) {
     sendServerError(res, err, 'chat admin list');
   }
@@ -561,7 +585,7 @@ chatRouter.post('/admin/conversations/:id/reply', verifyAdmin, async (req, res) 
     // A human has taken over: pause the AI so it does not talk over the support team.
     db.prepare("UPDATE chat_conversations SET ai_enabled = 0, admin_unread = 0, status = 'open' WHERE id = ?").run(conv.id);
     const message = addMessage(conv.id, 'admin', body);
-    const emailed = await sendVisitorReplyEmail(req, conv, body);
+    const emailed = await sendVisitorReplyEmail(getSiteOrigin(req), conv, body);
     res.json({ message: publicMessage(message), visitorEmailed: emailed });
   } catch (err) {
     sendServerError(res, err, 'chat admin reply');

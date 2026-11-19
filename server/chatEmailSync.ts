@@ -1,0 +1,215 @@
+import { ImapFlow } from 'imapflow';
+import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser';
+import { db } from './db.ts';
+import { ADMIN_EMAIL } from './notifications.ts';
+import {
+  addMessage,
+  getConversationByCode,
+  sendVisitorReplyEmail,
+  defaultSiteOrigin,
+  emailSyncStatus,
+  CHAT_EMAIL_HEADER,
+} from './chatApi.ts';
+
+// ---------------------------------------------------------------------------
+// LIVE CHAT EMAIL SYNC (Phase 2)
+// Reads the support mailbox over IMAP and adds email replies to the live chat:
+//  - support team replies (to a "[NovaChat #CODE]" email)  -> chat + clean copy emailed to the visitor
+//  - visitor replies (to "Reply from NovaP2P Support")     -> chat (support team sees them in the admin panel)
+// Messages are read with BODY.PEEK, so nothing is marked as read or changed in the mailbox.
+// ---------------------------------------------------------------------------
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_email_imports (
+    message_key TEXT PRIMARY KEY,
+    conversation_id TEXT,
+    folder TEXT,
+    result TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+`);
+
+const IMAP_HOST = process.env.IMAP_HOST || 'imap.hostinger.com';
+const IMAP_PORT = Number(process.env.IMAP_PORT || 993);
+const IMAP_USER = process.env.IMAP_USER || process.env.SMTP_USER || 'support@novap2p.com';
+const IMAP_PASS = process.env.IMAP_PASS || process.env.SMTP_PASS || '';
+const SYNC_INTERVAL_MS = Math.max(20, Number(process.env.CHAT_EMAIL_SYNC_SECONDS) || 60) * 1000;
+const LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
+const ENABLED = (process.env.CHAT_EMAIL_SYNC || '').toLowerCase() !== 'off' && !!IMAP_PASS;
+
+// Addresses whose emails count as support team replies
+const ADMIN_ADDRESSES = new Set(
+  [IMAP_USER, ADMIN_EMAIL, ...(process.env.CHAT_ADMIN_REPLY_EMAILS || '').split(',')].map((a) => a.trim().toLowerCase()).filter(Boolean)
+);
+
+const TOKEN_RE = /\[NovaChat #([A-F0-9]{6,12})\]/i;
+
+/** Keeps only the new text of a reply: drops quoted history, reply headers and signatures. */
+export function extractReplyText(text: string): string {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    const next = (lines[i + 1] || '').trim();
+    if (t.startsWith('>')) break; // quoted text
+    if (/^On\b.{0,300}\bwrote:$/i.test(t)) break; // Gmail / Apple Mail / Roundcube
+    if (/^On\b/i.test(t) && /wrote:$/i.test(next) && t.length + next.length < 400) break; // wrapped "On ... wrote:"
+    if (/^-{2,}\s*Original Message\s*-{2,}$/i.test(t)) break; // Outlook
+    if (/^_{8,}$/.test(t)) break; // Outlook separator
+    if (/^From:\s/i.test(t) && /^(Sent|Date|To|Subject):/i.test(next)) break; // Outlook header block
+    if (lines[i] === '-- ' || t === '--') break; // signature delimiter
+    out.push(lines[i]);
+  }
+  return out
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .slice(0, 5000);
+}
+
+function addresses(field: AddressObject | AddressObject[] | undefined): string[] {
+  const list = Array.isArray(field) ? field : field ? [field] : [];
+  return list.flatMap((a) => a.value || []).map((v) => String(v.address || '').toLowerCase()).filter(Boolean);
+}
+
+function isAutoReply(mail: ParsedMail): boolean {
+  const auto = String(mail.headers.get('auto-submitted') || '').toLowerCase();
+  const precedence = String(mail.headers.get('precedence') || '').toLowerCase();
+  return (
+    (!!auto && auto !== 'no') ||
+    mail.headers.has('x-autoreply') ||
+    mail.headers.has('x-autorespond') ||
+    ['auto_reply', 'bulk', 'junk', 'list'].includes(precedence) ||
+    /^(auto(matic)? reply|out of office|undeliverable|delivery status notification)/i.test(mail.subject || '')
+  );
+}
+
+/** Applies one email to its chat. Returns a short result code (stored for de-duplication). */
+export async function importChatEmail(mail: ParsedMail): Promise<{ result: string; conversationId?: string }> {
+  if (mail.headers.has(CHAT_EMAIL_HEADER.toLowerCase())) return { result: 'own-notification' };
+  if (isAutoReply(mail)) return { result: 'auto-reply' };
+
+  const match = (mail.subject || '').match(TOKEN_RE);
+  const conv = match ? getConversationByCode(match[1]) : undefined;
+  if (!conv) return { result: 'no-conversation' };
+  if (mail.date && mail.date.getTime() < new Date(conv.created_at).getTime() - 60_000) return { result: 'older-than-chat', conversationId: conv.id };
+
+  const from = addresses(mail.from)[0] || '';
+  const body = extractReplyText(mail.text || '');
+  if (!body) return { result: 'empty', conversationId: conv.id };
+
+  if (from && from === conv.visitor_email.toLowerCase()) {
+    addMessage(conv.id, 'visitor', body);
+    db.prepare("UPDATE chat_conversations SET status = 'open' WHERE id = ?").run(conv.id);
+    return { result: 'visitor', conversationId: conv.id };
+  }
+
+  if (from && ADMIN_ADDRESSES.has(from)) {
+    // A human answered: pause the AI, show the reply in the chat
+    db.prepare("UPDATE chat_conversations SET ai_enabled = 0, admin_unread = 0, status = 'open' WHERE id = ?").run(conv.id);
+    addMessage(conv.id, 'admin', body);
+    // Email the visitor a clean copy unless this email already went to them directly
+    const recipients = [...addresses(mail.to), ...addresses(mail.cc)];
+    if (!recipients.includes(conv.visitor_email.toLowerCase())) {
+      await sendVisitorReplyEmail(defaultSiteOrigin(), conv, body);
+    }
+    return { result: 'admin', conversationId: conv.id };
+  }
+
+  return { result: 'unknown-sender', conversationId: conv.id };
+}
+
+const isProcessed = (key: string) => !!db.prepare('SELECT 1 FROM chat_email_imports WHERE message_key = ?').get(key);
+const markProcessed = (key: string, folder: string, result: string, conversationId?: string) =>
+  db
+    .prepare('INSERT OR IGNORE INTO chat_email_imports (message_key, conversation_id, folder, result, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run(key, conversationId || null, folder, result, new Date().toISOString());
+
+let running = false;
+
+export async function syncChatEmailsOnce(): Promise<number> {
+  if (running) return 0;
+  running = true;
+  emailSyncStatus.lastRunAt = new Date().toISOString();
+  let imported = 0;
+  const client = new ImapFlow({
+    host: IMAP_HOST,
+    port: IMAP_PORT,
+    secure: IMAP_PORT === 993,
+    auth: { user: IMAP_USER, pass: IMAP_PASS },
+    logger: false,
+    connectionTimeout: 20000,
+    greetingTimeout: 15000,
+    socketTimeout: 60000,
+  });
+  client.on('error', (err) => console.warn(`[ChatEmail] IMAP connection error: ${err?.message || err}`));
+
+  try {
+    await client.connect();
+    // INBOX receives support replies to notifications and visitor replies; Sent holds replies written directly to visitors
+    const folders = ['INBOX'];
+    const mailboxes = await client.list();
+    const sent =
+      mailboxes.find((m) => m.specialUse === '\\Sent') ||
+      mailboxes.find((m) => /^(INBOX[./])?Sent( Items| Messages)?$/i.test(m.path));
+    if (sent && sent.path.toUpperCase() !== 'INBOX') folders.push(sent.path);
+
+    for (const folder of folders) {
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const uids = await client.search({ since: new Date(Date.now() - LOOKBACK_MS), subject: 'NovaChat #' }, { uid: true });
+        if (!uids || !uids.length) continue;
+
+        // Find new messages from their envelopes first (cheap), then download only those
+        const pending: { uid: number; key: string }[] = [];
+        for await (const msg of client.fetch(uids, { uid: true, envelope: true }, { uid: true })) {
+          const key = msg.envelope?.messageId || `${folder}:${client.mailbox && (client.mailbox as any).uidValidity}:${msg.uid}`;
+          if (!isProcessed(key)) pending.push({ uid: msg.uid, key });
+        }
+
+        for (const { uid, key } of pending) {
+          const full = await client.fetchOne(String(uid), { source: true }, { uid: true });
+          if (!full || !full.source) continue;
+          const mail = await simpleParser(full.source);
+          const { result, conversationId } = await importChatEmail(mail);
+          markProcessed(key, folder, result, conversationId);
+          if (result === 'admin' || result === 'visitor') {
+            imported += 1;
+            console.log(`[ChatEmail] Added ${result} email reply to chat ${conversationId} (${folder}).`);
+          }
+        }
+      } finally {
+        lock.release();
+      }
+    }
+    await client.logout();
+    emailSyncStatus.lastOkAt = new Date().toISOString();
+    emailSyncStatus.lastError = null;
+    emailSyncStatus.imported += imported;
+  } catch (err: any) {
+    const message = err?.authenticationFailed
+      ? `IMAP login rejected for ${IMAP_USER} (check SMTP_PASS / IMAP_PASS).`
+      : `IMAP sync failed (${IMAP_HOST}:${IMAP_PORT}): ${err?.responseText || err?.message || err}`;
+    emailSyncStatus.lastError = message;
+    console.warn(`[ChatEmail] ${message}`);
+    try {
+      client.close();
+    } catch {
+      /* already closed */
+    }
+  } finally {
+    running = false;
+  }
+  return imported;
+}
+
+export function startChatEmailSync() {
+  emailSyncStatus.enabled = ENABLED;
+  if (!ENABLED) {
+    console.warn('[ChatEmail] Email reply sync is off (no SMTP_PASS / IMAP_PASS, or CHAT_EMAIL_SYNC=off). Reply from the admin panel instead.');
+    return;
+  }
+  console.log(`[ChatEmail] Email reply sync enabled: checking ${IMAP_USER} every ${SYNC_INTERVAL_MS / 1000}s.`);
+  setTimeout(() => syncChatEmailsOnce().catch(() => {}), 10_000);
+  setInterval(() => syncChatEmailsOnce().catch(() => {}), SYNC_INTERVAL_MS).unref?.();
+}

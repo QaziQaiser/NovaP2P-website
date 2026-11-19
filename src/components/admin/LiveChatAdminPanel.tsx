@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageCircle, Send, Loader2, Bot, Headphones, User, ArrowLeft, RefreshCw, CheckCircle, AlertTriangle, Mail } from 'lucide-react';
-import { chatApi, type AdminChatSummary, type AiStatus, type ChatMessage } from '../../services/chatApi';
+import { chatApi, type AdminChatSummary, type AiStatus, type ChatMessage, type EmailSyncStatus } from '../../services/chatApi';
 
 interface LiveChatAdminPanelProps {
   adminKey: string;
@@ -19,6 +19,7 @@ export const LiveChatAdminPanel: React.FC<LiveChatAdminPanelProps> = ({ adminKey
   const [conversations, setConversations] = useState<AdminChatSummary[]>([]);
   const [aiConfigured, setAiConfigured] = useState(true);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [emailSync, setEmailSync] = useState<EmailSyncStatus | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(initialChatId || null);
   const [selected, setSelected] = useState<AdminChatSummary | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -38,6 +39,7 @@ export const LiveChatAdminPanel: React.FC<LiveChatAdminPanelProps> = ({ adminKey
         setConversations(res.conversations || []);
         setAiConfigured(res.aiConfigured);
         setAiStatus(res.aiStatus || null);
+        setEmailSync(res.emailSync || null);
       } catch (err: any) {
         setError(err.message || 'Failed to load conversations');
       } finally {
@@ -156,6 +158,12 @@ export const LiveChatAdminPanel: React.FC<LiveChatAdminPanelProps> = ({ adminKey
           </span>
         </div>
       )}
+      {emailSync?.enabled && emailSync.lastError && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium flex items-start gap-2">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span className="break-words min-w-0">Email reply sync problem: {emailSync.lastError} Replies from the admin panel still work.</span>
+        </div>
+      )}
       {notice && (
         <div
           className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center gap-2 ${
@@ -177,6 +185,14 @@ export const LiveChatAdminPanel: React.FC<LiveChatAdminPanelProps> = ({ adminKey
         {/* Conversation list */}
         <div className={`bg-slate-900/60 border border-slate-800 rounded-3xl overflow-hidden flex flex-col lg:h-[640px] ${selectedId ? 'hidden lg:flex' : 'flex'}`}>
           <div className="p-4 border-b border-slate-800 space-y-3">
+            {emailSync && (
+              <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                <Mail size={12} className={emailSync.enabled && !emailSync.lastError ? 'text-emerald-400' : 'text-slate-600'} />
+                {emailSync.enabled
+                  ? `Email replies sync: ${emailSync.lastError ? 'error' : 'active'}${emailSync.lastOkAt ? ` · checked ${formatDateTime(emailSync.lastOkAt)}` : ''}`
+                  : 'Email replies sync: off (set SMTP_PASS on the server)'}
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <h3 className="text-white font-bold flex items-center gap-2">
                 <MessageCircle size={18} className="text-primary" /> Live Chats

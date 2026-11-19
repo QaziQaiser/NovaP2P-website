@@ -72,7 +72,14 @@ function textToHtml(text: string): string {
   return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#111827;white-space:pre-wrap;">${linked}</div>`;
 }
 
-export async function sendMail(params: { to: string; subject: string; text: string; html?: string; replyTo?: string }): Promise<EmailSendResult> {
+export async function sendMail(params: {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  replyTo?: string;
+  headers?: Record<string, string>;
+}): Promise<EmailSendResult> {
   const t = getTransporter();
   if (!t) {
     return { sent: false, error: 'Email service is not configured (SMTP_PASS missing).' };
@@ -85,6 +92,7 @@ export async function sendMail(params: { to: string; subject: string; text: stri
       text: params.text,
       html: params.html || textToHtml(params.text),
       replyTo: params.replyTo,
+      headers: params.headers,
     });
     console.log(`[Email] Sent "${params.subject}" to ${params.to}`);
     return { sent: true };

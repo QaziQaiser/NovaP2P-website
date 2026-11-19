@@ -521,7 +521,8 @@ async function sendMail(params) {
       subject: params.subject,
       text: params.text,
       html: params.html || textToHtml(params.text),
-      replyTo: params.replyTo
+      replyTo: params.replyTo,
+      headers: params.headers
     });
     console.log(`[Email] Sent "${params.subject}" to ${params.to}`);
     return { sent: true };
@@ -3306,6 +3307,7 @@ function cleanText(value, max) {
   if (typeof value !== "string") return "";
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, max);
 }
+var getConversationByCode = (code) => db.prepare("SELECT * FROM chat_conversations WHERE code = ?").get(code.toUpperCase());
 var getConversation = (id) => db.prepare("SELECT * FROM chat_conversations WHERE id = ?").get(id);
 function getMessages(conversationId, afterId = 0) {
   return db.prepare("SELECT id, conversation_id, sender, body, created_at FROM chat_messages WHERE conversation_id = ? AND id > ? ORDER BY id ASC").all(conversationId, afterId);
@@ -3368,6 +3370,18 @@ function emailShell(title, intro, bodyRows, button) {
     <tr><td style="padding:14px 22px;background:#f9fafb;color:#9ca3af;font-size:12px;">NovaP2P Live Chat &middot; novap2p.com</td></tr>
   </table></td></tr></table></body></html>`;
 }
+var emailSyncStatus = {
+  enabled: false,
+  lastRunAt: null,
+  lastOkAt: null,
+  lastError: null,
+  imported: 0
+};
+var CHAT_EMAIL_HEADER = "X-Nova-Chat";
+function defaultSiteOrigin() {
+  const configured = (process.env.APP_URL || "").trim().replace(/\/+$/, "");
+  return /^https?:\/\//.test(configured) ? configured : "https://novap2p.com";
+}
 function adminChatUrl(origin, conv) {
   return `${origin}/swap-admin?tab=livechat&chat=${encodeURIComponent(conv.id)}`;
 }
@@ -3376,7 +3390,7 @@ function sendAdminChatEmail(req, conv, kind) {
   const messages = getMessages(conv.id).slice(-30);
   const heading = kind === "new" ? "New Live Chat" : kind === "handoff" ? "Live Chat: Support Requested" : "Live Chat: New Visitor Message";
   const subject = `${heading} - ${conv.visitor_name} [NovaChat #${conv.code}]`;
-  const info = `<b>Name:</b> ${escapeHtml(conv.visitor_name)}<br><b>Email:</b> ${escapeHtml(conv.visitor_email)}<br><b>Chat ID:</b> #${escapeHtml(conv.code)}${conv.page_url ? `<br><b>Page:</b> ${escapeHtml(conv.page_url)}` : ""}${kind === "handoff" ? '<br><br><b style="color:#dc2626;">The visitor needs a support team member.</b>' : ""}`;
+  const info = `<b>Name:</b> ${escapeHtml(conv.visitor_name)}<br><b>Email:</b> ${escapeHtml(conv.visitor_email)}<br><b>Chat ID:</b> #${escapeHtml(conv.code)}${conv.page_url ? `<br><b>Page:</b> ${escapeHtml(conv.page_url)}` : ""}${kind === "handoff" ? '<br><br><b style="color:#dc2626;">The visitor needs a support team member.</b>' : ""}<br><br><span style="color:#2563eb;"><b>Reply to this email</b> to answer the visitor (write above the quoted text). Your reply is added to the live chat and emailed to the visitor automatically within about a minute.</span>`;
   const text = [
     `${heading.toUpperCase()} [NovaChat #${conv.code}]`,
     `Name: ${conv.visitor_name}`,
@@ -3384,7 +3398,8 @@ function sendAdminChatEmail(req, conv, kind) {
     conv.page_url ? `Page: ${conv.page_url}` : "",
     kind === "handoff" ? "The visitor needs a support team member." : "",
     "",
-    `Reply in the admin panel: ${adminChatUrl(origin, conv)}`,
+    `Reply to this email to answer ${conv.visitor_name} (write above the quoted text). Your reply is added to the live chat and emailed to the visitor automatically within about a minute.`,
+    `Or reply in the admin panel: ${adminChatUrl(origin, conv)}`,
     "",
     "Conversation:",
     transcriptText(messages)
@@ -3395,12 +3410,13 @@ function sendAdminChatEmail(req, conv, kind) {
     subject,
     text,
     html: emailShell(heading, info, transcriptHtml(messages), { href: adminChatUrl(origin, conv), label: "Reply in Admin Panel" }),
-    replyTo: conv.visitor_email
+    // Replies come back to the support mailbox; the email sync posts them to the chat and emails the visitor a clean copy
+    replyTo: ADMIN_EMAIL,
+    headers: { [CHAT_EMAIL_HEADER]: "admin-notification" }
   }).catch(() => {
   });
 }
-async function sendVisitorReplyEmail(req, conv, reply) {
-  const origin = getSiteOrigin2(req);
+async function sendVisitorReplyEmail(origin, conv, reply) {
   const chatUrl = `${origin}/?chat=open`;
   const intro = `Hi ${escapeHtml(conv.visitor_name)},<br><br>Our support team replied to your live chat on NovaP2P:`;
   const row = `<tr><td style="padding:6px 0;"><div style="background:#ecfdf5;border:1px solid #d1fae5;border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.6;color:#111827;white-space:pre-wrap;">${escapeHtml(reply)}</div></td></tr>
@@ -3418,7 +3434,8 @@ You can reply to this email or continue the conversation on our website: ${chatU
 
 NovaP2P Support`,
     html: emailShell("NovaP2P Support", intro, row, { href: chatUrl, label: "Open Live Chat" }),
-    replyTo: ADMIN_EMAIL
+    replyTo: ADMIN_EMAIL,
+    headers: { [CHAT_EMAIL_HEADER]: "support-reply" }
   });
   return result.sent;
 }
@@ -3577,7 +3594,7 @@ chatRouter.get("/admin/conversations", verifyAdmin, (_req, res) => {
                 (SELECT COUNT(*) FROM chat_messages m WHERE m.conversation_id = c.id) AS message_count
          FROM chat_conversations c ORDER BY c.updated_at DESC LIMIT 300`
     ).all();
-    res.json({ aiConfigured: AI_CONFIGURED, aiStatus, conversations: rows });
+    res.json({ aiConfigured: AI_CONFIGURED, aiStatus, emailSync: emailSyncStatus, conversations: rows });
   } catch (err) {
     sendServerError(res, err, "chat admin list");
   }
@@ -3601,7 +3618,7 @@ chatRouter.post("/admin/conversations/:id/reply", verifyAdmin, async (req, res) 
     if (!body) return res.status(400).json({ error: "Reply is empty." });
     db.prepare("UPDATE chat_conversations SET ai_enabled = 0, admin_unread = 0, status = 'open' WHERE id = ?").run(conv.id);
     const message = addMessage(conv.id, "admin", body);
-    const emailed = await sendVisitorReplyEmail(req, conv, body);
+    const emailed = await sendVisitorReplyEmail(getSiteOrigin2(req), conv, body);
     res.json({ message: publicMessage(message), visitorEmailed: emailed });
   } catch (err) {
     sendServerError(res, err, "chat admin reply");
@@ -3628,6 +3645,161 @@ chatRouter.post("/admin/conversations/:id/settings", verifyAdmin, (req, res) => 
   }
 });
 
+// server/chatEmailSync.ts
+import { ImapFlow } from "imapflow";
+import { simpleParser } from "mailparser";
+db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_email_imports (
+    message_key TEXT PRIMARY KEY,
+    conversation_id TEXT,
+    folder TEXT,
+    result TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+`);
+var IMAP_HOST = process.env.IMAP_HOST || "imap.hostinger.com";
+var IMAP_PORT = Number(process.env.IMAP_PORT || 993);
+var IMAP_USER = process.env.IMAP_USER || process.env.SMTP_USER || "support@novap2p.com";
+var IMAP_PASS = process.env.IMAP_PASS || process.env.SMTP_PASS || "";
+var SYNC_INTERVAL_MS = Math.max(20, Number(process.env.CHAT_EMAIL_SYNC_SECONDS) || 60) * 1e3;
+var LOOKBACK_MS = 14 * 24 * 60 * 60 * 1e3;
+var ENABLED = (process.env.CHAT_EMAIL_SYNC || "").toLowerCase() !== "off" && !!IMAP_PASS;
+var ADMIN_ADDRESSES = new Set(
+  [IMAP_USER, ADMIN_EMAIL, ...(process.env.CHAT_ADMIN_REPLY_EMAILS || "").split(",")].map((a) => a.trim().toLowerCase()).filter(Boolean)
+);
+var TOKEN_RE = /\[NovaChat #([A-F0-9]{6,12})\]/i;
+function extractReplyText(text) {
+  const lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    const next = (lines[i + 1] || "").trim();
+    if (t.startsWith(">")) break;
+    if (/^On\b.{0,300}\bwrote:$/i.test(t)) break;
+    if (/^On\b/i.test(t) && /wrote:$/i.test(next) && t.length + next.length < 400) break;
+    if (/^-{2,}\s*Original Message\s*-{2,}$/i.test(t)) break;
+    if (/^_{8,}$/.test(t)) break;
+    if (/^From:\s/i.test(t) && /^(Sent|Date|To|Subject):/i.test(next)) break;
+    if (lines[i] === "-- " || t === "--") break;
+    out.push(lines[i]);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 5e3);
+}
+function addresses(field) {
+  const list = Array.isArray(field) ? field : field ? [field] : [];
+  return list.flatMap((a) => a.value || []).map((v) => String(v.address || "").toLowerCase()).filter(Boolean);
+}
+function isAutoReply(mail) {
+  const auto = String(mail.headers.get("auto-submitted") || "").toLowerCase();
+  const precedence = String(mail.headers.get("precedence") || "").toLowerCase();
+  return !!auto && auto !== "no" || mail.headers.has("x-autoreply") || mail.headers.has("x-autorespond") || ["auto_reply", "bulk", "junk", "list"].includes(precedence) || /^(auto(matic)? reply|out of office|undeliverable|delivery status notification)/i.test(mail.subject || "");
+}
+async function importChatEmail(mail) {
+  if (mail.headers.has(CHAT_EMAIL_HEADER.toLowerCase())) return { result: "own-notification" };
+  if (isAutoReply(mail)) return { result: "auto-reply" };
+  const match = (mail.subject || "").match(TOKEN_RE);
+  const conv = match ? getConversationByCode(match[1]) : void 0;
+  if (!conv) return { result: "no-conversation" };
+  if (mail.date && mail.date.getTime() < new Date(conv.created_at).getTime() - 6e4) return { result: "older-than-chat", conversationId: conv.id };
+  const from = addresses(mail.from)[0] || "";
+  const body = extractReplyText(mail.text || "");
+  if (!body) return { result: "empty", conversationId: conv.id };
+  if (from && from === conv.visitor_email.toLowerCase()) {
+    addMessage(conv.id, "visitor", body);
+    db.prepare("UPDATE chat_conversations SET status = 'open' WHERE id = ?").run(conv.id);
+    return { result: "visitor", conversationId: conv.id };
+  }
+  if (from && ADMIN_ADDRESSES.has(from)) {
+    db.prepare("UPDATE chat_conversations SET ai_enabled = 0, admin_unread = 0, status = 'open' WHERE id = ?").run(conv.id);
+    addMessage(conv.id, "admin", body);
+    const recipients = [...addresses(mail.to), ...addresses(mail.cc)];
+    if (!recipients.includes(conv.visitor_email.toLowerCase())) {
+      await sendVisitorReplyEmail(defaultSiteOrigin(), conv, body);
+    }
+    return { result: "admin", conversationId: conv.id };
+  }
+  return { result: "unknown-sender", conversationId: conv.id };
+}
+var isProcessed = (key) => !!db.prepare("SELECT 1 FROM chat_email_imports WHERE message_key = ?").get(key);
+var markProcessed = (key, folder, result, conversationId) => db.prepare("INSERT OR IGNORE INTO chat_email_imports (message_key, conversation_id, folder, result, created_at) VALUES (?, ?, ?, ?, ?)").run(key, conversationId || null, folder, result, (/* @__PURE__ */ new Date()).toISOString());
+var running = false;
+async function syncChatEmailsOnce() {
+  if (running) return 0;
+  running = true;
+  emailSyncStatus.lastRunAt = (/* @__PURE__ */ new Date()).toISOString();
+  let imported = 0;
+  const client = new ImapFlow({
+    host: IMAP_HOST,
+    port: IMAP_PORT,
+    secure: IMAP_PORT === 993,
+    auth: { user: IMAP_USER, pass: IMAP_PASS },
+    logger: false,
+    connectionTimeout: 2e4,
+    greetingTimeout: 15e3,
+    socketTimeout: 6e4
+  });
+  client.on("error", (err) => console.warn(`[ChatEmail] IMAP connection error: ${err?.message || err}`));
+  try {
+    await client.connect();
+    const folders = ["INBOX"];
+    const mailboxes = await client.list();
+    const sent = mailboxes.find((m) => m.specialUse === "\\Sent") || mailboxes.find((m) => /^(INBOX[./])?Sent( Items| Messages)?$/i.test(m.path));
+    if (sent && sent.path.toUpperCase() !== "INBOX") folders.push(sent.path);
+    for (const folder of folders) {
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const uids = await client.search({ since: new Date(Date.now() - LOOKBACK_MS), subject: "NovaChat #" }, { uid: true });
+        if (!uids || !uids.length) continue;
+        const pending = [];
+        for await (const msg of client.fetch(uids, { uid: true, envelope: true }, { uid: true })) {
+          const key = msg.envelope?.messageId || `${folder}:${client.mailbox && client.mailbox.uidValidity}:${msg.uid}`;
+          if (!isProcessed(key)) pending.push({ uid: msg.uid, key });
+        }
+        for (const { uid, key } of pending) {
+          const full = await client.fetchOne(String(uid), { source: true }, { uid: true });
+          if (!full || !full.source) continue;
+          const mail = await simpleParser(full.source);
+          const { result, conversationId } = await importChatEmail(mail);
+          markProcessed(key, folder, result, conversationId);
+          if (result === "admin" || result === "visitor") {
+            imported += 1;
+            console.log(`[ChatEmail] Added ${result} email reply to chat ${conversationId} (${folder}).`);
+          }
+        }
+      } finally {
+        lock.release();
+      }
+    }
+    await client.logout();
+    emailSyncStatus.lastOkAt = (/* @__PURE__ */ new Date()).toISOString();
+    emailSyncStatus.lastError = null;
+    emailSyncStatus.imported += imported;
+  } catch (err) {
+    const message = err?.authenticationFailed ? `IMAP login rejected for ${IMAP_USER} (check SMTP_PASS / IMAP_PASS).` : `IMAP sync failed (${IMAP_HOST}:${IMAP_PORT}): ${err?.responseText || err?.message || err}`;
+    emailSyncStatus.lastError = message;
+    console.warn(`[ChatEmail] ${message}`);
+    try {
+      client.close();
+    } catch {
+    }
+  } finally {
+    running = false;
+  }
+  return imported;
+}
+function startChatEmailSync() {
+  emailSyncStatus.enabled = ENABLED;
+  if (!ENABLED) {
+    console.warn("[ChatEmail] Email reply sync is off (no SMTP_PASS / IMAP_PASS, or CHAT_EMAIL_SYNC=off). Reply from the admin panel instead.");
+    return;
+  }
+  console.log(`[ChatEmail] Email reply sync enabled: checking ${IMAP_USER} every ${SYNC_INTERVAL_MS / 1e3}s.`);
+  setTimeout(() => syncChatEmailsOnce().catch(() => {
+  }), 1e4);
+  setInterval(() => syncChatEmailsOnce().catch(() => {
+  }), SYNC_INTERVAL_MS).unref?.();
+}
+
 // server/index.ts
 var apiApp = express();
 apiApp.set("trust proxy", 1);
@@ -3642,6 +3814,7 @@ apiApp.use(
 apiApp.use("/swap", apiRouter);
 apiApp.use("/affiliate", affiliateRouter);
 apiApp.use("/chat", chatRouter);
+startChatEmailSync();
 var index_default = apiApp;
 export {
   apiApp,

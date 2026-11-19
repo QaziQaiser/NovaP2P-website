@@ -40,6 +40,14 @@ export interface AiStatus {
   lastError: string | null;
 }
 
+export interface EmailSyncStatus {
+  enabled: boolean;
+  lastRunAt: string | null;
+  lastOkAt: string | null;
+  lastError: string | null;
+  imported: number;
+}
+
 const API_BASE = '/api/chat';
 
 export class ChatApiError extends Error {
@@ -88,7 +96,7 @@ export const chatApi = {
 
   // Admin (x-admin-key)
   adminList: (adminKey: string) =>
-    requestJson<{ aiConfigured: boolean; aiStatus?: AiStatus; conversations: AdminChatSummary[] }>(`${API_BASE}/admin/conversations`, {
+    requestJson<{ aiConfigured: boolean; aiStatus?: AiStatus; emailSync?: EmailSyncStatus; conversations: AdminChatSummary[] }>(`${API_BASE}/admin/conversations`, {
       headers: { 'x-admin-key': adminKey },
     }),
 
