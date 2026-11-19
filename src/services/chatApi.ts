@@ -34,6 +34,12 @@ export interface AdminChatSummary {
   message_count: number;
 }
 
+export interface AiStatus {
+  lastSuccessAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+}
+
 const API_BASE = '/api/chat';
 
 export class ChatApiError extends Error {
@@ -82,7 +88,7 @@ export const chatApi = {
 
   // Admin (x-admin-key)
   adminList: (adminKey: string) =>
-    requestJson<{ aiConfigured: boolean; conversations: AdminChatSummary[] }>(`${API_BASE}/admin/conversations`, {
+    requestJson<{ aiConfigured: boolean; aiStatus?: AiStatus; conversations: AdminChatSummary[] }>(`${API_BASE}/admin/conversations`, {
       headers: { 'x-admin-key': adminKey },
     }),
 

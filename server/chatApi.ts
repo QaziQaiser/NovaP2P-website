@@ -83,7 +83,8 @@ const ADMIN_ALERT_THROTTLE_MS = 10 * 60 * 1000;
 // GEMINI (server-side only: the API key never reaches the browser)
 // ---------------------------------------------------------------------------
 
-const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim();
+// Tolerate a key pasted with surrounding quotes in the hosting panel
+const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']+|["']+$/g, '').trim();
 const AI_CONFIGURED = !!GEMINI_API_KEY && GEMINI_API_KEY !== 'MY_GEMINI_API_KEY';
 const GEMINI_API_BASE = (process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
 // Tried in order; the next model is used when one is unavailable or out of free quota.
@@ -95,6 +96,34 @@ if (!AI_CONFIGURED) {
   console.warn('[Chat] GEMINI_API_KEY is not set. Live chat works, but messages go to the support team without AI answers.');
 } else {
   console.log(`[Chat] AI assistant enabled (models: ${GEMINI_MODELS.join(', ')}).`);
+}
+
+// Last AI outcome, shown in the admin Live Chat tab so problems (bad key, quota, region) are visible without server logs
+const aiStatus: { lastSuccessAt: string | null; lastErrorAt: string | null; lastError: string | null } = {
+  lastSuccessAt: null,
+  lastErrorAt: null,
+  lastError: null,
+};
+
+function recordAiError(message: string) {
+  aiStatus.lastError = message.slice(0, 400);
+  aiStatus.lastErrorAt = new Date().toISOString();
+  console.warn(`[Chat] ${message}`);
+}
+
+function explainGeminiError(status: number, body: string): string {
+  let msg = body;
+  try {
+    msg = JSON.parse(body)?.error?.message || body;
+  } catch {
+    /* not JSON */
+  }
+  msg = String(msg).replace(/\s+/g, ' ').trim().slice(0, 250);
+  if (/api key not valid|API_KEY_INVALID|permission|unauthori[sz]ed/i.test(msg) || status === 401 || status === 403)
+    return `Gemini rejected the API key (${status}): ${msg} - check GEMINI_API_KEY on the server.`;
+  if (/location is not supported/i.test(msg)) return `Gemini is not available from the server's region (${status}): ${msg}`;
+  if (status === 429) return `Gemini free quota / rate limit reached (429): ${msg}`;
+  return `Gemini error (${status}): ${msg}`;
 }
 
 async function callGemini(history: { role: 'user' | 'model'; text: string }[]): Promise<string | null> {
@@ -118,13 +147,11 @@ async function callGemini(history: { role: 'user' | 'model'; text: string }[]): 
         }),
         signal: controller.signal,
       });
-      if (response.status === 401 || response.status === 403) {
-        console.error(`[Chat] Gemini rejected the API key (${response.status}). Check GEMINI_API_KEY.`);
-        return null;
-      }
       if (!response.ok) {
-        const detail = (await response.text().catch(() => '')).slice(0, 300);
-        console.warn(`[Chat] Gemini model ${model} failed (${response.status}): ${detail}`);
+        const message = explainGeminiError(response.status, await response.text().catch(() => ''));
+        recordAiError(`[${model}] ${message}`);
+        // A bad key or unsupported region fails the same way on every model
+        if (/rejected the API key|server's region/.test(message)) return null;
         continue;
       }
       const data: any = await response.json();
@@ -132,10 +159,13 @@ async function callGemini(history: { role: 'user' | 'model'; text: string }[]): 
         .map((p: any) => (p?.thought ? '' : p?.text || ''))
         .join('')
         .trim();
-      if (text) return text;
-      console.warn(`[Chat] Gemini model ${model} returned no text (finishReason: ${data?.candidates?.[0]?.finishReason || 'n/a'}).`);
+      if (text) {
+        aiStatus.lastSuccessAt = new Date().toISOString();
+        return text;
+      }
+      recordAiError(`[${model}] Gemini returned no text (finishReason: ${data?.candidates?.[0]?.finishReason || 'n/a'}).`);
     } catch (err: any) {
-      console.warn(`[Chat] Gemini model ${model} error: ${err?.name === 'AbortError' ? 'timeout' : err?.message || err}`);
+      recordAiError(`[${model}] Could not reach Gemini: ${err?.name === 'AbortError' ? 'timeout after 25s' : err?.message || err}`);
     } finally {
       clearTimeout(timer);
     }
@@ -431,7 +461,7 @@ chatRouter.post('/start', startLimiter, async (req, res) => {
       id,
       'ai',
       AI_CONFIGURED
-        ? `Hi ${firstName}! I'm Nova Assistant. Ask me anything about Nova Swap, the Genesis rewards, or the Partner and BDM programs. Type "talk to a human" any time to reach our support team.`
+        ? `Hi ${firstName}! I'm Sara from the NovaP2P Support Team. Ask me anything about Nova Swap, the Genesis rewards, or the Partner and BDM programs. How can I help you today?`
         : `Hi ${firstName}! Thanks for contacting NovaP2P. Send us your question and our support team will reply here and by email.`
     );
 
@@ -504,7 +534,7 @@ chatRouter.get('/admin/conversations', verifyAdmin, (_req, res) => {
          FROM chat_conversations c ORDER BY c.updated_at DESC LIMIT 300`
       )
       .all();
-    res.json({ aiConfigured: AI_CONFIGURED, conversations: rows });
+    res.json({ aiConfigured: AI_CONFIGURED, aiStatus, conversations: rows });
   } catch (err) {
     sendServerError(res, err, 'chat admin list');
   }

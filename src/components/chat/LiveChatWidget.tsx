@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { MessageCircle, X, Send, Loader2, Bot, Headphones, RotateCcw, ShieldCheck } from 'lucide-react';
+import { MessageCircle, X, Send, Loader2, Headphones, RotateCcw, ShieldCheck } from 'lucide-react';
 import { chatApi, ChatApiError, type ChatConversationState, type ChatMessage } from '../../services/chatApi';
 
 const SESSION_KEY = 'nova_live_chat_session';
@@ -28,6 +28,51 @@ function writeJson(key: string, value: unknown) {
   } catch {
     /* storage unavailable (private mode) */
   }
+}
+
+/** Illustrated avatar for "Sara", the support persona (inline SVG, no external image). */
+function SaraAvatar({ className = '' }: { className?: string }) {
+  const uid = useId().replace(/:/g, '');
+  return (
+    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+      <defs>
+        <linearGradient id={`sara-bg-${uid}`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#FCE7F3" />
+          <stop offset="1" stopColor="#DBE7FF" />
+        </linearGradient>
+        <clipPath id={`sara-clip-${uid}`}>
+          <circle cx="32" cy="32" r="32" />
+        </clipPath>
+      </defs>
+      <circle cx="32" cy="32" r="32" fill={`url(#sara-bg-${uid})`} />
+      <g clipPath={`url(#sara-clip-${uid})`}>
+        {/* hair (back) */}
+        <path d="M15 31c0-12 7.5-20 17-20s17 8 17 20v15c0 4-2.5 6-6 6H21c-3.5 0-6-2-6-6z" fill="#4A2F27" />
+        {/* shoulders */}
+        <path d="M8 66c1.5-11 10.5-16 24-16s22.5 5 24 16z" fill="#4F7DF3" />
+        <path d="M26 50l6 6 6-6" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinejoin="round" />
+        {/* neck */}
+        <rect x="27.5" y="40" width="9" height="11" rx="3.5" fill="#E9B394" />
+        {/* face */}
+        <ellipse cx="32" cy="30.5" rx="10.5" ry="12.5" fill="#F5CBAE" />
+        {/* fringe */}
+        <path d="M21 29.5c-.5-9.5 4.5-15.5 11-15.5 7 0 12 5.5 11.5 14-6-.5-10.5-3.5-12.5-8-2 4.5-5 8-10 9.5z" fill="#4A2F27" />
+        {/* eyes, brows, smile, cheeks */}
+        <circle cx="27.8" cy="31.5" r="1.3" fill="#3A2420" />
+        <circle cx="36.2" cy="31.5" r="1.3" fill="#3A2420" />
+        <path d="M25.8 28.3q2-1.2 4 0M34.2 28.3q2-1.2 4 0" fill="none" stroke="#4A2F27" strokeWidth="0.9" strokeLinecap="round" />
+        <path d="M28.8 36.2q3.2 2.6 6.4 0" fill="none" stroke="#C0605A" strokeWidth="1.4" strokeLinecap="round" />
+        <circle cx="25.5" cy="35" r="2" fill="#F39BA6" opacity="0.35" />
+        <circle cx="38.5" cy="35" r="2" fill="#F39BA6" opacity="0.35" />
+        {/* headset */}
+        <path d="M19.5 31a12.5 12.5 0 0 1 25 0" fill="none" stroke="#1F2937" strokeWidth="2" strokeLinecap="round" />
+        <rect x="17" y="28.5" width="4.5" height="8" rx="2.2" fill="#1F2937" />
+        <rect x="42.5" y="28.5" width="4.5" height="8" rx="2.2" fill="#1F2937" />
+        <path d="M19.5 36.5q1 5.5 8 5.5" fill="none" stroke="#1F2937" strokeWidth="1.6" strokeLinecap="round" />
+        <circle cx="28" cy="42" r="1.4" fill="#1F2937" />
+      </g>
+    </svg>
+  );
 }
 
 /** Renders message text with clickable links (full URLs and site paths like /become-partner). No HTML is injected. */
@@ -241,11 +286,9 @@ export const LiveChatWidget: React.FC = () => {
   };
 
   const showTyping = isSending && (conversation?.aiEnabled ?? false);
-  const subtitle = conversation?.agentJoined
-    ? 'Support team is in this chat'
-    : conversation?.humanRequested
-      ? 'Support team notified · AI assistant active'
-      : 'AI assistant · replies instantly';
+  // The "Talk to a real person" button sits under the first greeting message
+  const greetingId = messages.find((m) => m.sender === 'ai')?.id;
+  const canRequestHuman = !!session && !conversation?.humanRequested && !conversation?.agentJoined;
 
   return (
     <>
@@ -274,15 +317,13 @@ export const LiveChatWidget: React.FC = () => {
         >
           {/* Header */}
           <div className="bg-gradient-to-r from-primary to-primary-dark text-white px-4 py-3.5 flex items-center gap-3 shrink-0">
-            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-              {conversation?.agentJoined ? <Headphones size={20} /> : <Bot size={20} />}
+            <div className="relative shrink-0">
+              <SaraAvatar className="w-11 h-11 rounded-full ring-2 ring-white/70 shadow-md" />
+              <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-400 border-2 border-white" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-bold text-[15px] leading-tight">NovaP2P Support</p>
-              <p className="text-xs text-white/80 truncate flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-green-400 inline-block shrink-0" />
-                {session ? subtitle : 'We usually reply in a few minutes'}
-              </p>
+              <p className="font-bold text-[16px] leading-tight">Sara</p>
+              <p className="text-xs text-white/85 truncate">Support Team · Online</p>
             </div>
             {session && (
               <button
@@ -311,7 +352,7 @@ export const LiveChatWidget: React.FC = () => {
               <div>
                 <h3 className="text-lg font-bold text-secondary">Hi there 👋</h3>
                 <p className="text-sm text-gray-600 mt-1">
-                  Tell us who you are and ask your question. Our AI assistant answers instantly, and our support team can step in any time.
+                  I'm Sara from the NovaP2P Support Team. Tell me who you are and ask your question, I usually reply in seconds.
                 </p>
               </div>
               <label className="flex flex-col gap-1.5">
@@ -394,15 +435,12 @@ export const LiveChatWidget: React.FC = () => {
                     </div>
                   ) : (
                     <div key={m.id} className={`flex ${m.sender === 'visitor' ? 'justify-end' : 'justify-start'} gap-2`}>
-                      {m.sender !== 'visitor' && (
-                        <div
-                          className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center mt-0.5 ${
-                            m.sender === 'admin' ? 'bg-accent/15 text-accent' : 'bg-primary/10 text-primary'
-                          }`}
-                        >
-                          {m.sender === 'admin' ? <Headphones size={15} /> : <Bot size={15} />}
+                      {m.sender === 'admin' && (
+                        <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center mt-0.5 bg-accent/15 text-accent">
+                          <Headphones size={15} />
                         </div>
                       )}
+                      {m.sender === 'ai' && <SaraAvatar className="w-7 h-7 rounded-full shrink-0 mt-0.5" />}
                       <div className={`max-w-[80%] flex flex-col ${m.sender === 'visitor' ? 'items-end' : 'items-start'}`}>
                         {m.sender === 'admin' && <span className="text-[11px] font-semibold text-accent mb-0.5">Support Team</span>}
                         <div
@@ -415,6 +453,15 @@ export const LiveChatWidget: React.FC = () => {
                           }`}
                         >
                           <MessageText text={m.body} onNavigate={() => setIsOpen(false)} />
+                          {m.id === greetingId && canRequestHuman && (
+                            <button
+                              type="button"
+                              onClick={handleHandoff}
+                              className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-primary-dark px-4 py-2.5 text-[13px] font-semibold text-white shadow-md shadow-primary/25 hover:shadow-lg hover:brightness-105 transition-all cursor-pointer"
+                            >
+                              <Headphones size={15} /> Talk to a real person
+                            </button>
+                          )}
                         </div>
                         <span className="text-[10px] text-gray-400 mt-1">{formatTime(m.createdAt)}</span>
                       </div>
@@ -423,9 +470,7 @@ export const LiveChatWidget: React.FC = () => {
                 )}
                 {showTyping && (
                   <div className="flex justify-start gap-2">
-                    <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center bg-primary/10 text-primary">
-                      <Bot size={15} />
-                    </div>
+                    <SaraAvatar className="w-7 h-7 rounded-full shrink-0" />
                     <div className="px-4 py-3 rounded-2xl rounded-bl-md bg-white border border-gray-200 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
                       <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
@@ -437,15 +482,6 @@ export const LiveChatWidget: React.FC = () => {
 
               {/* Composer */}
               <div className="border-t border-gray-200 bg-white px-3 pt-2 pb-3 shrink-0" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-                {!conversation?.humanRequested && !conversation?.agentJoined && (
-                  <button
-                    type="button"
-                    onClick={handleHandoff}
-                    className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/15 rounded-full px-3 py-1.5 transition-colors cursor-pointer"
-                  >
-                    <Headphones size={13} /> Talk to a human
-                  </button>
-                )}
                 {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
                 <form onSubmit={handleSend} className="flex items-end gap-2">
                   <textarea

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageCircle, Send, Loader2, Bot, Headphones, User, ArrowLeft, RefreshCw, CheckCircle, AlertTriangle, Mail } from 'lucide-react';
-import { chatApi, type AdminChatSummary, type ChatMessage } from '../../services/chatApi';
+import { chatApi, type AdminChatSummary, type AiStatus, type ChatMessage } from '../../services/chatApi';
 
 interface LiveChatAdminPanelProps {
   adminKey: string;
@@ -18,6 +18,7 @@ const formatDateTime = (iso: string) => {
 export const LiveChatAdminPanel: React.FC<LiveChatAdminPanelProps> = ({ adminKey, initialChatId }) => {
   const [conversations, setConversations] = useState<AdminChatSummary[]>([]);
   const [aiConfigured, setAiConfigured] = useState(true);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(initialChatId || null);
   const [selected, setSelected] = useState<AdminChatSummary | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -36,6 +37,7 @@ export const LiveChatAdminPanel: React.FC<LiveChatAdminPanelProps> = ({ adminKey
         const res = await chatApi.adminList(adminKey);
         setConversations(res.conversations || []);
         setAiConfigured(res.aiConfigured);
+        setAiStatus(res.aiStatus || null);
       } catch (err: any) {
         setError(err.message || 'Failed to load conversations');
       } finally {
@@ -142,6 +144,16 @@ export const LiveChatAdminPanel: React.FC<LiveChatAdminPanelProps> = ({ adminKey
         <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium flex items-center gap-2">
           <AlertTriangle size={16} className="shrink-0" />
           <span>AI answers are off: GEMINI_API_KEY is not set on the server. Visitors can still chat and every message reaches you here.</span>
+        </div>
+      )}
+      {aiConfigured && aiStatus?.lastError && (!aiStatus.lastSuccessAt || (aiStatus.lastErrorAt || '') > aiStatus.lastSuccessAt) && (
+        <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-medium flex items-start gap-2">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span className="break-words min-w-0">
+            The AI could not answer the last message ({aiStatus.lastErrorAt ? formatDateTime(aiStatus.lastErrorAt) : ''}), so the chat was handed to the support team.
+            <br />
+            <span className="text-red-200/90">{aiStatus.lastError}</span>
+          </span>
         </div>
       )}
       {notice && (
