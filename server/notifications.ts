@@ -6,7 +6,7 @@ import { db } from './db.ts';
 // SMTP MAILER (Hostinger mailbox: support@novap2p.com)
 // ---------------------------------------------------------------------------
 
-const ADMIN_EMAIL = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL || 'support@novap2p.com';
+export const ADMIN_EMAIL = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL || 'support@novap2p.com';
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.hostinger.com';
 const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
 const SMTP_USER = process.env.SMTP_USER || 'support@novap2p.com';
@@ -56,7 +56,7 @@ export interface EmailSendResult {
   error?: string;
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -72,7 +72,7 @@ function textToHtml(text: string): string {
   return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#111827;white-space:pre-wrap;">${linked}</div>`;
 }
 
-async function sendMail(params: { to: string; subject: string; text: string; html?: string; replyTo?: string }): Promise<EmailSendResult> {
+export async function sendMail(params: { to: string; subject: string; text: string; html?: string; replyTo?: string }): Promise<EmailSendResult> {
   const t = getTransporter();
   if (!t) {
     return { sent: false, error: 'Email service is not configured (SMTP_PASS missing).' };

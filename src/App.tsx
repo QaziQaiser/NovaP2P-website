@@ -31,6 +31,7 @@ const SwapFeesPage = lazy(() => import('./pages/info/SwapInfoPages').then((m) =>
 const PartnerOverviewPage = lazy(() => import('./pages/info/PartnerInfoPages').then((m) => ({ default: m.PartnerOverviewPage })));
 const CommissionStructurePage = lazy(() => import('./pages/info/PartnerInfoPages').then((m) => ({ default: m.CommissionStructurePage })));
 const PartnerFaqPage = lazy(() => import('./pages/info/PartnerInfoPages').then((m) => ({ default: m.PartnerFaqPage })));
+const LiveChatWidget = lazy(() => import('./components/chat/LiveChatWidget').then((m) => ({ default: m.LiveChatWidget })));
 
 // Empty space with the page's own height while a lazily loaded page downloads (prevents footer jump)
 const RouteLoadingFallback = () => <div className="min-h-screen" aria-busy="true" />;
@@ -3096,6 +3097,11 @@ const AppShell = () => {
       </Routes>
       </Suspense>
       {!isStandaloneDarkPortal && <Footer />}
+      {!isStandaloneDarkPortal && (
+        <Suspense fallback={null}>
+          <LiveChatWidget />
+        </Suspense>
+      )}
     </div>
   );
 };

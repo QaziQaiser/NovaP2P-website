@@ -3,6 +3,7 @@ import 'dotenv/config';
 import express from 'express';
 import { apiRouter } from './api.ts';
 import { affiliateRouter } from './affiliateApi.ts';
+import { chatRouter } from './chatApi.ts';
 import { rateLimit } from './auth.ts';
 
 export const apiApp = express();
@@ -20,5 +21,6 @@ apiApp.use(['/swap/admin/login', '/affiliate/apply', '/affiliate/review-action',
 
 apiApp.use('/swap', apiRouter);
 apiApp.use('/affiliate', affiliateRouter);
+apiApp.use('/chat', chatRouter);
 
 export default apiApp;
