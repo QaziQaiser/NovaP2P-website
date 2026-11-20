@@ -130,6 +130,7 @@ export const PartnerDashboardPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#060c14] text-slate-100 flex flex-col font-sans">
+      <h1 className="sr-only">Partner Dashboard</h1>
       {/* Top Dark Header Navigation */}
       <header className="sticky top-0 z-40 bg-[#08101b]/95 backdrop-blur-md border-b border-slate-800/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

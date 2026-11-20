@@ -188,7 +188,7 @@ const Hero = () => {
             transition={{ duration: 0.5, delay: 0.1 }}
             className="text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight text-gray-900 mb-6"
           >
-            Universal <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">Cross-Chain Swap</span> (DEX + Bridge)
+<span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">Cross-Chain Crypto Swap</span> Across 70+ Blockchains
           </motion.h1>
           
           <motion.p 
@@ -1489,7 +1489,7 @@ const Contact = () => {
             transition={{ delay: 0.1 }}
             className="text-4xl font-bold text-gray-900 mb-4"
           >
-            Get in Touch
+            Contact NovaP2P
           </motion.h1>
           <motion.p 
             initial={{ opacity: 0, y: 15 }}
@@ -1582,17 +1582,17 @@ const AboutUs = () => {
 
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="text-center max-w-3xl mx-auto">
-            <motion.div
+            <motion.h1
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-sm mb-6 shadow-xs"
             >
               <Sparkles size={16} />
-              <span>About Nova P2P</span>
-            </motion.div>
+              <span>About NovaP2P</span>
+            </motion.h1>
 
-            <motion.h1
+            <motion.h2
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
@@ -1603,7 +1603,7 @@ const AboutUs = () => {
                 Accountable P2P
               </span>{' '}
               Platform
-            </motion.h1>
+            </motion.h2>
 
             <motion.p
               initial={{ opacity: 0, y: 20 }}
@@ -2203,10 +2203,16 @@ const FeeStructure = () => {
     <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
-          <h1 className="text-4xl font-bold text-gray-900 mb-8">Fee Structure</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-8">NovaP2P Fee Structure</h1>
           <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
             <p>At NovaP2P, we believe in transparent and competitive pricing. Our fee structure is designed to be simple and fair for all users.</p>
-            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Trading Fees</h2>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Nova Swap Fees</h2>
+            <p>Nova Swap, our cross-chain swap, charges a flat 0.5% fee that is shown in the route quote before you confirm any swap. Standard network gas and bridge costs are shown in the preview before you sign, with no hidden platform charges. Every user receives 5% cashback on eligible Nova Swap fees.</p>
+            <p>
+              <Link to="/swap-fees" className="text-primary font-medium hover:underline">See the full Nova Swap fee breakdown</Link>
+            </p>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">P2P Trading Fees</h2>
+            <p>The fees below apply to P2P USDT trading on NovaP2P.</p>
             <div className="overflow-x-auto mt-4">
               <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
                 <thead className="bg-gray-50">
@@ -2347,7 +2353,7 @@ const HelpCenter = () => {
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-xs mb-4">
               <HelpCircle size={14} /> Help Center & Support
             </div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">Nova P2P Help Center</h1>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">NovaP2P Help Center</h1>
             <p className="text-lg text-gray-600 leading-relaxed">
               Welcome to the Nova P2P Help Center. Find answers to common questions about your account, identity verification, P2P trading, payments, merchant services and account security.
             </p>
@@ -2582,7 +2588,7 @@ const ContactSupport = () => {
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-xs mb-4">
               <LifeBuoy size={14} /> Official Support
             </div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">Contact Nova P2P Support</h1>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">Contact NovaP2P Support</h1>
             <p className="text-lg text-gray-600 leading-relaxed">
               Need assistance? Our support team is here to help with questions about your account, verification, trading, payments and other platform-related issues.
             </p>
@@ -2717,7 +2723,7 @@ const DisputeSupport = () => {
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-xs mb-4">
               <Scale size={14} /> Fair Mediation & Escrow Protection
             </div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Dispute Support</h1>
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">P2P Dispute Support</h1>
             <h2 className="text-xl font-semibold text-gray-600">Nova P2P Dispute Support</h2>
           </div>
 
@@ -3020,6 +3026,38 @@ const Home = () => {
   );
 };
 
+const NotFound = () => {
+  useEffect(() => {
+    document.title = "Page Not Found | NovaP2P";
+    window.scrollTo(0, 0);
+  }, []);
+
+  return (
+    <div className="pt-32 pb-24 bg-gray-50 min-h-screen">
+      <div className="max-w-xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-blue-50 text-primary flex items-center justify-center mx-auto mb-6">
+            <HelpCircle size={28} />
+          </div>
+          <p className="text-sm font-semibold text-primary mb-2">404</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-3">Page not found</h1>
+          <p className="text-gray-600 mb-8">
+            The page you are looking for does not exist or has been moved.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link to="/" className="w-full sm:w-auto px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2">
+              Go to Homepage <ArrowRight size={16} />
+            </Link>
+            <Link to="/help-center" className="w-full sm:w-auto px-6 py-3 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-xl font-semibold text-sm transition-colors">
+              Help Center
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AnalyticsTracker = () => {
   const location = useLocation();
 
@@ -3093,7 +3131,7 @@ const AppShell = () => {
         <Route path="/aml-kyc-policy" element={<AmlKycPolicy />} />
         <Route path="/fee-structure" element={<FeeStructure />} />
         <Route path="/swap-admin" element={<SwapAdminDashboard />} />
-        <Route path="*" element={<Home />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
       </Suspense>
       {!isStandaloneDarkPortal && <Footer />}

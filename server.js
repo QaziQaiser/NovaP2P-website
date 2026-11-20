@@ -5,7 +5,13 @@ import fs from 'fs';
 import http from 'http';
 import https from 'https';
 import apiApp from './server/dist-server.js';
-import { renderSeoHead, SITE_ORIGIN } from './server/seo-pages.js';
+import {
+  renderSeoHead,
+  renderNotFoundHead,
+  isKnownPath,
+  GONE_PATH_RE,
+  SITE_ORIGIN,
+} from './server/seo-pages.js';
 
 // Process crash guards to prevent container restart
 process.on('uncaughtException', (err) => {
@@ -141,6 +147,35 @@ app.get(['/faq', '/faq/'], (req, res) => {
   res.redirect(301, '/help-center' + qs);
 });
 
+// SEO: legacy spam URLs (/sell/*, /mall/*, /news/*, /com/*, /user/*) -> 410 Gone.
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  if (!GONE_PATH_RE.test(req.path)) return next();
+  res.status(410).type('html').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Page Removed | NovaP2P</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f9fafb; color: #111827; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 16px; box-sizing: border-box; }
+    .card { text-align: center; max-width: 440px; padding: 40px 32px; border-radius: 24px; background: #fff; border: 1px solid #f3f4f6; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+    h1 { font-size: 24px; margin: 0 0 8px; }
+    p { color: #4b5563; font-size: 15px; line-height: 1.6; margin: 0 0 24px; }
+    a { display: inline-block; background: #4F7DF3; color: #fff; text-decoration: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>This page no longer exists</h1>
+    <p>The page you are looking for has been permanently removed.</p>
+    <a href="/">Go to NovaP2P</a>
+  </div>
+</body>
+</html>`);
+});
+
 // 3. Static frontend build
 const distDir = path.join(__dirname, 'dist');
 if (fs.existsSync(distDir)) {
@@ -170,9 +205,14 @@ app.get('*', (req, res) => {
     try {
       const html = readIndexHtml(indexPath);
       if (SEO_BLOCK_RE.test(html)) {
-        const head = renderSeoHead(req.path, distDir);
+        // Unknown URLs get a real 404 status; the app shows its "Page not found" page.
+        const known = isKnownPath(req.path);
+        const head = known ? renderSeoHead(req.path, distDir) : renderNotFoundHead();
         res.set('Cache-Control', 'no-cache');
-        return res.type('html').send(html.replace(SEO_BLOCK_RE, () => head.trimStart()));
+        return res
+          .status(known ? 200 : 404)
+          .type('html')
+          .send(html.replace(SEO_BLOCK_RE, () => head.trimStart()));
       }
     } catch (err) {
       console.error('[Nova Server] SEO head injection failed, serving plain index.html:', err);

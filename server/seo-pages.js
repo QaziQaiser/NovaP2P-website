@@ -14,11 +14,12 @@ export const SITE_ORIGIN = 'https://novap2p.com';
 const SITE_NAME = 'NovaP2P';
 const TWITTER_SITE = '@novap2pofficial';
 
-// Planned 1200x630 share images. Until a file is added to /public (and so to
-// /dist), pages fall back to the current icon so share previews never break.
-const OG_HOME = 'og-home-1200x630.png';
-const OG_SWAP = 'og-nova-swap-1200x630.png';
-const OG_DEFAULT = 'og-default-1200x630.png';
+// 1200x630 share images (JPEG, kept under ~300 KB so WhatsApp shows them).
+// Replace a file in /public to change that group's preview; if a file is
+// missing, pages fall back to the icon so share previews never break.
+const OG_HOME = 'og-home-1200x630.jpg';
+const OG_SWAP = 'og-nova-swap-1200x630.jpg';
+const OG_DEFAULT = 'og-default-1200x630.jpg';
 const OG_FALLBACK = 'icon-192.png';
 
 const WEBSITE_ID = `${SITE_ORIGIN}/#website`;
@@ -428,10 +429,23 @@ export function getPage(reqPath) {
   return page ? { path: key, page } : null;
 }
 
-/**
- * Head tags for a request path. Unknown paths get the homepage tags, matching
- * what the app already shows for them.
- */
+/** True when the path is a real page of the app (or an alias of one). */
+export function isKnownPath(reqPath) {
+  return getPage(reqPath) !== null;
+}
+
+// Old spam URLs from the domain's previous owner: answer 410 Gone so Google drops them.
+export const GONE_PATH_RE = /^\/(sell|mall|news|com|user)(\/|$)/i;
+
+/** Head tags for the 404 page: no canonical, kept out of the index. */
+export function renderNotFoundHead() {
+  return [
+    `<title>Page Not Found | ${SITE_NAME}</title>`,
+    `<meta name="robots" content="noindex, follow" />`,
+  ].map((l) => `    ${l}`).join('\n');
+}
+
+/** Head tags for a known request path (unknown paths fall back to the homepage tags). */
 export function renderSeoHead(reqPath, distDir) {
   const found = getPage(reqPath) || { path: '/', page: PAGES['/'] };
   const { path: pagePath, page } = found;
