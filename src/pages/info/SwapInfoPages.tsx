@@ -17,7 +17,7 @@ import {
 
 export const HowSwapWorksPage: React.FC = () => {
   useEffect(() => {
-    document.title = 'How Swap Works — Nova Swap | Universal Cross-Chain DEX';
+    document.title = 'How Nova Swap Works – Cross-Chain Swaps Step by Step';
     window.scrollTo(0, 0);
   }, []);
 
@@ -126,7 +126,7 @@ export const HowSwapWorksPage: React.FC = () => {
 
 export const SupportedChainsPage: React.FC = () => {
   useEffect(() => {
-    document.title = 'Supported Chains — Nova Swap | 70+ Blockchains';
+    document.title = 'Supported Chains – 70+ Blockchains on Nova Swap';
     window.scrollTo(0, 0);
   }, []);
 
@@ -196,7 +196,7 @@ export const SupportedChainsPage: React.FC = () => {
 
 export const SwapFeesPage: React.FC = () => {
   useEffect(() => {
-    document.title = 'Swap Fees — Nova Swap | Transparent Pricing & 5% Cashback';
+    document.title = 'Nova Swap Fees – 0.5% Flat Fee + 5% Cashback | NovaP2P';
     window.scrollTo(0, 0);
   }, []);
 

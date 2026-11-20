@@ -38,7 +38,7 @@ export const PartnerDashboardPage: React.FC = () => {
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
 
   useEffect(() => {
-    document.title = 'Partner Dashboard — Nova Swap Affiliate Portal | NovaP2P';
+    document.title = 'Partner Dashboard | NovaP2P';
     window.scrollTo(0, 0);
   }, []);
 

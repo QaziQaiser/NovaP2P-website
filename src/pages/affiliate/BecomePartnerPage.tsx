@@ -54,7 +54,7 @@ export const BecomePartnerPage: React.FC = () => {
   }, [account, navigate]);
 
   useEffect(() => {
-    document.title = 'Become a Partner — Nova Swap Affiliate Program | NovaP2P';
+    document.title = 'Become a Nova Swap Partner – Earn Swap Commissions';
     window.scrollTo(0, 0);
   }, []);
 

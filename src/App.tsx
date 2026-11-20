@@ -1139,7 +1139,7 @@ const Merchant = () => {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   useEffect(() => {
-    document.title = "Verified Merchant Program — NovaP2P | 0% Maker Fees";
+    document.title = "Become a P2P Merchant in Nigeria – 0% Maker Fees | NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1355,7 +1355,7 @@ const Merchant = () => {
 
 const PrivacyPolicy = () => {
   useEffect(() => {
-    document.title = "Privacy Policy — NovaP2P | User Data Protection";
+    document.title = "Privacy Policy | NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1394,7 +1394,7 @@ const PrivacyPolicy = () => {
 
 const TermsOfService = () => {
   useEffect(() => {
-    document.title = "Terms of Service — NovaP2P | User Agreement";
+    document.title = "Terms of Service | NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1429,7 +1429,7 @@ const TermsOfService = () => {
 
 const CookiePolicy = () => {
   useEffect(() => {
-    document.title = "Cookie Policy — NovaP2P | Transparency & Privacy";
+    document.title = "Cookie Policy | NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1466,7 +1466,7 @@ const CookiePolicy = () => {
 
 const Contact = () => {
   useEffect(() => {
-    document.title = "Contact Us — NovaP2P | 24/7 Dedicated Support";
+    document.title = "Contact NovaP2P – Support, Partners & Business Enquiries";
     window.scrollTo(0, 0);
   }, []);
 
@@ -1513,7 +1513,7 @@ const Contact = () => {
 
 const AboutUs = () => {
   useEffect(() => {
-    document.title = "About Us — NovaP2P | Trusted Peer-to-Peer Trading Platform";
+    document.title = "About NovaP2P – The Team Behind Nova Swap & P2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2156,7 +2156,7 @@ const AboutUs = () => {
 
 const AmlKycPolicy = () => {
   useEffect(() => {
-    document.title = "AML & KYC Policy — NovaP2P | Compliance & Verification";
+    document.title = "AML & KYC Policy | NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2195,7 +2195,7 @@ const AmlKycPolicy = () => {
 
 const FeeStructure = () => {
   useEffect(() => {
-    document.title = "Fee Structure — NovaP2P | Transparent 0% Maker Fees";
+    document.title = "NovaP2P Fees – P2P Trading & Nova Swap Fee Structure";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2246,7 +2246,7 @@ const FeeStructure = () => {
 
 const RiskDisclosure = () => {
   useEffect(() => {
-    document.title = "Risk Disclosure — NovaP2P | Trading Risks & Safeguards";
+    document.title = "Crypto Risk Disclosure – Swaps & P2P Trading | NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2335,7 +2335,7 @@ const RiskDisclosure = () => {
 
 const HelpCenter = () => {
   useEffect(() => {
-    document.title = "Help Center & FAQs — NovaP2P | User Support Guide";
+    document.title = "Help Center & FAQs – Nova Swap and P2P Support | NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2570,7 +2570,7 @@ const HelpCenter = () => {
 
 const ContactSupport = () => {
   useEffect(() => {
-    document.title = "Contact Support — NovaP2P | 24/7 Dedicated Assistance";
+    document.title = "Contact Support – Help with Swaps & P2P Trades | NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2705,7 +2705,7 @@ const ContactSupport = () => {
 
 const DisputeSupport = () => {
   useEffect(() => {
-    document.title = "Dispute Support — NovaP2P | Fair Trade Resolution";
+    document.title = "P2P Dispute Support – How to Open a Dispute | NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -2822,7 +2822,7 @@ const DisputeSupport = () => {
 
 const ReportIssue = () => {
   useEffect(() => {
-    document.title = "Report an Issue — NovaP2P | Security & Bug Reporting";
+    document.title = "Report an Issue – Bugs, Scams & Security | NovaP2P";
     window.scrollTo(0, 0);
   }, []);
 
@@ -3001,7 +3001,7 @@ const PromotionalPopup = () => {
 
 const Home = () => {
   useEffect(() => {
-    document.title = "NovaP2P — Trusted Peer-to-Peer Crypto Trading & Escrow Platform";
+    document.title = "NovaP2P – Cross-Chain Crypto Swap Across 70+ Blockchains";
   }, []);
 
   return (

@@ -5,6 +5,7 @@ import fs from 'fs';
 import http from 'http';
 import https from 'https';
 import apiApp from './server/dist-server.js';
+import { renderSeoHead, SITE_ORIGIN } from './server/seo-pages.js';
 
 // Process crash guards to prevent container restart
 process.on('uncaughtException', (err) => {
@@ -20,6 +21,15 @@ const __dirname = path.dirname(__filename);
 const app = express();
 // Behind Hostinger's reverse proxy: use the real client IP for logging and rate limiting
 app.set('trust proxy', 1);
+
+// SEO: one canonical host. www.novap2p.com/* -> https://novap2p.com/* (same path).
+// http -> https is already done by Hostinger in front of this app.
+app.use((req, res, next) => {
+  if (req.hostname === 'www.novap2p.com') {
+    return res.redirect(301, SITE_ORIGIN + req.originalUrl);
+  }
+  next();
+});
 
 // 0. Blog reverse proxy: novap2p.com/blog/* -> WordPress on the blog subdomain.
 //    Only requests under /blog are touched; every other route continues below
@@ -125,19 +135,48 @@ if (apiApp) {
   console.warn('[Nova Server] Running without /api backend router.');
 }
 
+// SEO: /faq was an exact duplicate of /help-center.
+app.get(['/faq', '/faq/'], (req, res) => {
+  const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+  res.redirect(301, '/help-center' + qs);
+});
+
 // 3. Static frontend build
 const distDir = path.join(__dirname, 'dist');
 if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir));
+  // index: false so "/" also goes through the page handler below and gets its SEO tags
+  app.use(express.static(distDir, { index: false }));
   console.log('[Nova Server] Serving static files from dist directory.');
 } else {
   console.warn('[Nova Server] Warning: dist directory not found at startup.');
 }
 
-// 4. Fallback to index.html for client-side routing
+// 4. Fallback to index.html for client-side routing.
+//    Each page gets its own title / description / canonical / robots / OG / JSON-LD
+//    in the HTML itself, so search engines see separate pages without running JS.
+const SEO_BLOCK_RE = /<!-- SEO:START[\s\S]*?<!-- SEO:END -->/;
+let indexHtmlCache = null;
+function readIndexHtml(indexPath) {
+  const mtime = fs.statSync(indexPath).mtimeMs;
+  if (!indexHtmlCache || indexHtmlCache.mtime !== mtime) {
+    indexHtmlCache = { mtime, html: fs.readFileSync(indexPath, 'utf8') };
+  }
+  return indexHtmlCache.html;
+}
+
 app.get('*', (req, res) => {
   const indexPath = path.join(distDir, 'index.html');
   if (fs.existsSync(indexPath)) {
+    try {
+      const html = readIndexHtml(indexPath);
+      if (SEO_BLOCK_RE.test(html)) {
+        const head = renderSeoHead(req.path, distDir);
+        res.set('Cache-Control', 'no-cache');
+        return res.type('html').send(html.replace(SEO_BLOCK_RE, () => head.trimStart()));
+      }
+    } catch (err) {
+      console.error('[Nova Server] SEO head injection failed, serving plain index.html:', err);
+    }
     res.sendFile(indexPath);
   } else {
     res.status(200).send(`

@@ -3,7 +3,7 @@ import { NovaSwapSection } from '../components/swap/NovaSwapSection';
 
 export const SwapPage: React.FC = () => {
   useEffect(() => {
-    document.title = 'Nova Swap — Cross-Chain DEX | NovaP2P';
+    document.title = 'Nova Swap – Swap Crypto Across 70+ Chains | NovaP2P';
     window.scrollTo(0, 0);
   }, []);
 

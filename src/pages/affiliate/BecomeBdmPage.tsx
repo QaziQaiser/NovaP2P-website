@@ -38,7 +38,7 @@ export const BecomeBdmPage: React.FC = () => {
   }, [account, navigate]);
 
   useEffect(() => {
-    document.title = 'Become a BDM — Nova Swap Business Development Manager | NovaP2P';
+    document.title = 'Become a Nova Swap BDM – Business Development Program';
     window.scrollTo(0, 0);
   }, []);
 

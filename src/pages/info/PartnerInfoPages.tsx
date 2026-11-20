@@ -16,7 +16,7 @@ import {
 
 export const PartnerOverviewPage: React.FC = () => {
   useEffect(() => {
-    document.title = 'Partner Program Overview — Nova Swap Affiliate Program | NovaP2P';
+    document.title = 'Nova Swap Partner & BDM Program Overview | NovaP2P';
     window.scrollTo(0, 0);
   }, []);
 
@@ -113,7 +113,7 @@ export const PartnerOverviewPage: React.FC = () => {
 
 export const CommissionStructurePage: React.FC = () => {
   useEffect(() => {
-    document.title = 'Commission Structure & Cashback Rules — Nova Swap Partners';
+    document.title = 'Nova Swap Commission Structure & Cashback Rules';
     window.scrollTo(0, 0);
   }, []);
 
@@ -230,7 +230,7 @@ export const PartnerFaqPage: React.FC = () => {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   useEffect(() => {
-    document.title = 'Partner FAQ — Nova Swap Partner & BDM Program';
+    document.title = 'Nova Swap Partner & BDM FAQ | NovaP2P';
     window.scrollTo(0, 0);
   }, []);
 
