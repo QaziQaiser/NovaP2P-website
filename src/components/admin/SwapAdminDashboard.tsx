@@ -4,6 +4,7 @@ import {
   BarChart3,
   Settings,
   Gift,
+  MessageCircle,
   ShieldAlert,
   FileText,
   Download,
@@ -25,13 +26,16 @@ import {
 } from 'lucide-react';
 import { swapCampaignApi } from '../../services/swapCampaignApi';
 import { AffiliateAdminPanel } from './AffiliateAdminPanel';
-// Live chat now runs on tawk.to (managed at dashboard.tawk.to). The old in-house panel is kept
-// in ./LiveChatAdminPanel but no longer shown.
+// Live chat now runs on tawk.to (replies at dashboard.tawk.to). This tab shows a read-only chat history
+// from tawk.to webhooks. The old in-house panel is kept in ./LiveChatAdminPanel but no longer shown.
+import { TawkChatHistoryPanel } from './TawkChatHistoryPanel';
 
 export const SwapAdminDashboard: React.FC = () => {
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem('nova_swap_admin_key') || '');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'analytics' | 'campaign' | 'claims' | 'fraud' | 'logs' | 'affiliates'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'campaign' | 'claims' | 'fraud' | 'logs' | 'affiliates' | 'chats'>(() =>
+    new URLSearchParams(window.location.search).get('tab') === 'chats' ? 'chats' : 'analytics'
+  );
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -387,6 +391,7 @@ export const SwapAdminDashboard: React.FC = () => {
             { id: 'claims', label: 'Reward Claims', icon: Gift, count: analytics?.pendingClaims },
             { id: 'campaign', label: 'Campaign Settings & Milestones', icon: Settings },
             { id: 'affiliates', label: 'Partners & BDMs', icon: Users },
+            { id: 'chats', label: 'Chat History', icon: MessageCircle },
             { id: 'fraud', label: 'Users & Sybil Review', icon: ShieldAlert },
             { id: 'logs', label: 'Audit Logs & CSV Export', icon: FileText },
           ].map((tab) => {
@@ -1085,6 +1090,8 @@ export const SwapAdminDashboard: React.FC = () => {
         {activeTab === 'affiliates' && (
           <AffiliateAdminPanel adminKey={adminKey} />
         )}
+
+        {activeTab === 'chats' && <TawkChatHistoryPanel adminKey={adminKey} />}
 
       </div>
 

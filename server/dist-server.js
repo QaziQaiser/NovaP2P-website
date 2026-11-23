@@ -3851,19 +3851,258 @@ function startChatEmailSync() {
   }), SYNC_INTERVAL_MS).unref?.();
 }
 
+// server/tawkApi.ts
+import { Router as Router4 } from "express";
+import crypto6 from "crypto";
+var tawkRouter = Router4();
+var WEBHOOK_SECRET = (process.env.TAWK_WEBHOOK_SECRET || "").trim();
+if (!WEBHOOK_SECRET) {
+  console.warn("[Tawk] TAWK_WEBHOOK_SECRET is not set. Chat history webhooks are rejected until it is configured.");
+}
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tawk_chats (
+    id TEXT PRIMARY KEY,
+    visitor_name TEXT NOT NULL DEFAULT '',
+    visitor_email TEXT NOT NULL DEFAULT '',
+    visitor_city TEXT NOT NULL DEFAULT '',
+    visitor_country TEXT NOT NULL DEFAULT '',
+    domain TEXT NOT NULL DEFAULT '',
+    referrer TEXT NOT NULL DEFAULT '',
+    first_message TEXT NOT NULL DEFAULT '',
+    agent_names TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'ended'
+    message_count INTEGER NOT NULL DEFAULT 0,
+    has_transcript INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_tawk_chats_started ON tawk_chats(started_at);
+  CREATE TABLE IF NOT EXISTS tawk_chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT NOT NULL,
+    sender TEXT NOT NULL, -- 'visitor' | 'agent' | 'system'
+    sender_name TEXT NOT NULL DEFAULT '',
+    type TEXT NOT NULL DEFAULT 'msg',
+    body TEXT NOT NULL DEFAULT '',
+    attachments TEXT NOT NULL DEFAULT '[]',
+    sent_at TEXT NOT NULL,
+    FOREIGN KEY (chat_id) REFERENCES tawk_chats(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_tawk_messages_chat ON tawk_chat_messages(chat_id, id);
+  CREATE TABLE IF NOT EXISTS tawk_tickets (
+    id TEXT PRIMARY KEY,
+    human_id INTEGER,
+    subject TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL DEFAULT '',
+    requester_name TEXT NOT NULL DEFAULT '',
+    requester_email TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS tawk_webhook_events (
+    event_id TEXT PRIMARY KEY,
+    event TEXT NOT NULL,
+    received_at TEXT NOT NULL
+  );
+`);
+var str = (v, max = 5e3) => typeof v === "string" ? v.slice(0, max) : v == null ? "" : String(v).slice(0, max);
+var isoOrNow = (v) => {
+  const d = typeof v === "string" ? new Date(v) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toISOString() : (/* @__PURE__ */ new Date()).toISOString();
+};
+var lastWebhookAt = db.prepare("SELECT MAX(received_at) AS t FROM tawk_webhook_events").get()?.t || null;
+var lastWebhookError = null;
+function verifySignature(req) {
+  const raw = req.rawBody;
+  const sig = req.get("x-tawk-signature") || "";
+  if (!raw || !sig || !WEBHOOK_SECRET) return false;
+  const expected = crypto6.createHmac("sha1", WEBHOOK_SECRET).update(raw).digest("hex");
+  const a = Buffer.from(sig.trim().toLowerCase());
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto6.timingSafeEqual(a, b);
+}
+var upsertChat = db.prepare(`
+  INSERT INTO tawk_chats (id, visitor_name, visitor_email, visitor_city, visitor_country, domain, referrer, first_message, status, started_at, updated_at)
+  VALUES (@id, @visitor_name, @visitor_email, @visitor_city, @visitor_country, @domain, @referrer, @first_message, @status, @started_at, @updated_at)
+  ON CONFLICT(id) DO UPDATE SET
+    visitor_name = CASE WHEN excluded.visitor_name <> '' THEN excluded.visitor_name ELSE tawk_chats.visitor_name END,
+    visitor_email = CASE WHEN excluded.visitor_email <> '' THEN excluded.visitor_email ELSE tawk_chats.visitor_email END,
+    visitor_city = CASE WHEN excluded.visitor_city <> '' THEN excluded.visitor_city ELSE tawk_chats.visitor_city END,
+    visitor_country = CASE WHEN excluded.visitor_country <> '' THEN excluded.visitor_country ELSE tawk_chats.visitor_country END,
+    domain = CASE WHEN excluded.domain <> '' THEN excluded.domain ELSE tawk_chats.domain END,
+    referrer = CASE WHEN excluded.referrer <> '' THEN excluded.referrer ELSE tawk_chats.referrer END,
+    first_message = CASE WHEN tawk_chats.first_message = '' THEN excluded.first_message ELSE tawk_chats.first_message END,
+    started_at = MIN(tawk_chats.started_at, excluded.started_at),
+    updated_at = excluded.updated_at
+`);
+function chatBase(id, visitor, payload, time) {
+  return {
+    id,
+    visitor_name: str(visitor?.name, 200),
+    visitor_email: str(visitor?.email, 200),
+    visitor_city: str(visitor?.city, 100),
+    visitor_country: str(visitor?.country, 10),
+    domain: str(payload?.domain, 300),
+    referrer: str(payload?.referrer, 1e3),
+    first_message: "",
+    status: "active",
+    started_at: time,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+var handleEvent = db.transaction((payload) => {
+  const event = str(payload?.event, 50);
+  const time = isoOrNow(payload?.time);
+  if (event === "chat:start") {
+    const id = str(payload.chatId, 100);
+    if (!id) return;
+    upsertChat.run({ ...chatBase(id, payload.visitor, payload, time), first_message: str(payload.message?.text, 1e3) });
+  } else if (event === "chat:end") {
+    const id = str(payload.chatId, 100);
+    if (!id) return;
+    upsertChat.run(chatBase(id, payload.visitor, payload, time));
+    db.prepare("UPDATE tawk_chats SET status = 'ended', ended_at = COALESCE(ended_at, ?) WHERE id = ?").run(time, id);
+  } else if (event === "chat:transcript_created") {
+    const chat = payload.chat || {};
+    const id = str(chat.id, 100);
+    if (!id) return;
+    const messages = Array.isArray(chat.messages) ? chat.messages : [];
+    const firstVisitor = messages.find((m) => m?.sender?.t === "v");
+    const firstTime = messages.length ? isoOrNow(messages[0]?.time) : time;
+    const lastTime = messages.length ? isoOrNow(messages[messages.length - 1]?.time) : time;
+    upsertChat.run({ ...chatBase(id, chat.visitor, payload, firstTime), first_message: str(firstVisitor?.msg, 1e3) });
+    db.prepare("DELETE FROM tawk_chat_messages WHERE chat_id = ?").run(id);
+    const insert = db.prepare(
+      "INSERT INTO tawk_chat_messages (chat_id, sender, sender_name, type, body, attachments, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    );
+    const agents = /* @__PURE__ */ new Set();
+    for (const m of messages.slice(0, 2e3)) {
+      const t = m?.sender?.t;
+      const sender = t === "a" ? "agent" : t === "v" ? "visitor" : "system";
+      const name = str(m?.sender?.n, 200);
+      if (sender === "agent" && name) agents.add(name);
+      const attachments = (Array.isArray(m?.attchs) ? m.attchs : []).map((a) => a?.content?.file).filter((f) => f && typeof f.url === "string" && /^https?:\/\//i.test(f.url)).map((f) => ({ url: str(f.url, 2e3), name: str(f.name, 300), mimeType: str(f.mimeType, 100), size: Number(f.size) || 0 }));
+      insert.run(id, sender, name, str(m?.type, 30) || "msg", str(m?.msg, 2e4), JSON.stringify(attachments), isoOrNow(m?.time));
+    }
+    db.prepare(
+      "UPDATE tawk_chats SET status = 'ended', has_transcript = 1, message_count = ?, agent_names = ?, ended_at = COALESCE(ended_at, ?) WHERE id = ?"
+    ).run(messages.length, [...agents].join(", "), lastTime, id);
+  } else if (event === "ticket:create") {
+    const t = payload.ticket || {};
+    const id = str(t.id, 100);
+    if (!id) return;
+    db.prepare(
+      `INSERT INTO tawk_tickets (id, human_id, subject, message, requester_name, requester_email, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO NOTHING`
+    ).run(id, Number(t.humanId) || null, str(t.subject, 500), str(t.message, 2e4), str(payload.requester?.name, 200), str(payload.requester?.email, 200), time);
+  }
+});
+tawkRouter.post("/webhook", (req, res) => {
+  if (!WEBHOOK_SECRET) return res.status(503).json({ error: "Webhook secret not configured" });
+  if (!verifySignature(req)) {
+    lastWebhookError = `Rejected a webhook with an invalid signature (${(/* @__PURE__ */ new Date()).toISOString()}). Check TAWK_WEBHOOK_SECRET.`;
+    console.warn("[Tawk] Webhook rejected: invalid signature");
+    return res.status(401).json({ error: "Invalid signature" });
+  }
+  try {
+    const eventId = str(req.get("x-hook-event-id"), 200);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    if (eventId) {
+      const seen = db.prepare("INSERT OR IGNORE INTO tawk_webhook_events (event_id, event, received_at) VALUES (?, ?, ?)").run(eventId, str(req.body?.event, 50), now);
+      if (seen.changes === 0) return res.json({ ok: true, duplicate: true });
+    }
+    handleEvent(req.body);
+    lastWebhookAt = now;
+    lastWebhookError = null;
+    res.json({ ok: true });
+  } catch (err) {
+    sendServerError(res, err, "tawk webhook");
+  }
+});
+var PAGE_SIZE = 50;
+tawkRouter.get("/admin/chats", verifyAdmin, (req, res) => {
+  try {
+    const q = str(req.query.q, 200).trim();
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const where = [];
+    const params = [];
+    if (q) {
+      const like = `%${q.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
+      where.push(
+        `(visitor_name LIKE ? ESCAPE '\\' OR visitor_email LIKE ? ESCAPE '\\' OR first_message LIKE ? ESCAPE '\\'
+          OR id IN (SELECT chat_id FROM tawk_chat_messages WHERE body LIKE ? ESCAPE '\\'))`
+      );
+      params.push(like, like, like, like);
+    }
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM tawk_chats ${whereSql}`).get(...params).n;
+    const chats = db.prepare(`SELECT * FROM tawk_chats ${whereSql} ORDER BY started_at DESC LIMIT ? OFFSET ?`).all(...params, PAGE_SIZE, (page - 1) * PAGE_SIZE);
+    const dayAgo = new Date(Date.now() - 24 * 3600 * 1e3).toISOString();
+    const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1e3).toISOString();
+    const count = (sql, ...p) => db.prepare(sql).get(...p).n;
+    res.json({
+      chats,
+      total,
+      page,
+      pageSize: PAGE_SIZE,
+      stats: {
+        total: count("SELECT COUNT(*) AS n FROM tawk_chats"),
+        last24h: count("SELECT COUNT(*) AS n FROM tawk_chats WHERE started_at >= ?", dayAgo),
+        last7d: count("SELECT COUNT(*) AS n FROM tawk_chats WHERE started_at >= ?", weekAgo),
+        active: count("SELECT COUNT(*) AS n FROM tawk_chats WHERE status = 'active'"),
+        tickets: count("SELECT COUNT(*) AS n FROM tawk_tickets")
+      },
+      webhook: { configured: !!WEBHOOK_SECRET, lastReceivedAt: lastWebhookAt, lastError: lastWebhookError }
+    });
+  } catch (err) {
+    sendServerError(res, err, "tawk admin list");
+  }
+});
+tawkRouter.get("/admin/chats/:id", verifyAdmin, (req, res) => {
+  try {
+    const chat = db.prepare("SELECT * FROM tawk_chats WHERE id = ?").get(req.params.id);
+    if (!chat) return res.status(404).json({ error: "Chat not found" });
+    const messages = db.prepare("SELECT * FROM tawk_chat_messages WHERE chat_id = ? ORDER BY id ASC").all(req.params.id).map((m) => ({
+      ...m,
+      attachments: (() => {
+        try {
+          return JSON.parse(m.attachments);
+        } catch {
+          return [];
+        }
+      })()
+    }));
+    res.json({ chat, messages });
+  } catch (err) {
+    sendServerError(res, err, "tawk admin get");
+  }
+});
+tawkRouter.get("/admin/tickets", verifyAdmin, (_req, res) => {
+  try {
+    res.json({ tickets: db.prepare("SELECT * FROM tawk_tickets ORDER BY created_at DESC LIMIT 200").all() });
+  } catch (err) {
+    sendServerError(res, err, "tawk admin tickets");
+  }
+});
+
 // server/index.ts
 var apiApp = express();
 apiApp.set("trust proxy", 1);
-apiApp.use(express.json({ limit: "1mb" }));
+apiApp.use(express.json({ limit: "1mb", verify: (req, _res, buf) => {
+  req.rawBody = buf;
+} }));
 var writeLimiter = rateLimit({ windowMs: 60 * 1e3, max: 60 });
 var sensitiveLimiter = rateLimit({ windowMs: 15 * 60 * 1e3, max: 20 });
-apiApp.use((req, res, next) => req.method === "POST" || req.method === "PUT" || req.method === "DELETE" ? writeLimiter(req, res, next) : next());
+apiApp.use(
+  (req, res, next) => (req.method === "POST" || req.method === "PUT" || req.method === "DELETE") && req.path !== "/tawk/webhook" ? writeLimiter(req, res, next) : next()
+);
 apiApp.use(
   ["/swap/admin/login", "/affiliate/apply", "/affiliate/review-action", "/affiliate/payout/request", "/swap/rewards/request"],
   (req, res, next) => req.method === "POST" ? sensitiveLimiter(req, res, next) : next()
 );
 apiApp.use("/swap", apiRouter);
 apiApp.use("/affiliate", affiliateRouter);
+apiApp.use("/tawk", tawkRouter);
 if (process.env.LEGACY_LIVE_CHAT === "true") {
   apiApp.use("/chat", chatRouter);
   startChatEmailSync();

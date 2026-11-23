@@ -126,7 +126,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+// rawBody is kept for signed webhooks (tawk.to chat history, see server/tawkApi.ts)
+app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 
 // 1. Health check endpoints for Hostinger container & proxy probes
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok', uptime: process.uptime() }));
