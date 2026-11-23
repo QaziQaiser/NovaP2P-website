@@ -1,5 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { SeoHeadSync } from './seo/SeoHeadSync';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldCheck, Zap, Eye, Wallet, Users, Scale, 
@@ -3148,6 +3149,7 @@ export default function App() {
   return (
     <WalletProvider>
       <BrowserRouter>
+        <SeoHeadSync />
         <AnalyticsTracker />
         <AppShell />
       </BrowserRouter>
