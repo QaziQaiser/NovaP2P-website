@@ -16,6 +16,7 @@ import emailjs from '@emailjs/browser';
 import { WalletProvider, useWallet } from './context/WalletContext';
 import logoImg from './assets/logo.png';
 import promotionalBannerImg from './assets/images/promotional-banner.jpeg';
+import { TawkToWidget } from './components/chat/TawkToWidget';
 
 // Heavy sections and secondary pages load on demand so the home page renders quickly (especially on mobile)
 const NovaSwapSection = lazy(() => import('./components/swap/NovaSwapSection').then((m) => ({ default: m.NovaSwapSection })));
@@ -33,6 +34,9 @@ const PartnerOverviewPage = lazy(() => import('./pages/info/PartnerInfoPages').t
 const CommissionStructurePage = lazy(() => import('./pages/info/PartnerInfoPages').then((m) => ({ default: m.CommissionStructurePage })));
 const PartnerFaqPage = lazy(() => import('./pages/info/PartnerInfoPages').then((m) => ({ default: m.PartnerFaqPage })));
 const LiveChatWidget = lazy(() => import('./components/chat/LiveChatWidget').then((m) => ({ default: m.LiveChatWidget })));
+// Live chat runs on tawk.to now. The old in-house widget (Gemini AI + email replies) is kept but
+// disabled; set this to true (and LEGACY_LIVE_CHAT=true on the server) to bring it back.
+const LEGACY_LIVE_CHAT = false;
 
 // Empty space with the page's own height while a lazily loaded page downloads (prevents footer jump)
 const RouteLoadingFallback = () => <div className="min-h-screen" aria-busy="true" />;
@@ -3146,11 +3150,12 @@ const AppShell = () => {
       </Routes>
       </Suspense>
       {!isStandaloneDarkPortal && <Footer />}
-      {!isStandaloneDarkPortal && (
+      {LEGACY_LIVE_CHAT && !isStandaloneDarkPortal && (
         <Suspense fallback={null}>
           <LiveChatWidget />
         </Suspense>
       )}
+      {!LEGACY_LIVE_CHAT && <TawkToWidget hidden={isStandaloneDarkPortal} />}
     </div>
   );
 };

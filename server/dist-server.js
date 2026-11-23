@@ -3864,8 +3864,10 @@ apiApp.use(
 );
 apiApp.use("/swap", apiRouter);
 apiApp.use("/affiliate", affiliateRouter);
-apiApp.use("/chat", chatRouter);
-startChatEmailSync();
+if (process.env.LEGACY_LIVE_CHAT === "true") {
+  apiApp.use("/chat", chatRouter);
+  startChatEmailSync();
+}
 var index_default = apiApp;
 export {
   apiApp,

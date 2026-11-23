@@ -22,20 +22,16 @@ import {
   Edit,
   ArrowRight,
   LogOut,
-  MessageCircle,
 } from 'lucide-react';
 import { swapCampaignApi } from '../../services/swapCampaignApi';
 import { AffiliateAdminPanel } from './AffiliateAdminPanel';
-import { LiveChatAdminPanel } from './LiveChatAdminPanel';
+// Live chat now runs on tawk.to (managed at dashboard.tawk.to). The old in-house panel is kept
+// in ./LiveChatAdminPanel but no longer shown.
 
 export const SwapAdminDashboard: React.FC = () => {
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem('nova_swap_admin_key') || '');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  // ?tab=livechat&chat=<id> opens a conversation directly (link in the live chat notification email)
-  const [initialChatId] = useState(() => new URLSearchParams(window.location.search).get('chat'));
-  const [activeTab, setActiveTab] = useState<'analytics' | 'campaign' | 'claims' | 'fraud' | 'logs' | 'affiliates' | 'livechat'>(() =>
-    new URLSearchParams(window.location.search).get('tab') === 'livechat' ? 'livechat' : 'analytics'
-  );
+  const [activeTab, setActiveTab] = useState<'analytics' | 'campaign' | 'claims' | 'fraud' | 'logs' | 'affiliates'>('analytics');
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -391,7 +387,6 @@ export const SwapAdminDashboard: React.FC = () => {
             { id: 'claims', label: 'Reward Claims', icon: Gift, count: analytics?.pendingClaims },
             { id: 'campaign', label: 'Campaign Settings & Milestones', icon: Settings },
             { id: 'affiliates', label: 'Partners & BDMs', icon: Users },
-            { id: 'livechat', label: 'Live Chat', icon: MessageCircle },
             { id: 'fraud', label: 'Users & Sybil Review', icon: ShieldAlert },
             { id: 'logs', label: 'Audit Logs & CSV Export', icon: FileText },
           ].map((tab) => {
@@ -1091,7 +1086,6 @@ export const SwapAdminDashboard: React.FC = () => {
           <AffiliateAdminPanel adminKey={adminKey} />
         )}
 
-        {activeTab === 'livechat' && <LiveChatAdminPanel adminKey={adminKey} initialChatId={initialChatId} />}
       </div>
 
       {/* CONFIRM PAYOUT MODAL DIALOG */}

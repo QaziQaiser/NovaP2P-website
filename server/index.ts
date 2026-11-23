@@ -22,9 +22,12 @@ apiApp.use(['/swap/admin/login', '/affiliate/apply', '/affiliate/review-action',
 
 apiApp.use('/swap', apiRouter);
 apiApp.use('/affiliate', affiliateRouter);
-apiApp.use('/chat', chatRouter);
-
-// Phase 2: email replies to live chat notifications are synced from the support mailbox
-startChatEmailSync();
+// Live chat now runs on tawk.to. The old in-house chat API and its email sync are kept but
+// disabled unless LEGACY_LIVE_CHAT=true is set.
+if (process.env.LEGACY_LIVE_CHAT === 'true') {
+  apiApp.use('/chat', chatRouter);
+  // Phase 2: email replies to live chat notifications are synced from the support mailbox
+  startChatEmailSync();
+}
 
 export default apiApp;
