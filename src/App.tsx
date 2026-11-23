@@ -37,6 +37,12 @@ const LiveChatWidget = lazy(() => import('./components/chat/LiveChatWidget').the
 // Empty space with the page's own height while a lazily loaded page downloads (prevents footer jump)
 const RouteLoadingFallback = () => <div className="min-h-screen" aria-busy="true" />;
 
+// "Home" links go to the clean URL "/" (no #home). Already on the homepage: smooth
+// scroll to the top; coming from another page: open the homepage at the top.
+const scrollToTopForHome = () => {
+  window.scrollTo({ top: 0, behavior: window.location.pathname === '/' ? 'smooth' : 'auto' });
+};
+
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -52,7 +58,7 @@ const Navbar = () => {
   }, []);
 
   const navLinks = [
-    { name: 'Home', href: '/#home' },
+    { name: 'Home', href: '/' },
     { name: 'About Us', href: '/about' },
     { name: 'Become a Partner', href: '/become-partner' },
     { name: 'Merchant', href: '/merchant' },
@@ -81,6 +87,7 @@ const Navbar = () => {
                 <Link
                   key={link.name}
                   to={link.href}
+                  onClick={() => { if (link.href === '/') scrollToTopForHome(); }}
                   className="text-gray-600 hover:text-primary font-medium transition-colors text-sm xl:text-[15px] whitespace-nowrap"
                 >
                   {link.name}
@@ -134,7 +141,10 @@ const Navbar = () => {
                   <Link
                     key={link.name}
                     to={link.href}
-                    onClick={() => setMobileMenuOpen(false)}
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      if (link.href === '/') scrollToTopForHome();
+                    }}
                     className="block px-3 py-3 text-base font-medium text-gray-700 hover:text-primary hover:bg-gray-50 rounded-md"
                   >
                     {link.name}
@@ -1082,7 +1092,7 @@ const Footer = () => {
             <div>
               <h4 className="font-bold text-gray-900 mb-4">Quick Links</h4>
               <ul className="space-y-2 text-sm">
-                <li><a href="/#home" className="text-gray-500 hover:text-primary transition-colors">Home</a></li>
+                <li><Link to="/" onClick={scrollToTopForHome} className="text-gray-500 hover:text-primary transition-colors">Home</Link></li>
                 <li><Link to="/about" className="text-gray-500 hover:text-primary transition-colors">About Us</Link></li>
                 <li><Link to="/contact" className="text-gray-500 hover:text-primary transition-colors">Contact Us</Link></li>
                 <li><a href="/#features" className="text-gray-500 hover:text-primary transition-colors">Features</a></li>
