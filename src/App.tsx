@@ -16,6 +16,8 @@ import emailjs from '@emailjs/browser';
 import { WalletProvider, useWallet } from './context/WalletContext';
 import logoImg from './assets/logo.png';
 import promotionalBannerImg from './assets/images/promotional-banner.jpeg';
+import portalDesktopImg from './assets/images/portal-desktop.png';
+import portalMobileImg from './assets/images/portal-mobile.png';
 import { TawkToWidget } from './components/chat/TawkToWidget';
 
 // Heavy sections and secondary pages load on demand so the home page renders quickly (especially on mobile)
@@ -558,184 +560,74 @@ const AppPreview = () => {
     <section className="py-24 bg-white overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">A Glimpse Inside NovaP2P</h2>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">Experience a clean, intuitive interface designed for seamless trading on any device.</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Swap Across Chains, or Trade USDT with Naira</h2>
+          <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+            Nova Swap handles token-to-token moves between blockchains. When you need to go between crypto and naira, the Nova P2P marketplace connects you with other users: the seller's USDT is locked in escrow and released only after the payment is confirmed. Merchants pay 0% maker fees and takers pay $0.03 per trade.
+          </p>
         </div>
 
-        <div className="relative max-w-5xl mx-auto">
-          {/* Desktop Mockup */}
-          <motion.div 
+        <h3 className="text-2xl font-bold text-gray-900 text-center mb-8">P2P Trading</h3>
+
+        <div className="relative max-w-5xl mx-auto sm:pr-16 md:pr-24">
+          {/* Desktop: web portal screenshot */}
+          <motion.div
             initial={{ opacity: 0, y: 40 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.7 }}
             className="relative rounded-2xl border border-gray-200 shadow-2xl bg-white overflow-hidden"
           >
-            {/* Browser Chrome */}
             <div className="h-10 bg-gray-100 border-b border-gray-200 flex items-center px-4 gap-2">
               <div className="flex gap-1.5">
                 <div className="w-3 h-3 rounded-full bg-red-400"></div>
                 <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
                 <div className="w-3 h-3 rounded-full bg-green-400"></div>
               </div>
-              <div className="mx-auto bg-white px-4 py-1 rounded-md text-xs text-gray-400 font-medium w-64 text-center border border-gray-200">
+              <div className="mx-auto bg-white px-4 py-1 rounded-md text-xs text-gray-400 font-medium w-40 sm:w-64 text-center border border-gray-200">
                 app.novap2p.com
               </div>
             </div>
-            
-            {/* App Content */}
-            <div className="flex h-[500px]">
-              {/* Sidebar */}
-              <div className="w-64 bg-gray-50 border-r border-gray-200 p-4 hidden md:block">
-                <div className="flex items-center gap-2 text-primary font-bold mb-8 px-2">
-                  <img src={logoImg} alt="NovaP2P" className="w-5 h-5 object-contain" /> NovaP2P
-                </div>
-                <div className="space-y-2">
-                  {['Dashboard', 'P2P Trading', 'My Wallet', 'Trade History', 'Settings'].map((item, i) => (
-                    <div key={i} className={`px-4 py-2.5 rounded-lg text-sm font-medium ${i === 1 ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Main Content */}
-              <div className="flex-1 bg-white p-6 overflow-hidden">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold text-gray-800">P2P Trading</h3>
-                  <div className="flex gap-3">
-                    <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium">Filter</button>
-                    <button className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium flex items-center gap-2">
-                      Create Offer
-                    </button>
-                  </div>
-                </div>
-                
-                {/* Tabs */}
-                <div className="flex gap-6 border-b border-gray-200 mb-6">
-                  <div className="pb-3 border-b-2 border-primary text-primary font-medium text-sm">Buy USDT</div>
-                  <div className="pb-3 text-gray-500 font-medium text-sm">Sell USDT</div>
-                </div>
-                
-                <div className="overflow-x-auto pb-4">
-                  <div className="min-w-[600px]">
-                    {/* Table Header */}
-                    <div className="grid grid-cols-4 text-xs font-medium text-gray-500 mb-3 px-4">
-                      <div>Advertiser</div>
-                      <div>Price</div>
-                      <div>Limit/Available</div>
-                      <div className="text-right">Action</div>
-                    </div>
-                    
-                    {/* Table Rows */}
-                    <div className="space-y-3">
-                      {[
-                        { id: 1, price: '1365.10 NGN' },
-                        { id: 2, price: '123.50 BDT' },
-                        { id: 3, price: '95.31 INR' },
-                        { id: 4, price: '26300.49 VND' }
-                      ].map((trader) => (
-                        <div key={trader.id} className="grid grid-cols-4 items-center bg-gray-50 p-4 rounded-xl border border-gray-100">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-blue-100 text-primary flex items-center justify-center font-bold text-xs shrink-0">T{trader.id}</div>
-                            <div>
-                              <div className="font-medium text-sm text-gray-800">TraderPro_{trader.id}</div>
-                              <div className="text-xs text-gray-500">99.{trader.id}% completion</div>
-                            </div>
-                          </div>
-                          <div className="font-bold text-gray-800">{trader.price}</div>
-                          <div>
-                            <div className="text-sm text-gray-800">Available: 1,000 USDT</div>
-                            <div className="text-xs text-gray-500">Limit: $100 - $1,000</div>
-                          </div>
-                          <div className="text-right">
-                            <button className="px-6 py-2 bg-accent text-white rounded-lg text-sm font-semibold hover:bg-green-600 transition-colors whitespace-nowrap">
-                              Buy USDT
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <img
+              src={portalDesktopImg}
+              alt="NovaP2P web portal dashboard showing the USDT balance, Buy and Sell USDT buttons, the USDT/NGN market chart and market statistics"
+              className="w-full h-auto block"
+              loading="lazy"
+              decoding="async"
+              width={1905}
+              height={823}
+            />
           </motion.div>
 
-          {/* Mobile Mockup - Overlapping */}
-          <motion.div 
+          {/* Mobile: app preview, overlapping the desktop screenshot */}
+          <motion.div
             initial={{ opacity: 0, x: 40 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.7, delay: 0.3 }}
-            className="absolute -right-4 md:-right-12 -bottom-12 w-[280px] h-[580px] bg-gray-900 rounded-[40px] border-[8px] border-gray-900 shadow-2xl overflow-hidden z-20 hidden sm:block"
+            className="absolute right-0 -bottom-12 w-[150px] md:w-[210px] lg:w-[240px] z-20 hidden sm:block drop-shadow-2xl"
           >
-            {/* Notch */}
-            <div className="absolute top-0 inset-x-0 h-6 bg-gray-900 rounded-b-3xl w-40 mx-auto z-30"></div>
-            
-            <div className="bg-gray-50 w-full h-full flex flex-col relative">
-              {/* Header */}
-              <div className="bg-primary text-white pt-12 pb-6 px-6 rounded-b-3xl shadow-md">
-                <div className="flex justify-between items-center mb-6">
-                  <div className="font-bold text-lg">My Wallet</div>
-                  <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                    <Smartphone size={16} />
-                  </div>
-                </div>
-                <div className="text-white/80 text-sm mb-1">Total Balance</div>
-                <div className="text-3xl font-bold mb-4">$4,250.00</div>
-                <div className="flex gap-3">
-                  <button className="flex-1 bg-white text-primary py-2 rounded-xl text-sm font-semibold">Deposit</button>
-                  <button className="flex-1 bg-white/20 text-white py-2 rounded-xl text-sm font-semibold">Withdraw</button>
-                </div>
-              </div>
-              
-              {/* Content */}
-              <div className="flex-1 p-6 overflow-y-auto">
-                <h4 className="font-bold text-gray-800 mb-4">Assets</h4>
-                <div className="space-y-4">
-                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center font-bold">₮</div>
-                      <div>
-                        <div className="font-bold text-gray-800">USDT</div>
-                        <div className="text-xs text-gray-500">Tether</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-gray-800">4,250.00</div>
-                      <div className="text-xs text-gray-500">$4,250.00</div>
-                    </div>
-                  </div>
-                </div>
-                
-                <h4 className="font-bold text-gray-800 mt-6 mb-4">Recent Activity</h4>
-                <div className="space-y-4">
-                  {[1, 2].map((i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-50 text-primary rounded-full flex items-center justify-center">
-                          <ArrowRightLeft size={16} />
-                        </div>
-                        <div>
-                          <div className="font-medium text-sm text-gray-800">Bought USDT</div>
-                          <div className="text-xs text-gray-500">Today, 14:30</div>
-                        </div>
-                      </div>
-                      <div className="font-bold text-accent text-sm">+500.00 USDT</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Bottom Nav */}
-              <div className="bg-white border-t border-gray-200 py-4 px-6 flex justify-between items-center text-gray-400">
-                <div className="flex flex-col items-center gap-1"><Wallet size={20} /></div>
-                <div className="flex flex-col items-center gap-1 text-primary"><ArrowRightLeft size={20} /></div>
-                <div className="flex flex-col items-center gap-1"><Users size={20} /></div>
-              </div>
-            </div>
+            <img
+              src={portalMobileImg}
+              alt="NovaP2P on mobile showing the USDT balance, Buy and Sell USDT buttons and the USDT/NGN market chart"
+              className="w-full h-auto block"
+              loading="lazy"
+              decoding="async"
+              width={297}
+              height={639}
+            />
           </motion.div>
+        </div>
+
+        <p className="mt-20 text-center text-sm text-gray-500">
+          Illustration only. Names, prices and balances are examples, not live offers.
+        </p>
+
+        <div className="mt-6 flex flex-wrap justify-center items-center gap-x-3 gap-y-2 text-base">
+          <a href="https://app.novap2p.com/register" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">Start P2P trading</a>
+          <span className="text-gray-300" aria-hidden="true">·</span>
+          <Link to="/merchant" className="text-primary font-medium hover:underline">Become a merchant</Link>
+          <span className="text-gray-300" aria-hidden="true">·</span>
+          <Link to="/fee-structure" className="text-primary font-medium hover:underline">P2P fees</Link>
         </div>
       </div>
     </section>
