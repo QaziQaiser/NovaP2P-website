@@ -520,34 +520,41 @@ const Security = () => {
           </motion.div>
 
           <div className="lg:w-1/2 mt-12 lg:mt-0">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">Bank-Grade Security</h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">How Nova P2P Keeps Your Swaps and Trades Safe</h2>
             <p className="text-lg text-gray-600 mb-8">
-              We take your security seriously. NovaP2P employs industry-leading security measures to ensure your funds and data are always protected.
+              Safety works differently for swaps and P2P trades, so each has its own protection.
             </p>
 
-            <div className="space-y-6">
+            <div className="space-y-4">
               {[
-                "Escrow protection for every trade",
-                "Secure wallet management infrastructure",
-                "End-to-end encrypted data transmission",
-                "24/7 anti-fraud monitoring systems",
-                "Strict account verification (KYC)"
-              ].map((text, idx) => (
-                <motion.div 
+                { label: "Non-custodial swaps", text: <>Every swap is signed in your own wallet; Nova P2P never holds your swap funds.</> },
+                { label: "Transparent quotes", text: <>Route, fees and the amount you receive are shown before you sign.</> },
+                { label: "Escrow on every P2P trade", text: <>The seller's USDT stays locked until payment is confirmed.</> },
+                { label: "Verified P2P accounts", text: <>P2P users complete identity verification (KYC). See <Link to="/aml-kyc-policy" className="text-primary font-medium hover:underline">AML &amp; KYC Policy</Link>.</> },
+                { label: "Your part", text: <>Check the destination network before swapping, only use novap2p.com, and never share your seed phrase. Our team will never ask for it.</> }
+              ].map((item, idx) => (
+                <motion.div
                   key={idx}
                   initial={{ opacity: 0, x: 20 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: idx * 0.1 }}
-                  className="flex items-center gap-4 bg-gray-50 p-4 rounded-xl"
+                  className="flex items-start gap-4 bg-gray-50 p-4 rounded-xl"
                 >
                   <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm text-accent shrink-0">
                     <ShieldCheck size={20} />
                   </div>
-                  <span className="font-medium text-gray-800">{text}</span>
+                  <p className="text-gray-600 pt-2">
+                    <span className="font-semibold text-gray-900">{item.label}:</span> {item.text}
+                  </p>
                 </motion.div>
               ))}
             </div>
+
+            <p className="mt-6 text-sm text-gray-500">
+              Cross-chain swaps still carry risks, such as bridge contract risk and price movement during a swap. Read our{' '}
+              <Link to="/risk-disclosure" className="text-primary font-medium hover:underline">Risk Disclosure</Link>.
+            </p>
           </div>
         </div>
       </div>
