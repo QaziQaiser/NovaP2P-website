@@ -251,24 +251,27 @@ const About = () => {
             transition={{ duration: 0.6 }}
             className="lg:w-1/2"
           >
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">What is NovaP2P?</h2>
-            <p className="text-lg text-gray-600 mb-8 leading-relaxed">
-              NovaP2P is a peer-to-peer crypto trading platform where users can buy or sell USDT directly with others while NovaP2P safely holds funds in escrow until both parties complete the transaction.
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">What Is Nova P2P and Nova Swap?</h2>
+            <p className="text-lg text-gray-600 mb-4 leading-relaxed">
+              Nova P2P is a crypto platform with two products. Nova Swap is a non-custodial cross-chain swap that finds the best route for your tokens across 70+ blockchains, and the Nova P2P marketplace lets people buy and sell USDT with naira while escrow holds the crypto until payment is confirmed.
             </p>
-            
+            <p className="text-lg text-gray-600 mb-8 leading-relaxed">
+              Most people come to Nova P2P to swap: moving stablecoins to a cheaper network, switching tokens between chains, or getting funds onto the chain an app runs on. The P2P marketplace is there when you need to move between crypto and naira.
+            </p>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {[
-                { icon: <Zap className="text-primary" />, title: "Simplicity", desc: "Intuitive design for all experience levels." },
-                { icon: <Eye className="text-primary" />, title: "Transparency", desc: "No hidden fees, clear pricing." },
-                { icon: <ShieldCheck className="text-primary" />, title: "Security", desc: "Bank-grade encryption & escrow." },
-                { icon: <Globe className="text-primary" />, title: "Global", desc: "Trade anywhere, anytime." }
+                { icon: <ShieldCheck className="text-primary" />, title: "Non-custodial", desc: <>Swaps run from your own wallet. Nova P2P never holds your swap funds.</> },
+                { icon: <Eye className="text-primary" />, title: "Transparent", desc: <>A 0.5% platform fee plus a 0.25% LI.FI routing fee, with gas and bridge costs shown before you sign. See <Link to="/swap-fees" className="text-primary font-medium hover:underline">Swap Fees</Link>.</> },
+                { icon: <Zap className="text-primary" />, title: "Best route, automatically", desc: <>Routing compares DEXs and bridges and picks the highest net return for you.</> },
+                { icon: <Globe className="text-primary" />, title: "Swap and P2P in one place", desc: <>Swap across chains, or trade USDT with naira on the escrow-protected P2P marketplace.</> }
               ].map((item, idx) => (
                 <div key={idx} className="flex gap-4">
                   <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center shrink-0">
                     {item.icon}
                   </div>
                   <div>
-                    <h4 className="font-semibold text-gray-900">{item.title}</h4>
+                    <h3 className="font-semibold text-gray-900">{item.title}</h3>
                     <p className="text-sm text-gray-500">{item.desc}</p>
                   </div>
                 </div>
