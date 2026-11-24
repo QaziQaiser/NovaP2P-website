@@ -758,13 +758,20 @@ const ComingSoon = () => {
           viewport={{ once: true }}
         >
           <h2 className="text-4xl md:text-6xl font-extrabold text-white mb-6">
-            Secure. Fast. Transparent.<br/>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-accent">Live now.</span>
+            Make Your First{' '}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-accent">Cross-Chain Swap</span>
           </h2>
-          
+
           <p className="text-xl text-gray-300 mb-10 max-w-2xl mx-auto">
-            Be the first to know when we launch and get exclusive early access to NovaP2P.
+            Connect your wallet, pick your tokens and let Nova Swap find the route. Want swap guides, new chains and reward updates? Leave your email.
           </p>
+
+          <Link
+            to="/swap"
+            className="inline-flex items-center gap-2 px-8 py-4 mb-10 rounded-full bg-accent hover:bg-green-600 text-white font-semibold text-lg shadow-lg shadow-accent/25 transition-colors"
+          >
+            Start Swapping <ArrowRight size={20} />
+          </Link>
 
           <div className="max-w-md mx-auto relative">
             <AnimatePresence mode="wait">
@@ -777,7 +784,7 @@ const ComingSoon = () => {
                   className="bg-accent/20 border border-accent/50 text-white px-6 py-4 rounded-2xl backdrop-blur-md flex items-center justify-center gap-3"
                 >
                   <CheckCircle2 className="text-accent" size={24} />
-                  <span className="font-medium">Successfully joined the waitlist!</span>
+                  <span className="font-medium">You're subscribed to Nova Swap updates!</span>
                 </motion.div>
               ) : (
                 <motion.form 
@@ -805,7 +812,7 @@ const ComingSoon = () => {
                     {status === 'loading' ? (
                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                     ) : (
-                      'Join Waitlist'
+                      'Get Updates'
                     )}
                   </button>
                 </motion.form>
