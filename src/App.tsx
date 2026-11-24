@@ -420,17 +420,17 @@ const WhyDifferent = () => {
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">Why NovaP2P is Different</h2>
-          <p className="text-lg text-gray-400 max-w-2xl mx-auto">We built NovaP2P to solve the biggest problems in current peer-to-peer trading.</p>
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">One Swap Instead of Bridge, Wait, Swap</h2>
+          <p className="text-lg text-gray-400 max-w-2xl mx-auto">Moving tokens between blockchains used to mean bridging, waiting, then swapping again on a second app. Nova Swap turns that into one flow.</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
           <div className="space-y-8">
             {[
-              { title: "Lower Fees", desc: "Simple and transparent fee structure. Keep more of your money." },
-              { title: "Better Security", desc: "Built with advanced encryption and account protection from day one." },
-              { title: "Simpler Interface", desc: "Easy trading experience even for beginners. No cluttered charts." },
-              { title: "Community Focused", desc: "Built for traders who want freedom, transparency, and fairness." }
+              { title: "Fewer steps", desc: "One quote and one confirmation instead of several apps and signatures." },
+              { title: "Clear pricing", desc: "See exactly what you pay and what you receive before you sign." },
+              { title: "Your keys stay yours", desc: "Funds move from your wallet to your wallet. No deposit, no account freeze." },
+              { title: "Built for real use", desc: "Move stablecoins to cheaper networks, or get funds onto the chain your app runs on." }
             ].map((item, idx) => (
               <motion.div 
                 key={idx}
@@ -444,7 +444,7 @@ const WhyDifferent = () => {
                   <CheckCircle2 className="text-accent" />
                 </div>
                 <div>
-                  <h4 className="text-xl font-bold mb-2">{item.title}</h4>
+                  <h3 className="text-xl font-bold mb-2">{item.title}</h3>
                   <p className="text-gray-400">{item.desc}</p>
                 </div>
               </motion.div>
@@ -456,32 +456,35 @@ const WhyDifferent = () => {
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
-            className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-sm"
+            className="bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-sm"
           >
-            <h3 className="text-2xl font-bold mb-8 text-center">Traditional vs NovaP2P</h3>
-            
-            <div className="space-y-6">
-              <div className="flex justify-between items-center pb-4 border-b border-white/10">
-                <span className="text-gray-400 w-1/3">Fees</span>
-                <span className="text-red-400 w-1/3 text-center">High & Hidden</span>
-                <span className="text-accent font-bold w-1/3 text-right">Low & Transparent</span>
-              </div>
-              <div className="flex justify-between items-center pb-4 border-b border-white/10">
-                <span className="text-gray-400 w-1/3">Interface</span>
-                <span className="text-red-400 w-1/3 text-center">Complex</span>
-                <span className="text-accent font-bold w-1/3 text-right">Simple & Clean</span>
-              </div>
-              <div className="flex justify-between items-center pb-4 border-b border-white/10">
-                <span className="text-gray-400 w-1/3">Support</span>
-                <span className="text-red-400 w-1/3 text-center">Slow Bots</span>
-                <span className="text-accent font-bold w-1/3 text-right">Fast & Human</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-400 w-1/3">Security</span>
-                <span className="text-red-400 w-1/3 text-center">Basic</span>
-                <span className="text-accent font-bold w-1/3 text-right">Bank-Grade</span>
-              </div>
-            </div>
+            <h3 className="text-2xl font-bold mb-8 text-center">Manual Bridging vs Nova Swap</h3>
+
+            <table className="w-full text-sm table-fixed">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th scope="col" className="w-[26%] pb-4"><span className="sr-only">Comparison</span></th>
+                  <th scope="col" className="pb-4 px-2 text-left font-semibold text-gray-300">Manual bridge + swap</th>
+                  <th scope="col" className="pb-4 pl-2 text-left font-semibold text-accent">Nova Swap</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["Steps", "Bridge, wait, swap on a second app", "One quote, one confirmation"],
+                  ["Apps involved", "A bridge site plus a DEX or exchange", "One swap screen"],
+                  ["Route choice", "You compare bridges yourself", "Best route picked automatically"],
+                  ["Cost visibility", "Spread across several screens", "Full cost shown before you sign"],
+                  ["Custody", "Depends on the services you use", "Non-custodial, from your own wallet"],
+                  ["Rewards", "None", "5% cashback + Genesis Rewards"]
+                ].map(([label, manual, nova], idx, rows) => (
+                  <tr key={label} className={idx < rows.length - 1 ? "border-b border-white/10" : ""}>
+                    <th scope="row" className="py-4 pr-2 text-left align-top font-normal text-gray-400">{label}</th>
+                    <td className="py-4 px-2 align-top text-gray-300">{manual}</td>
+                    <td className="py-4 pl-2 align-top font-semibold text-accent">{nova}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </motion.div>
         </div>
       </div>
