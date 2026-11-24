@@ -609,7 +609,7 @@ const AppPreview = () => {
             <img
               src={portalMobileImg}
               alt="NovaP2P on mobile showing the USDT balance, Buy and Sell USDT buttons and the USDT/NGN market chart"
-              className="w-full h-auto block rounded-[22px] md:rounded-[30px] lg:rounded-[34px] ring-1 ring-black/10"
+              className="w-full h-auto block rounded-xl ring-1 ring-black/10"
               loading="lazy"
               decoding="async"
               width={297}
