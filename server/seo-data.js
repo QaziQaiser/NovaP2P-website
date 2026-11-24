@@ -43,7 +43,7 @@ const HOME_FAQ = [
   ['What is P2P trading?', 'Peer-to-peer (P2P) trading allows users to buy and sell USDT directly with each other without a central exchange acting as an intermediary.'],
   ['Is NovaP2P safe?', 'Yes. NovaP2P uses a secure escrow system that locks the USDT during a trade until the seller confirms receipt of payment, protecting both parties.'],
   ['What cryptocurrencies will be supported?', 'At launch, NovaP2P will primarily focus on USDT (Tether) to provide a stable trading environment. More assets will be added in later phases.'],
-  ['How does the escrow system work?', "When a trade starts, the seller's USDT is locked in our smart contract escrow. It is only released to the buyer once the seller confirms they have received the fiat payment."],
+  ['How does P2P escrow work?', "When a P2P trade starts, the seller's USDT is locked in escrow. It is only released to the buyer once the seller confirms they have received the naira payment. The steps: 1. Create an account and access your secure crypto wallet. 2. Find a buy or sell offer created by another trader. 3. Start the trade while the USDT is locked in escrow. 4. The buyer sends payment through the selected method. 5. Once payment is confirmed, USDT is released from escrow to the buyer."],
 ];
 
 const HELP_FAQ = [

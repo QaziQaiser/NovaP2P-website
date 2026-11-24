@@ -318,19 +318,19 @@ const About = () => {
 
 const HowItWorks = () => {
   const steps = [
-    { icon: <Users />, title: "Create Account", desc: "Users sign up and access their secure crypto wallet." },
-    { icon: <Eye />, title: "Find an Offer", desc: "Browse buy or sell offers created by other traders." },
-    { icon: <Lock />, title: "Start Trade", desc: "Choose an offer and start the trade while funds are locked in escrow." },
-    { icon: <CreditCard />, title: "Complete Payment", desc: "The buyer sends payment through the selected method." },
-    { icon: <CheckCircle2 />, title: "Crypto Released", desc: "Once payment is confirmed, the system releases USDT from escrow to the buyer." }
+    { icon: <Wallet />, title: "Connect your wallet", desc: "Use MetaMask, Trust Wallet, Coinbase Wallet, Phantom, Solflare or any WalletConnect-compatible wallet." },
+    { icon: <ArrowRightLeft />, title: "Choose your tokens and networks", desc: "Pick what you are sending (for example USDC on Ethereum) and what you want to receive (for example USDT on BNB Chain)." },
+    { icon: <Eye />, title: "Compare the route", desc: "Nova Swap shows the best route it found, the amount you will receive, gas and bridge costs, the 0.5% platform fee, the 0.25% LI.FI fee and the estimated time." },
+    { icon: <ShieldCheck />, title: "Approve and sign", desc: "Confirm in your wallet. Some tokens need a one-time approval first." },
+    { icon: <CheckCircle2 />, title: "Receive your tokens", desc: "They arrive in your wallet on the destination network, and the swap counts toward Genesis Rewards." }
   ];
 
   return (
     <section id="how-it-works" className="py-24 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">How NovaP2P Works</h2>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">A simple, secure, and transparent process to trade crypto directly with others.</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">How to Swap Crypto Across Chains with Nova Swap</h2>
+          <p className="text-lg text-gray-600 max-w-2xl mx-auto">A cross-chain swap takes a few clicks and one confirmation in your wallet. Here is the full process:</p>
         </div>
 
         <div className="relative">
@@ -353,12 +353,19 @@ const HowItWorks = () => {
                     {idx + 1}
                   </div>
                 </div>
-                <h4 className="font-bold text-gray-900 mb-2">{step.title}</h4>
+                <h3 className="font-bold text-gray-900 mb-2">{step.title}</h3>
                 <p className="text-sm text-gray-500">{step.desc}</p>
               </motion.div>
             ))}
           </div>
         </div>
+
+        <p className="mt-12 text-center text-gray-600">
+          Read the full guide:{' '}
+          <Link to="/how-swap-works" className="text-primary font-medium hover:underline">How Swap Works</Link>
+          {' · '}Prefer naira?{' '}
+          <a href="#faq" className="text-primary font-medium hover:underline">See how P2P trading works</a>
+        </p>
       </div>
     </section>
   );
@@ -900,7 +907,18 @@ const FAQ = () => {
     { q: "What is P2P trading?", a: "Peer-to-peer (P2P) trading allows users to buy and sell USDT directly with each other without a central exchange acting as an intermediary." },
     { q: "Is NovaP2P safe?", a: "Yes. NovaP2P uses a secure escrow system that locks the USDT during a trade until the seller confirms receipt of payment, protecting both parties." },
     { q: "What cryptocurrencies will be supported?", a: "At launch, NovaP2P will primarily focus on USDT (Tether) to provide a stable trading environment. More assets will be added in later phases." },
-    { q: "How does the escrow system work?", a: "When a trade starts, the seller's USDT is locked in our smart contract escrow. It is only released to the buyer once the seller confirms they have received the fiat payment." }
+    { q: "How does P2P escrow work?", a: (
+      <>
+        <p className="mb-3">When a P2P trade starts, the seller's USDT is locked in escrow. It is only released to the buyer once the seller confirms they have received the naira payment.</p>
+        <ol className="list-decimal pl-5 space-y-1">
+          <li><strong>Create an account.</strong> Sign up and access your secure crypto wallet.</li>
+          <li><strong>Find an offer.</strong> Browse buy or sell offers created by other traders.</li>
+          <li><strong>Start the trade.</strong> Choose an offer and start the trade while the USDT is locked in escrow.</li>
+          <li><strong>Complete payment.</strong> The buyer sends payment through the selected method.</li>
+          <li><strong>Crypto released.</strong> Once payment is confirmed, USDT is released from escrow to the buyer.</li>
+        </ol>
+      </>
+    ) }
   ];
 
   const [openIdx, setOpenIdx] = useState<number | null>(0);
