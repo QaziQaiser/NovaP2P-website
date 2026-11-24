@@ -2222,7 +2222,7 @@ const FeeStructure = () => {
           <div className="prose prose-blue max-w-none text-gray-600 space-y-6">
             <p>At NovaP2P, we believe in transparent and competitive pricing. Our fee structure is designed to be simple and fair for all users.</p>
             <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Nova Swap Fees</h2>
-            <p>Nova Swap, our cross-chain swap, charges a flat 0.5% fee that is shown in the route quote before you confirm any swap. Standard network gas and bridge costs are shown in the preview before you sign, with no hidden platform charges. Every user receives 5% cashback on eligible Nova Swap fees.</p>
+            <p>Nova Swap, our cross-chain swap, has two fees, both shown in the route quote before you confirm any swap: a 0.5% NovaP2P platform fee and a 0.25% LI.FI routing fee. Standard network gas and bridge costs are shown in the preview before you sign, with no hidden platform charges. Every user receives 5% cashback on eligible Nova Swap fees.</p>
             <p>
               <Link to="/swap-fees" className="text-primary font-medium hover:underline">See the full Nova Swap fee breakdown</Link>
             </p>
@@ -2251,8 +2251,6 @@ const FeeStructure = () => {
                 </tbody>
               </table>
             </div>
-            <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Annual Platform Fee – $20 USD</h2>
-            <p>NovaP2P charges an annual platform fee of $20 USD per calendar year. This fee is collected from the user's available wallet balance at the time of withdrawal, according to the platform's applicable fee policy. The annual fee period ends on December 31 and renews on January 1 each year, regardless of the payment date. This fee is based on the calendar year, not a rolling 365-day period. If the fee is collected in December, a new annual fee applies from January 1 for the new calendar year. Users will be notified by email when the fee is deducted.</p>
             <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Deposit Fees</h2>
             <p>NovaP2P does not charge any fees for depositing cryptocurrency into your platform wallet. However, please note that you may still incur standard network (miner) fees from the blockchain when transferring funds from an external wallet.</p>
             <h2 className="text-2xl font-semibold text-gray-900 mt-8 mb-4">Withdrawal Fees</h2>

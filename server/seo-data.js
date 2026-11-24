@@ -140,7 +140,7 @@ export const PAGES = {
   },
   '/fee-structure': {
     title: 'NovaP2P Fees – P2P Trading & Nova Swap Fee Structure',
-    description: 'All NovaP2P fees in one place: 0.5% on Nova Swap with 5% cashback, 0% P2P maker fee, $0.03 taker fee and the $20 annual platform fee.',
+    description: 'All NovaP2P fees in one place: Nova Swap 0.5% platform fee plus 0.25% LI.FI routing fee with 5% cashback, 0% P2P maker fee and $0.03 taker fee.',
     og: OG_DEFAULT,
     schema: ['WebPage'],
     breadcrumb: [HOME, crumb('Fee Structure', '/fee-structure')],
