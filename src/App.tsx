@@ -642,12 +642,19 @@ const AppPreview = () => {
 };
 
 const Roadmap = () => {
-  const phases = [
-    { phase: "Phase 1", title: "Platform Development", status: "current" },
-    { phase: "Phase 2", title: "Closed Beta Launch", status: "current" },
-    { phase: "Phase 3", title: "Public Launch", status: "current" },
-    { phase: "Phase 4", title: "Mobile App Release", status: "upcoming" },
-    { phase: "Phase 5", title: "More Crypto Assets", status: "upcoming" },
+  const statusStyles = {
+    complete: { label: "Complete", badge: "bg-green-50 text-green-700 border-green-200", dot: "bg-accent", phase: "text-primary" },
+    live: { label: "Live", badge: "bg-blue-50 text-primary border-blue-200", dot: "bg-primary animate-pulse", phase: "text-primary" },
+    progress: { label: "In progress", badge: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-400", phase: "text-amber-600" },
+    planned: { label: "Planned", badge: "bg-gray-100 text-gray-600 border-gray-200", dot: "bg-gray-300", phase: "text-gray-400" },
+  } as const;
+
+  const phases: { phase: string; title: string; status: keyof typeof statusStyles }[] = [
+    { phase: "Phase 1", title: "Platform development", status: "complete" },
+    { phase: "Phase 2", title: "Closed beta", status: "complete" },
+    { phase: "Phase 3", title: "Public launch: P2P marketplace + Nova Swap", status: "live" },
+    { phase: "Phase 4", title: "Mobile app", status: "progress" },
+    { phase: "Phase 5", title: "More assets on P2P", status: "planned" },
   ];
 
   return (
@@ -655,36 +662,45 @@ const Roadmap = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Our Roadmap</h2>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">The journey to revolutionizing peer-to-peer crypto trading.</p>
+          <p className="text-lg text-gray-600 max-w-2xl mx-auto">Where Nova P2P is today and what comes next.</p>
         </div>
 
         <div className="max-w-4xl mx-auto relative">
           {/* Vertical Line */}
           <div className="absolute left-4 md:left-1/2 top-0 bottom-0 w-1 bg-gray-200 -translate-x-1/2"></div>
 
-          <div className="space-y-12">
-            {phases.map((item, idx) => (
-              <motion.div 
-                key={idx}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                className={`relative flex flex-col md:flex-row items-start md:items-center ${idx % 2 === 0 ? 'md:flex-row-reverse' : ''}`}
-              >
-                {/* Center Dot */}
-                <div className={`absolute left-4 md:left-1/2 w-6 h-6 rounded-full border-4 border-white -translate-x-1/2 z-10 ${item.status === 'current' ? 'bg-primary animate-pulse' : 'bg-gray-300'}`}></div>
-                
-                <div className={`ml-12 md:ml-0 md:w-1/2 ${idx % 2 === 0 ? 'md:pl-12' : 'md:pr-12 text-left md:text-right'}`}>
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                    <span className={`text-sm font-bold uppercase tracking-wider ${item.status === 'current' ? 'text-primary' : 'text-gray-400'}`}>
-                      {item.phase}
-                    </span>
-                    <h4 className="text-xl font-bold text-gray-900 mt-2">{item.title}</h4>
+          <ol className="space-y-12">
+            {phases.map((item, idx) => {
+              const s = statusStyles[item.status];
+              const leftSide = idx % 2 !== 0;
+              return (
+                <motion.li
+                  key={item.phase}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  className={`relative flex flex-col md:flex-row items-start md:items-center ${!leftSide ? 'md:flex-row-reverse' : ''}`}
+                >
+                  {/* Center Dot */}
+                  <div className={`absolute left-4 md:left-1/2 w-6 h-6 rounded-full border-4 border-white -translate-x-1/2 z-10 ${s.dot}`}></div>
+
+                  <div className={`ml-12 md:ml-0 md:w-1/2 ${!leftSide ? 'md:pl-12' : 'md:pr-12 text-left md:text-right'}`}>
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                      <div className={`flex flex-wrap items-center gap-3 ${leftSide ? 'md:justify-end' : ''}`}>
+                        <span className={`text-sm font-bold uppercase tracking-wider ${s.phase}`}>{item.phase}</span>
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${s.badge}`}>
+                          {item.status === 'complete' && <Check size={12} />}
+                          {item.status === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>}
+                          {s.label}
+                        </span>
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-900 mt-2">{item.title}</h3>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                </motion.li>
+              );
+            })}
+          </ol>
         </div>
       </div>
     </section>
