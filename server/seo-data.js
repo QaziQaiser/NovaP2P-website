@@ -40,10 +40,16 @@ const SUPPORTED_CHAINS = [
 
 // FAQPage data must match the questions/answers visible on the page.
 const HOME_FAQ = [
-  ['What is P2P trading?', 'Peer-to-peer (P2P) trading allows users to buy and sell USDT directly with each other without a central exchange acting as an intermediary.'],
-  ['Is NovaP2P safe?', 'Yes. NovaP2P uses a secure escrow system that locks the USDT during a trade until the seller confirms receipt of payment, protecting both parties.'],
-  ['What cryptocurrencies will be supported?', 'At launch, NovaP2P will primarily focus on USDT (Tether) to provide a stable trading environment. More assets will be added in later phases.'],
-  ['How does P2P escrow work?', "When a P2P trade starts, the seller's USDT is locked in escrow. It is only released to the buyer once the seller confirms they have received the naira payment. The steps: 1. Create an account and access your secure crypto wallet. 2. Find a buy or sell offer created by another trader. 3. Start the trade while the USDT is locked in escrow. 4. The buyer sends payment through the selected method. 5. Once payment is confirmed, USDT is released from escrow to the buyer."],
+  ['What is Nova Swap?', "Nova Swap is Nova P2P's cross-chain swap. It lets you exchange a token on one blockchain for a token on another, for example USDC on Ethereum for USDT on BNB Chain, in one flow. It compares routes across DEXs and bridges through LI.FI and runs from your own wallet."],
+  ['Which blockchains does Nova Swap support?', 'Nova Swap supports 70+ blockchains, including Ethereum, Arbitrum, Optimism, Base, Polygon, BNB Smart Chain, Avalanche, Solana and Bitcoin. Available tokens and routes depend on liquidity at the time of your swap. See the full list on the Supported Chains page.'],
+  ['How much does a swap cost?', 'Nova Swap charges a 0.5% platform fee plus a 0.25% LI.FI routing fee, and you get 5% of eligible fees back as cashback. You also pay the network gas and any bridge fees on your route. Every cost appears in the quote before you sign. See Swap Fees.'],
+  ['Is Nova Swap safe?', 'Nova Swap is non-custodial: tokens move from your wallet and arrive back in it, and you approve every transaction yourself. Routes still depend on third-party DEXs and bridges, so check the token, amount and destination network before you confirm, and read our Risk Disclosure.'],
+  ['How long does a cross-chain swap take?', 'Same-chain swaps usually finish in seconds; most cross-chain swaps take a few minutes. Time depends on the networks, congestion and the bridge used. The quote shows an estimated time before you sign.'],
+  ['Do I need an account to use Nova Swap?', "No. You only need a supported wallet with the tokens you want to swap and enough of the network's native token for gas. An account is needed for the P2P marketplace."],
+  ['How do Genesis Rewards work?', 'Your swap volume counts toward three milestones: $10,000 earns a $25 USDT bonus, $25,000 earns $50 and $50,000 earns $100. You also get 5% cashback on eligible fees and $5 USDT per friend who swaps $2,000. Full rules are in the Genesis Rewards section.'],
+  ['What is P2P trading on Nova P2P?', 'P2P (peer-to-peer) trading lets you buy or sell USDT directly with another user, paying in naira, without a central exchange taking the other side. Nova P2P provides the marketplace, escrow and dispute support.'],
+  ['How does P2P escrow work?', "When a trade starts, the seller's USDT is locked in escrow. The buyer pays the seller using the agreed method and marks the trade as paid. Once the seller confirms the payment, the USDT is released. If something goes wrong, either side can open a dispute."],
+  ['What are the P2P fees?', 'Merchants (makers) pay 0%, and takers pay $0.03 per trade. See the Fee Structure page for details.'],
 ];
 
 const HELP_FAQ = [

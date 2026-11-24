@@ -828,22 +828,18 @@ const ComingSoon = () => {
 };
 
 const FAQ = () => {
+  const faqLink = "text-primary font-medium hover:underline";
   const faqs = [
-    { q: "What is P2P trading?", a: "Peer-to-peer (P2P) trading allows users to buy and sell USDT directly with each other without a central exchange acting as an intermediary." },
-    { q: "Is NovaP2P safe?", a: "Yes. NovaP2P uses a secure escrow system that locks the USDT during a trade until the seller confirms receipt of payment, protecting both parties." },
-    { q: "What cryptocurrencies will be supported?", a: "At launch, NovaP2P will primarily focus on USDT (Tether) to provide a stable trading environment. More assets will be added in later phases." },
-    { q: "How does P2P escrow work?", a: (
-      <>
-        <p className="mb-3">When a P2P trade starts, the seller's USDT is locked in escrow. It is only released to the buyer once the seller confirms they have received the naira payment.</p>
-        <ol className="list-decimal pl-5 space-y-1">
-          <li><strong>Create an account.</strong> Sign up and access your secure crypto wallet.</li>
-          <li><strong>Find an offer.</strong> Browse buy or sell offers created by other traders.</li>
-          <li><strong>Start the trade.</strong> Choose an offer and start the trade while the USDT is locked in escrow.</li>
-          <li><strong>Complete payment.</strong> The buyer sends payment through the selected method.</li>
-          <li><strong>Crypto released.</strong> Once payment is confirmed, USDT is released from escrow to the buyer.</li>
-        </ol>
-      </>
-    ) }
+    { q: "What is Nova Swap?", a: <>Nova Swap is Nova P2P's cross-chain swap. It lets you exchange a token on one blockchain for a token on another, for example USDC on Ethereum for USDT on BNB Chain, in one flow. It compares routes across DEXs and bridges through LI.FI and runs from your own wallet.</> },
+    { q: "Which blockchains does Nova Swap support?", a: <>Nova Swap supports 70+ blockchains, including Ethereum, Arbitrum, Optimism, Base, Polygon, BNB Smart Chain, Avalanche, Solana and Bitcoin. Available tokens and routes depend on liquidity at the time of your swap. See the full list on the <Link to="/supported-chains" className={faqLink}>Supported Chains</Link> page.</> },
+    { q: "How much does a swap cost?", a: <>Nova Swap charges a 0.5% platform fee plus a 0.25% LI.FI routing fee, and you get 5% of eligible fees back as cashback. You also pay the network gas and any bridge fees on your route. Every cost appears in the quote before you sign. See <Link to="/swap-fees" className={faqLink}>Swap Fees</Link>.</> },
+    { q: "Is Nova Swap safe?", a: <>Nova Swap is non-custodial: tokens move from your wallet and arrive back in it, and you approve every transaction yourself. Routes still depend on third-party DEXs and bridges, so check the token, amount and destination network before you confirm, and read our <Link to="/risk-disclosure" className={faqLink}>Risk Disclosure</Link>.</> },
+    { q: "How long does a cross-chain swap take?", a: <>Same-chain swaps usually finish in seconds; most cross-chain swaps take a few minutes. Time depends on the networks, congestion and the bridge used. The quote shows an estimated time before you sign.</> },
+    { q: "Do I need an account to use Nova Swap?", a: <>No. You only need a supported wallet with the tokens you want to swap and enough of the network's native token for gas. An account is needed for the P2P marketplace.</> },
+    { q: "How do Genesis Rewards work?", a: <>Your swap volume counts toward three milestones: $10,000 earns a $25 USDT bonus, $25,000 earns $50 and $50,000 earns $100. You also get 5% cashback on eligible fees and $5 USDT per friend who swaps $2,000. Full rules are in the <a href="#rewards" className={faqLink}>Genesis Rewards</a> section.</> },
+    { q: "What is P2P trading on Nova P2P?", a: <>P2P (peer-to-peer) trading lets you buy or sell USDT directly with another user, paying in naira, without a central exchange taking the other side. Nova P2P provides the marketplace, escrow and dispute support.</> },
+    { q: "How does P2P escrow work?", a: <>When a trade starts, the seller's USDT is locked in escrow. The buyer pays the seller using the agreed method and marks the trade as paid. Once the seller confirms the payment, the USDT is released. If something goes wrong, either side can open a dispute.</> },
+    { q: "What are the P2P fees?", a: <>Merchants (makers) pay 0%, and takers pay $0.03 per trade. See the <Link to="/fee-structure" className={faqLink}>Fee Structure</Link> page for details.</> }
   ];
 
   const [openIdx, setOpenIdx] = useState<number | null>(0);
@@ -862,13 +858,16 @@ const FAQ = () => {
               key={idx} 
               className={`border rounded-2xl overflow-hidden transition-all duration-300 ${openIdx === idx ? 'border-primary shadow-md' : 'border-gray-200 hover:border-gray-300'}`}
             >
-              <button 
-                className="w-full px-6 py-5 text-left flex justify-between items-center bg-white focus:outline-none"
-                onClick={() => setOpenIdx(openIdx === idx ? null : idx)}
-              >
-                <span className="font-semibold text-gray-900">{faq.q}</span>
-                <ChevronDown className={`text-gray-500 transition-transform duration-300 ${openIdx === idx ? 'rotate-180 text-primary' : ''}`} />
-              </button>
+              <h3>
+                <button
+                  className="w-full px-6 py-5 text-left flex justify-between items-center gap-4 bg-white focus:outline-none"
+                  onClick={() => setOpenIdx(openIdx === idx ? null : idx)}
+                  aria-expanded={openIdx === idx}
+                >
+                  <span className="font-semibold text-gray-900">{faq.q}</span>
+                  <ChevronDown className={`shrink-0 text-gray-500 transition-transform duration-300 ${openIdx === idx ? 'rotate-180 text-primary' : ''}`} />
+                </button>
+              </h3>
               <AnimatePresence>
                 {openIdx === idx && (
                   <motion.div 
