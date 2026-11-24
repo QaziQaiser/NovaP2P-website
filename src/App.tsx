@@ -373,20 +373,20 @@ const HowItWorks = () => {
 
 const Features = () => {
   const features = [
-    { icon: <Lock />, title: "Secure Escrow System", desc: "All trades are protected by an automated escrow system ensuring neither party is cheated." },
-    { icon: <Zap />, title: "Fast USDT Trading", desc: "Buy and sell USDT quickly with verified traders from around the world." },
-    { icon: <Eye />, title: "Transparent Pricing", desc: "View real-time offers and choose the best rate without any hidden fees." },
-    { icon: <Wallet />, title: "User Wallet Integration", desc: "Each user has an internal wallet to manage balances securely and easily." },
-    { icon: <ArrowRightLeft />, title: "Smart Trade Matching", desc: "Quickly find buyers and sellers in seconds with our advanced matching engine." },
-    { icon: <Scale />, title: "Dispute Resolution", desc: "In case of issues, NovaP2P provides a fair, fast, and transparent dispute process." }
+    { icon: <ArrowRightLeft />, title: "DEX + bridge aggregation", desc: <>One quote that combines decentralised exchanges and cross-chain bridges, so you do not have to compare them yourself.</> },
+    { icon: <Globe />, title: "70+ supported blockchains", desc: <>EVM networks such as Ethereum, Arbitrum, Base and BNB Chain, plus non-EVM chains like Solana and Bitcoin. See <Link to="/supported-chains" className="text-primary font-medium hover:underline">Supported Chains</Link>.</> },
+    { icon: <Eye />, title: "Full cost before you sign", desc: <>Platform fee, LI.FI fee, gas and bridge costs appear in the quote. No hidden markups.</> },
+    { icon: <Sparkles />, title: "0.5% fee with 5% cashback", desc: <>A 0.5% platform fee plus a 0.25% LI.FI routing fee, and every user gets 5% cashback on eligible swap fees.</> },
+    { icon: <Award />, title: "Genesis Rewards", desc: <>Earn up to $100 USDT in volume bonuses and $5 USDT per qualifying referral.</> },
+    { icon: <Lock />, title: "P2P USDT with escrow", desc: <>Need naira? Trade USDT directly with other users, with escrow and dispute support on every trade.</> }
   ];
 
   return (
     <section id="features" className="py-24 bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Powerful Features</h2>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">Everything you need to trade crypto safely and efficiently.</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Why Swappers Choose Nova Swap</h2>
+          <p className="text-lg text-gray-600 max-w-2xl mx-auto">Everything you need to move tokens between blockchains without juggling bridges, DEXs and browser tabs.</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
