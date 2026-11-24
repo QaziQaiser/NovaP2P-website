@@ -85,7 +85,7 @@ const NOINDEX = 'noindex, nofollow';
 export const PAGES = {
   '/': {
     title: 'NovaP2P – Cross-Chain Crypto Swap Across 70+ Blockchains',
-    description: 'Swap USDT, USDC, ETH and more across 70+ blockchains in one step. Best-route quotes, 0.5% flat fee, 5% cashback, non-custodial. P2P USDT trading too.',
+    description: 'Swap USDT, USDC, ETH and more across 70+ blockchains in one step. Best-route quotes, 0.5% + 0.25% LI.FI fee, 5% cashback, non-custodial. P2P USDT trading too.',
     og: OG_HOME,
     schema: ['Organization', 'WebSite', 'WebApplication', 'FAQPage'],
     faq: HOME_FAQ,
@@ -94,7 +94,7 @@ export const PAGES = {
   // Nova Swap
   '/swap': {
     title: 'Nova Swap – Swap Crypto Across 70+ Chains | NovaP2P',
-    description: 'Connect your wallet and swap USDT, USDC, ETH and more across 70+ blockchains. Best route via LI.FI, full cost before you sign, 0.5% fee, 5% cashback.',
+    description: 'Connect your wallet and swap USDT, USDC, ETH and more across 70+ blockchains. Best route via LI.FI, full cost before you sign, 0.5% + 0.25% LI.FI fee, 5% cashback.',
     og: OG_SWAP,
     schema: ['WebApplication'],
     breadcrumb: [HOME, SWAP],
@@ -114,8 +114,8 @@ export const PAGES = {
     breadcrumb: [HOME, SWAP, crumb('Supported Chains', '/supported-chains')],
   },
   '/swap-fees': {
-    title: 'Nova Swap Fees – 0.5% Flat Fee + 5% Cashback | NovaP2P',
-    description: 'Nova Swap charges a flat 0.5% fee shown in every quote, plus network gas and bridge costs. Every user gets 5% cashback on eligible swap fees.',
+    title: 'Nova Swap Fees – 0.5% + 0.25% LI.FI Fee, 5% Cashback | NovaP2P',
+    description: 'Nova Swap charges a 0.5% platform fee plus a 0.25% LI.FI routing fee, both shown in every quote, plus network gas and bridge costs. 5% cashback on eligible swap fees.',
     og: OG_SWAP,
     schema: ['WebPage'],
     breadcrumb: [HOME, SWAP, crumb('Swap Fees', '/swap-fees')],

@@ -53,7 +53,7 @@ export const SwapPage: React.FC = () => {
           <div>
             <h2 className="text-2xl font-bold text-gray-900 mb-3">Fees and cashback</h2>
             <p className="leading-relaxed">
-              Nova Swap charges a flat 0.5% fee that is shown in every quote. Network gas and bridge costs are
+              Nova Swap charges a 0.5% platform fee plus a 0.25% LI.FI routing fee, both shown in every quote. Network gas and bridge costs are
               listed in the preview before you sign, so there are no hidden charges. Every user gets 5% cashback
               on eligible swap fees.{' '}
               <Link to="/swap-fees" className="text-primary font-medium hover:underline">

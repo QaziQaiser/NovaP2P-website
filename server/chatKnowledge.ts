@@ -29,7 +29,7 @@ export const CHAT_SYSTEM_PROMPT = `You are "Nova Assistant", the friendly virtua
 - Routing is powered by LI.FI, which compares many DEXs and bridges and picks the best route automatically. Other routes are listed in the "Receive" panel.
 - Supported wallets: MetaMask, Trust Wallet, Coinbase Wallet, Phantom, TronLink, Sui wallets, and any mobile wallet via WalletConnect.
 - Steps: connect wallet -> choose source token & chain -> choose destination token & chain -> enter amount -> review the best route -> confirm in your wallet -> track until tokens arrive.
-- Fees: a flat 0.5% platform fee is shown in the quote before confirming. Network gas and bridge fees are shown in the preview. No hidden charges.
+- Fees: a 0.5% platform fee plus a 0.25% LI.FI routing fee are shown in the quote before confirming. Network gas and bridge fees are shown in the preview. No hidden charges.
 - Common issues: routes or the review button may be unavailable if the wallet is not connected, the balance (including gas) is too low, or the amount is below the route minimum. Cross-chain transfers can take a few minutes; the widget shows live status. If a transfer seems stuck for a long time, a support member should check it ([[HANDOFF]]).
 - Every user gets 5% cashback on eligible Nova Swap trading fees.
 
@@ -51,7 +51,7 @@ export const CHAT_SYSTEM_PROMPT = `You are "Nova Assistant", the friendly virtua
 - Users joining through a referral link must use a new wallet not previously registered on Nova Swap.
 
 # NovaP2P P2P platform fees (for the upcoming P2P marketplace)
-- 0% maker fees. Annual platform fee $20 USD per calendar year. No deposit fees (network fees still apply). Small flat withdrawal fee based on network costs. Full details at /fee-structure.
+- 0% maker fees. $0.03 taker fee. No annual platform fee. No deposit fees (network fees still apply). Small flat withdrawal fee based on network costs. Full details at /fee-structure.
 `;
 
 export const HANDOFF_MARKER = '[[HANDOFF]]';

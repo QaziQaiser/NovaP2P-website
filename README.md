@@ -14,7 +14,7 @@ Move USDT, USDC, ETH and more between chains such as Ethereum, BNB Chain, Arbitr
 - **Best-route quotes.** Routes are compared across DEXs and bridges for you.
 - **Full cost up front.** You see every fee before you sign.
 - **Non-custodial.** Your crypto stays in your own wallet.
-- **Simple pricing.** A flat **0.5% fee**, plus normal network and bridge costs.
+- **Simple pricing.** A **0.5% platform fee** plus a **0.25% LI.FI routing fee**, plus normal network and bridge costs.
 - **5% cashback** on eligible swap fees for every user.
 
 ➡️ [How it works](https://novap2p.com/how-swap-works) · [Supported chains](https://novap2p.com/supported-chains) · [Swap fees](https://novap2p.com/swap-fees)

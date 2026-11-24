@@ -196,7 +196,7 @@ export const SupportedChainsPage: React.FC = () => {
 
 export const SwapFeesPage: React.FC = () => {
   useEffect(() => {
-    document.title = 'Nova Swap Fees – 0.5% Flat Fee + 5% Cashback | NovaP2P';
+    document.title = 'Nova Swap Fees – 0.5% + 0.25% LI.FI Fee, 5% Cashback | NovaP2P';
     window.scrollTo(0, 0);
   }, []);
 
@@ -218,10 +218,10 @@ export const SwapFeesPage: React.FC = () => {
         <div className="bg-white rounded-3xl border border-gray-200 p-8 sm:p-10 shadow-sm space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-2xl bg-blue-50/70 border border-blue-100">
-              <h2 className="text-lg font-bold text-gray-900 mb-2">Platform Trading Fee</h2>
-              <div className="text-3xl font-extrabold text-primary mb-2">0.5%</div>
+              <h2 className="text-lg font-bold text-gray-900 mb-2">Swap Fees</h2>
+              <div className="text-3xl font-extrabold text-primary mb-2">0.5% + 0.25%</div>
               <p className="text-sm text-gray-600 leading-relaxed">
-                Flat, transparent 0.5% integrator fee displayed upfront in the route quote before you confirm any swap.
+                A 0.5% NovaP2P platform fee plus a 0.25% LI.FI routing fee, both displayed upfront in the route quote before you confirm any swap.
               </p>
             </div>
 
