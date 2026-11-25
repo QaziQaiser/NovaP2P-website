@@ -19,7 +19,13 @@ export const apiRouter = Router();
 
 const ENABLED_CHAINS = [1, 56, 137, 42161, 10, 8453];
 const DEFAULT_CAMPAIGN_ID = 'campaign_genesis_001';
-const CLAIM_THRESHOLD_USD = 500.0;
+const CLAIM_THRESHOLD_USD = 500.0; // fallback when the campaign has no admin-set threshold
+
+// Claim activation threshold set in the admin panel (Campaign Settings), falling back to $500
+function getClaimThresholdUSD(campaign: any): number {
+  const value = Number(campaign?.claim_threshold_usd);
+  return Number.isFinite(value) && value > 0 ? value : CLAIM_THRESHOLD_USD;
+}
 
 // Registered LI.FI integrator string; only swaps routed through Nova Swap are credited
 const LIFI_INTEGRATOR = (process.env.LIFI_INTEGRATOR || process.env.VITE_VELORA_PARTNER || 'nova-p2p').toLowerCase();
@@ -111,6 +117,9 @@ apiRouter.get('/campaign', (req: Request, res: Response) => {
         referralQualifyingVolUSD: campaign.referral_qualifying_vol_usd,
         cashbackEnabled: Boolean(campaign.cashback_enabled),
         cashbackPercentage: campaign.cashback_percentage,
+        claimThresholdUSD: getClaimThresholdUSD(campaign),
+        rewardsHeading: campaign.rewards_heading,
+        rewardsBadgeText: campaign.rewards_badge_text,
         enabledChains: ENABLED_CHAINS,
       },
       milestones: milestones.map((m: any) => ({
@@ -435,7 +444,7 @@ export function recordSwapTransactionInternal(params: {
     // 3. Calculate and credit active 5% Cashback on Nova Swap fees (0.5% fee collected)
     if (campaign && campaign.cashback_enabled) {
       const novaFeeCollectedUSD = params.volumeUSD * 0.005; // 0.5% Nova fee
-      const cashbackRate = (campaign.cashback_percentage || 5.0) / 100.0;
+      const cashbackRate = (campaign.cashback_percentage ?? 5.0) / 100.0;
       const creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
 
       if (creditedCashbackUSD > 0) {
@@ -769,7 +778,7 @@ apiRouter.get('/user/:walletAddress', async (req: Request, res: Response) => {
     const totalAccumulatedRewardsUSD = Number((claimableRow?.claimable || 0).toFixed(2));
 
     // Claim stats against $500 activation threshold
-    const claimThresholdUSD = CLAIM_THRESHOLD_USD;
+    const claimThresholdUSD = getClaimThresholdUSD(campaign);
     const progressPercent = Math.min(100, Math.round((totalAccumulatedRewardsUSD / claimThresholdUSD) * 100));
     const isClaimEligible = totalAccumulatedRewardsUSD >= claimThresholdUSD;
 
@@ -1143,9 +1152,11 @@ apiRouter.post('/rewards/request', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No available unlocked reward balance to claim.' });
     }
 
-    if (totalEligible < CLAIM_THRESHOLD_USD) {
+    const claimCampaign = db.prepare('SELECT claim_threshold_usd FROM swap_campaigns WHERE id = ?').get(DEFAULT_CAMPAIGN_ID) as any;
+    const claimThresholdUSD = getClaimThresholdUSD(claimCampaign);
+    if (totalEligible < claimThresholdUSD) {
       return res.status(400).json({
-        error: `Claims unlock at $${CLAIM_THRESHOLD_USD.toFixed(2)}. Your claimable balance is $${totalEligible.toFixed(2)}.`,
+        error: `Claims unlock at $${claimThresholdUSD.toFixed(2)}. Your claimable balance is $${totalEligible.toFixed(2)}.`,
       });
     }
 
@@ -1287,8 +1298,25 @@ apiRouter.get('/admin/overview', verifyAdmin, (req: Request, res: Response) => {
 
     const remainingBudget = campaign ? Math.max(0, campaign.total_budget_usd - (campaign.spent_budget_usd || 0)) : 0;
 
+    // All milestones (active and inactive) for the admin Milestones manager
+    const milestones = (db.prepare(`
+      SELECT * FROM swap_campaign_milestones
+      WHERE campaign_id = ?
+      ORDER BY sort_order ASC, target_volume_usd ASC
+    `).all(campaignId) as any[]).map((m) => ({
+      id: m.id,
+      milestoneNumber: m.milestone_number,
+      title: m.title,
+      targetVolumeUSD: m.target_volume_usd,
+      rewardAmountUSD: m.reward_amount_usd,
+      rewardDescription: m.reward_description,
+      isActive: m.is_active,
+      sortOrder: m.sort_order,
+    }));
+
     res.json({
       campaign,
+      milestones,
       analytics: {
         pageViews: eventStats.page_views || 0,
         uniqueVisitors: eventStats.unique_visitors || 0,
@@ -1330,10 +1358,27 @@ apiRouter.put('/admin/campaign', verifyAdmin, (req: Request, res: Response) => {
       referralQualifyingVolUSD,
       cashbackEnabled,
       cashbackPercentage,
+      claimThresholdUSD,
+      rewardsHeading,
+      rewardsBadgeText,
     } = req.body;
 
     const campaignId = DEFAULT_CAMPAIGN_ID;
     const now = new Date().toISOString();
+
+    // Empty / invalid values keep the current setting (COALESCE below)
+    const positiveNumber = (v: any): number | null => {
+      const n = Number(v);
+      return v !== null && v !== '' && Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const percentage = (v: any): number | null => {
+      const n = Number(v);
+      return v !== null && v !== '' && Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+    };
+    const shortText = (v: any): string | null =>
+      typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null;
+    const validDate = (v: any): string | null =>
+      typeof v === 'string' && v.trim() && !Number.isNaN(new Date(v).getTime()) ? new Date(v).toISOString() : null;
 
     db.prepare(`
       UPDATE swap_campaigns
@@ -1348,20 +1393,26 @@ apiRouter.put('/admin/campaign', verifyAdmin, (req: Request, res: Response) => {
           referral_qualifying_vol_usd = COALESCE(?, referral_qualifying_vol_usd),
           cashback_enabled = COALESCE(?, cashback_enabled),
           cashback_percentage = COALESCE(?, cashback_percentage),
+          claim_threshold_usd = COALESCE(?, claim_threshold_usd),
+          rewards_heading = COALESCE(?, rewards_heading),
+          rewards_badge_text = COALESCE(?, rewards_badge_text),
           updated_at = ?
       WHERE id = ?
     `).run(
       title,
       description,
       status,
-      startDate,
-      endDate,
+      validDate(startDate),
+      validDate(endDate),
       totalBudgetUSD,
       minSwapUSD,
       referralRewardUSD,
       referralQualifyingVolUSD,
       cashbackEnabled !== undefined ? (cashbackEnabled ? 1 : 0) : null,
-      cashbackPercentage,
+      percentage(cashbackPercentage),
+      positiveNumber(claimThresholdUSD),
+      shortText(rewardsHeading),
+      shortText(rewardsBadgeText),
       now,
       campaignId
     );

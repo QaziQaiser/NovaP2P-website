@@ -106,18 +106,23 @@ export const SwapAdminDashboard: React.FC = () => {
 
       if (overview) {
         setOverviewData(overview);
+        // Dates are edited as YYYY-MM-DD in the date inputs
+        const toDateInput = (v: any) => (typeof v === 'string' && v ? v.slice(0, 10) : '');
         setCampaignForm({
           title: overview.campaign?.title || '',
           description: overview.campaign?.description || '',
           status: overview.campaign?.status || 'active',
-          startDate: overview.campaign?.start_date || '',
-          endDate: overview.campaign?.end_date || '',
-          totalBudgetUSD: overview.campaign?.total_budget_usd || 10000,
-          minSwapUSD: overview.campaign?.min_swap_usd || 10,
-          referralRewardUSD: overview.campaign?.referral_reward_usd || 5.0,
-          referralQualifyingVolUSD: overview.campaign?.referral_qualifying_vol_usd || 2000,
+          startDate: toDateInput(overview.campaign?.start_date),
+          endDate: toDateInput(overview.campaign?.end_date),
+          totalBudgetUSD: overview.campaign?.total_budget_usd ?? 10000,
+          minSwapUSD: overview.campaign?.min_swap_usd ?? 1,
+          referralRewardUSD: overview.campaign?.referral_reward_usd ?? 5.0,
+          referralQualifyingVolUSD: overview.campaign?.referral_qualifying_vol_usd ?? 2000,
           cashbackEnabled: Boolean(overview.campaign?.cashback_enabled),
-          cashbackPercentage: overview.campaign?.cashback_percentage || 0,
+          cashbackPercentage: overview.campaign?.cashback_percentage ?? 5,
+          claimThresholdUSD: overview.campaign?.claim_threshold_usd ?? 500,
+          rewardsHeading: overview.campaign?.rewards_heading || 'Genesis Rewards',
+          rewardsBadgeText: overview.campaign?.rewards_badge_text || 'Detailed Rewards and Progress (After Wallet Connect)',
         });
       }
 
@@ -766,30 +771,112 @@ export const SwapAdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-slate-400 mb-1">Referral Qualifying Volume ($ USD)</label>
-                    <input
-                      type="number"
-                      step="10"
-                      value={campaignForm.referralQualifyingVolUSD}
-                      onChange={(e) => setCampaignForm({ ...campaignForm, referralQualifyingVolUSD: parseFloat(e.target.value) })}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs"
-                      required
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Referral Qualifying Volume ($ USD)</label>
+                      <input
+                        type="number"
+                        step="10"
+                        value={campaignForm.referralQualifyingVolUSD}
+                        onChange={(e) => setCampaignForm({ ...campaignForm, referralQualifyingVolUSD: parseFloat(e.target.value) })}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">Claim Unlock Threshold ($ USD)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="1"
+                        value={campaignForm.claimThresholdUSD}
+                        onChange={(e) => setCampaignForm({ ...campaignForm, claimThresholdUSD: parseFloat(e.target.value) })}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs"
+                        required
+                      />
+                    </div>
                   </div>
 
-                  {/* Optional Cashback Toggle (Disabled by default) */}
-                  <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <div className="text-white font-semibold">Enable Optional Swap Cashback</div>
-                      <div className="text-[11px] text-slate-400">Disabled by default. Separate from P2P fees.</div>
+                      <label className="block text-slate-400 mb-1">Start Date</label>
+                      <input
+                        type="date"
+                        value={campaignForm.startDate}
+                        onChange={(e) => setCampaignForm({ ...campaignForm, startDate: e.target.value })}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs [color-scheme:dark]"
+                      />
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={campaignForm.cashbackEnabled}
-                      onChange={(e) => setCampaignForm({ ...campaignForm, cashbackEnabled: e.target.checked })}
-                      className="w-4 h-4 rounded text-primary focus:ring-primary"
-                    />
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">End Date</label>
+                      <input
+                        type="date"
+                        value={campaignForm.endDate}
+                        onChange={(e) => setCampaignForm({ ...campaignForm, endDate: e.target.value })}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs [color-scheme:dark]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Optional Cashback Toggle + percentage */}
+                  <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-white font-semibold">Enable Optional Swap Cashback</div>
+                        <div className="text-[11px] text-slate-400">Pays back a % of the Nova Swap fee. Separate from P2P fees.</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={campaignForm.cashbackEnabled}
+                        onChange={(e) => setCampaignForm({ ...campaignForm, cashbackEnabled: e.target.checked })}
+                        className="w-4 h-4 rounded text-primary focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Cashback Percentage (%)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        value={campaignForm.cashbackPercentage}
+                        onChange={(e) => setCampaignForm({ ...campaignForm, cashbackPercentage: parseFloat(e.target.value) })}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Texts shown on the live site's Genesis Rewards card */}
+                  <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
+                    <div>
+                      <div className="text-white font-semibold">Genesis Rewards Card Texts</div>
+                      <div className="text-[11px] text-slate-400">Shown on the homepage. The last word of the heading gets the purple gradient.</div>
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Card Heading</label>
+                      <input
+                        type="text"
+                        maxLength={120}
+                        value={campaignForm.rewardsHeading}
+                        onChange={(e) => setCampaignForm({ ...campaignForm, rewardsHeading: e.target.value })}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Badge Text (top right, desktop only)</label>
+                      <input
+                        type="text"
+                        maxLength={120}
+                        value={campaignForm.rewardsBadgeText}
+                        onChange={(e) => setCampaignForm({ ...campaignForm, rewardsBadgeText: e.target.value })}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs"
+                        required
+                      />
+                    </div>
                   </div>
 
                   <button
@@ -809,17 +896,20 @@ export const SwapAdminDashboard: React.FC = () => {
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-base font-bold text-white">Milestones</h3>
                   <button
-                    onClick={() =>
+                    onClick={() => {
+                      // Next free number (milestone numbers must be unique per campaign)
+                      const nextNumber =
+                        Math.max(0, ...(overviewData?.milestones || []).map((m: any) => Number(m.milestoneNumber) || 0)) + 1;
                       setEditingMilestone({
-                        milestoneNumber: (overviewData?.milestones?.length || 0) + 1,
-                        title: `Milestone ${(overviewData?.milestones?.length || 0) + 1}`,
+                        milestoneNumber: nextNumber,
+                        title: `Milestone ${nextNumber}`,
                         targetVolumeUSD: 1000,
                         rewardAmountUSD: 5,
                         rewardDescription: '$5.00 Bonus Reward on reaching $1,000 swap volume',
                         isActive: 1,
-                        sortOrder: (overviewData?.milestones?.length || 0) + 1,
-                      })
-                    }
+                        sortOrder: nextNumber,
+                      });
+                    }}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-xs font-semibold cursor-pointer"
                   >
                     <Plus size={13} />

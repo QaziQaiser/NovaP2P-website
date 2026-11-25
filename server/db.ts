@@ -367,7 +367,24 @@ export function initDb() {
     console.error('[DB] swap_rewards.claim_id migration failed:', err);
   }
 
-  // Seed / Update active Genesis campaign configuration
+  // Admin-editable campaign settings shown on the live site (claim threshold and Genesis Rewards card texts)
+  try {
+    const campaignCols = (db.prepare("PRAGMA table_info(swap_campaigns)").all() as any[]).map((col: any) => col.name);
+    if (!campaignCols.includes('claim_threshold_usd')) {
+      db.exec("ALTER TABLE swap_campaigns ADD COLUMN claim_threshold_usd REAL NOT NULL DEFAULT 500.0;");
+    }
+    if (!campaignCols.includes('rewards_heading')) {
+      db.exec("ALTER TABLE swap_campaigns ADD COLUMN rewards_heading TEXT NOT NULL DEFAULT 'Genesis Rewards';");
+    }
+    if (!campaignCols.includes('rewards_badge_text')) {
+      db.exec("ALTER TABLE swap_campaigns ADD COLUMN rewards_badge_text TEXT NOT NULL DEFAULT 'Detailed Rewards and Progress (After Wallet Connect)';");
+    }
+  } catch (err) {
+    console.error('[DB] swap_campaigns display settings migration failed:', err);
+  }
+
+  // Seed the Genesis campaign on first run only. Existing settings are managed from the admin panel
+  // and must survive restarts/deploys, so they are never overwritten here.
   const campaignId = 'campaign_genesis_001';
   const existingCampaign = db.prepare('SELECT id FROM swap_campaigns WHERE slug = ?').get('genesis') as any;
   const now = new Date().toISOString();
@@ -401,22 +418,13 @@ export function initDb() {
       now,
       now
     );
-  } else {
-    // Ensure existing campaign in persistent DB is updated to match official specs
-    db.prepare(`
-      UPDATE swap_campaigns
-      SET min_swap_usd = 1.0,
-          referral_reward_usd = 5.0,
-          referral_qualifying_vol_usd = 2000.0,
-          cashback_enabled = 1,
-          cashback_percentage = 5.0,
-          description = 'Complete your swaps and earn amazing rewards!'
-      WHERE slug = 'genesis'
-    `).run();
   }
 
-  // Seed / Update official Genesis milestones ($10,000 -> $25, $25,000 -> $50, $50,000 -> $100)
+  // Seed the official Genesis milestones ($10,000 -> $25, $25,000 -> $50, $50,000 -> $100) only when the
+  // campaign has none yet; after that, milestones are edited from the admin panel.
   const targetCampaignId = existingCampaign ? existingCampaign.id : campaignId;
+  const milestoneCount = (db.prepare('SELECT COUNT(*) as n FROM swap_campaign_milestones WHERE campaign_id = ?').get(targetCampaignId) as any)?.n || 0;
+  if (milestoneCount > 0) return;
 
   const upsertMilestone = db.prepare(`
     INSERT INTO swap_campaign_milestones (

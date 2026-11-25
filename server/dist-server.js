@@ -361,6 +361,20 @@ function initDb() {
   } catch (err) {
     console.error("[DB] swap_rewards.claim_id migration failed:", err);
   }
+  try {
+    const campaignCols = db.prepare("PRAGMA table_info(swap_campaigns)").all().map((col) => col.name);
+    if (!campaignCols.includes("claim_threshold_usd")) {
+      db.exec("ALTER TABLE swap_campaigns ADD COLUMN claim_threshold_usd REAL NOT NULL DEFAULT 500.0;");
+    }
+    if (!campaignCols.includes("rewards_heading")) {
+      db.exec("ALTER TABLE swap_campaigns ADD COLUMN rewards_heading TEXT NOT NULL DEFAULT 'Genesis Rewards';");
+    }
+    if (!campaignCols.includes("rewards_badge_text")) {
+      db.exec("ALTER TABLE swap_campaigns ADD COLUMN rewards_badge_text TEXT NOT NULL DEFAULT 'Detailed Rewards and Progress (After Wallet Connect)';");
+    }
+  } catch (err) {
+    console.error("[DB] swap_campaigns display settings migration failed:", err);
+  }
   const campaignId = "campaign_genesis_001";
   const existingCampaign = db.prepare("SELECT id FROM swap_campaigns WHERE slug = ?").get("genesis");
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -398,19 +412,10 @@ function initDb() {
       now,
       now
     );
-  } else {
-    db.prepare(`
-      UPDATE swap_campaigns
-      SET min_swap_usd = 1.0,
-          referral_reward_usd = 5.0,
-          referral_qualifying_vol_usd = 2000.0,
-          cashback_enabled = 1,
-          cashback_percentage = 5.0,
-          description = 'Complete your swaps and earn amazing rewards!'
-      WHERE slug = 'genesis'
-    `).run();
   }
   const targetCampaignId = existingCampaign ? existingCampaign.id : campaignId;
+  const milestoneCount = db.prepare("SELECT COUNT(*) as n FROM swap_campaign_milestones WHERE campaign_id = ?").get(targetCampaignId)?.n || 0;
+  if (milestoneCount > 0) return;
   const upsertMilestone = db.prepare(`
     INSERT INTO swap_campaign_milestones (
       id, campaign_id, milestone_number, title, target_volume_usd,
@@ -1705,6 +1710,10 @@ var apiRouter = Router2();
 var ENABLED_CHAINS = [1, 56, 137, 42161, 10, 8453];
 var DEFAULT_CAMPAIGN_ID = "campaign_genesis_001";
 var CLAIM_THRESHOLD_USD = 500;
+function getClaimThresholdUSD(campaign) {
+  const value = Number(campaign?.claim_threshold_usd);
+  return Number.isFinite(value) && value > 0 ? value : CLAIM_THRESHOLD_USD;
+}
 var LIFI_INTEGRATOR = (process.env.LIFI_INTEGRATOR || process.env.VITE_VELORA_PARTNER || "nova-p2p").toLowerCase();
 var TX_HASH_PATTERN = /^(0x[a-fA-F0-9]{64}|[1-9A-HJ-NP-Za-km-z]{43,100})$/;
 function clientIp(req) {
@@ -1775,6 +1784,9 @@ apiRouter.get("/campaign", (req, res) => {
         referralQualifyingVolUSD: campaign.referral_qualifying_vol_usd,
         cashbackEnabled: Boolean(campaign.cashback_enabled),
         cashbackPercentage: campaign.cashback_percentage,
+        claimThresholdUSD: getClaimThresholdUSD(campaign),
+        rewardsHeading: campaign.rewards_heading,
+        rewardsBadgeText: campaign.rewards_badge_text,
         enabledChains: ENABLED_CHAINS
       },
       milestones: milestones.map((m) => ({
@@ -2031,7 +2043,7 @@ function recordSwapTransactionInternal(params) {
     `).run(newTotalVolume, newSwapsCount, now, params.userId);
     if (campaign && campaign.cashback_enabled) {
       const novaFeeCollectedUSD = params.volumeUSD * 5e-3;
-      const cashbackRate = (campaign.cashback_percentage || 5) / 100;
+      const cashbackRate = (campaign.cashback_percentage ?? 5) / 100;
       const creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
       if (creditedCashbackUSD > 0) {
         const cbId = "cb_" + crypto4.randomUUID();
@@ -2300,7 +2312,7 @@ apiRouter.get("/user/:walletAddress", async (req, res) => {
       WHERE user_id = ? AND status = 'unlocked'
     `).get(user.id);
     const totalAccumulatedRewardsUSD = Number((claimableRow?.claimable || 0).toFixed(2));
-    const claimThresholdUSD = CLAIM_THRESHOLD_USD;
+    const claimThresholdUSD = getClaimThresholdUSD(campaign);
     const progressPercent = Math.min(100, Math.round(totalAccumulatedRewardsUSD / claimThresholdUSD * 100));
     const isClaimEligible = totalAccumulatedRewardsUSD >= claimThresholdUSD;
     const userClaims = db.prepare(`
@@ -2613,9 +2625,11 @@ apiRouter.post("/rewards/request", async (req, res) => {
     if (totalEligible <= 0) {
       return res.status(400).json({ error: "No available unlocked reward balance to claim." });
     }
-    if (totalEligible < CLAIM_THRESHOLD_USD) {
+    const claimCampaign = db.prepare("SELECT claim_threshold_usd FROM swap_campaigns WHERE id = ?").get(DEFAULT_CAMPAIGN_ID);
+    const claimThresholdUSD = getClaimThresholdUSD(claimCampaign);
+    if (totalEligible < claimThresholdUSD) {
       return res.status(400).json({
-        error: `Claims unlock at $${CLAIM_THRESHOLD_USD.toFixed(2)}. Your claimable balance is $${totalEligible.toFixed(2)}.`
+        error: `Claims unlock at $${claimThresholdUSD.toFixed(2)}. Your claimable balance is $${totalEligible.toFixed(2)}.`
       });
     }
     const requestedAmount = claimAmountUSD && typeof claimAmountUSD === "number" && claimAmountUSD > 0 ? Math.min(claimAmountUSD, totalEligible) : totalEligible;
@@ -2732,8 +2746,23 @@ apiRouter.get("/admin/overview", verifyAdmin, (req, res) => {
       FROM swap_reward_payouts
     `).get();
     const remainingBudget = campaign ? Math.max(0, campaign.total_budget_usd - (campaign.spent_budget_usd || 0)) : 0;
+    const milestones = db.prepare(`
+      SELECT * FROM swap_campaign_milestones
+      WHERE campaign_id = ?
+      ORDER BY sort_order ASC, target_volume_usd ASC
+    `).all(campaignId).map((m) => ({
+      id: m.id,
+      milestoneNumber: m.milestone_number,
+      title: m.title,
+      targetVolumeUSD: m.target_volume_usd,
+      rewardAmountUSD: m.reward_amount_usd,
+      rewardDescription: m.reward_description,
+      isActive: m.is_active,
+      sortOrder: m.sort_order
+    }));
     res.json({
       campaign,
+      milestones,
       analytics: {
         pageViews: eventStats.page_views || 0,
         uniqueVisitors: eventStats.unique_visitors || 0,
@@ -2772,10 +2801,23 @@ apiRouter.put("/admin/campaign", verifyAdmin, (req, res) => {
       referralRewardUSD,
       referralQualifyingVolUSD,
       cashbackEnabled,
-      cashbackPercentage
+      cashbackPercentage,
+      claimThresholdUSD,
+      rewardsHeading,
+      rewardsBadgeText
     } = req.body;
     const campaignId = DEFAULT_CAMPAIGN_ID;
     const now = (/* @__PURE__ */ new Date()).toISOString();
+    const positiveNumber = (v) => {
+      const n = Number(v);
+      return v !== null && v !== "" && Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const percentage = (v) => {
+      const n = Number(v);
+      return v !== null && v !== "" && Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+    };
+    const shortText = (v) => typeof v === "string" && v.trim() ? v.trim().slice(0, 120) : null;
+    const validDate = (v) => typeof v === "string" && v.trim() && !Number.isNaN(new Date(v).getTime()) ? new Date(v).toISOString() : null;
     db.prepare(`
       UPDATE swap_campaigns
       SET title = COALESCE(?, title),
@@ -2789,20 +2831,26 @@ apiRouter.put("/admin/campaign", verifyAdmin, (req, res) => {
           referral_qualifying_vol_usd = COALESCE(?, referral_qualifying_vol_usd),
           cashback_enabled = COALESCE(?, cashback_enabled),
           cashback_percentage = COALESCE(?, cashback_percentage),
+          claim_threshold_usd = COALESCE(?, claim_threshold_usd),
+          rewards_heading = COALESCE(?, rewards_heading),
+          rewards_badge_text = COALESCE(?, rewards_badge_text),
           updated_at = ?
       WHERE id = ?
     `).run(
       title,
       description,
       status,
-      startDate,
-      endDate,
+      validDate(startDate),
+      validDate(endDate),
       totalBudgetUSD,
       minSwapUSD,
       referralRewardUSD,
       referralQualifyingVolUSD,
       cashbackEnabled !== void 0 ? cashbackEnabled ? 1 : 0 : null,
-      cashbackPercentage,
+      percentage(cashbackPercentage),
+      positiveNumber(claimThresholdUSD),
+      shortText(rewardsHeading),
+      shortText(rewardsBadgeText),
       now,
       campaignId
     );
@@ -3149,7 +3197,7 @@ var CHAT_SYSTEM_PROMPT = `You are "Nova Assistant", the friendly virtual assista
 - Routing is powered by LI.FI, which compares many DEXs and bridges and picks the best route automatically. Other routes are listed in the "Receive" panel.
 - Supported wallets: MetaMask, Trust Wallet, Coinbase Wallet, Phantom, TronLink, Sui wallets, and any mobile wallet via WalletConnect.
 - Steps: connect wallet -> choose source token & chain -> choose destination token & chain -> enter amount -> review the best route -> confirm in your wallet -> track until tokens arrive.
-- Fees: a flat 0.5% platform fee is shown in the quote before confirming. Network gas and bridge fees are shown in the preview. No hidden charges.
+- Fees: a 0.5% platform fee plus a 0.25% LI.FI routing fee are shown in the quote before confirming. Network gas and bridge fees are shown in the preview. No hidden charges.
 - Common issues: routes or the review button may be unavailable if the wallet is not connected, the balance (including gas) is too low, or the amount is below the route minimum. Cross-chain transfers can take a few minutes; the widget shows live status. If a transfer seems stuck for a long time, a support member should check it ([[HANDOFF]]).
 - Every user gets 5% cashback on eligible Nova Swap trading fees.
 
@@ -3171,7 +3219,7 @@ var CHAT_SYSTEM_PROMPT = `You are "Nova Assistant", the friendly virtual assista
 - Users joining through a referral link must use a new wallet not previously registered on Nova Swap.
 
 # NovaP2P P2P platform fees (for the upcoming P2P marketplace)
-- 0% maker fees. Annual platform fee $20 USD per calendar year. No deposit fees (network fees still apply). Small flat withdrawal fee based on network costs. Full details at /fee-structure.
+- 0% maker fees. $0.03 taker fee. No annual platform fee. No deposit fees (network fees still apply). Small flat withdrawal fee based on network costs. Full details at /fee-structure.
 `;
 var HANDOFF_MARKER = "[[HANDOFF]]";
 

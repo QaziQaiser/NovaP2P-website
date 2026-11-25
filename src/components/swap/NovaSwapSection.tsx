@@ -77,16 +77,33 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
       });
     }
 
-    // Load active campaign
-    swapCampaignApi
-      .getCampaign()
-      .then((data) => {
-        setCampaign(data.campaign);
-        setMilestones(data.milestones);
-      })
-      .catch((err) => {
-        console.error('Failed to load campaign settings:', err);
-      });
+  }, []);
+
+  // Load active campaign settings, and re-check every 30s (and when the tab regains focus)
+  // so changes saved in the admin panel appear on the live site without a reload.
+  useEffect(() => {
+    let cancelled = false;
+    const loadCampaign = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      swapCampaignApi
+        .getCampaign()
+        .then((data) => {
+          if (cancelled) return;
+          setCampaign(data.campaign);
+          setMilestones(data.milestones);
+        })
+        .catch((err) => {
+          console.error('Failed to load campaign settings:', err);
+        });
+    };
+    loadCampaign();
+    const interval = setInterval(loadCampaign, 30000);
+    document.addEventListener('visibilitychange', loadCampaign);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', loadCampaign);
+    };
   }, []);
 
   // 2. Fetch User Dashboard whenever connected account changes
@@ -352,6 +369,8 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
       {/* State A (Disconnected): Show Genesis Rewards Showcase Card */}
       {!isWalletConnected ? (
         <GenesisRewardsPreviewCard
+          campaign={campaign}
+          milestones={milestones}
           onOpenDetails={() => setIsDetailsModalOpen(true)}
         />
       ) : (
@@ -359,6 +378,8 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
         <div id="rewards" className="w-full scroll-mt-24">
           <GenesisRewardsDashboard
             dashboardData={userDashboard}
+            campaign={campaign}
+            milestones={milestones}
             walletAddress={effectiveAccount}
             isLoading={isLoadingDashboard}
             onRefresh={refreshUserDashboard}

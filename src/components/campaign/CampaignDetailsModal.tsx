@@ -179,7 +179,7 @@ export const CampaignDetailsModal: React.FC<CampaignDetailsModalProps> = ({
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-bold text-white mt-1">
-              Nova Swap Genesis Campaign Details
+              {campaign?.title || 'Nova Swap Genesis Campaign'} Details
             </h2>
           </div>
         </div>

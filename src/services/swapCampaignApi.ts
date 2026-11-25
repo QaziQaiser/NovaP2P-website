@@ -17,6 +17,9 @@ export interface CampaignData {
   referralQualifyingVolUSD: number;
   cashbackEnabled: boolean;
   cashbackPercentage: number;
+  claimThresholdUSD?: number;
+  rewardsHeading?: string;
+  rewardsBadgeText?: string;
   enabledChains: number[];
 }
 
@@ -123,7 +126,8 @@ const API_BASE = '/api/swap';
 export const swapCampaignApi = {
   // Public campaign settings & milestones
   async getCampaign(): Promise<{ campaign: CampaignData; milestones: MilestoneItem[]; stats: any }> {
-    const res = await fetch(`${API_BASE}/campaign`);
+    // no-store: admin changes to campaign settings must show up on the live site right away
+    const res = await fetch(`${API_BASE}/campaign`, { cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to load campaign data');
     return res.json();
   },

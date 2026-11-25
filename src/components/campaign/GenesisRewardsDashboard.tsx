@@ -13,10 +13,13 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
-import { UserDashboardData } from '../../services/swapCampaignApi';
+import { UserDashboardData, CampaignData, MilestoneItem } from '../../services/swapCampaignApi';
 
 interface GenesisRewardsDashboardProps {
   dashboardData: UserDashboardData | null;
+  /** Campaign settings from the admin panel (used until / unless the user dashboard provides them) */
+  campaign?: CampaignData | null;
+  milestones?: MilestoneItem[];
   walletAddress?: string | null;
   isLoading: boolean;
   onRefresh: () => void;
@@ -27,6 +30,8 @@ interface GenesisRewardsDashboardProps {
 
 export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = ({
   dashboardData,
+  campaign,
+  milestones,
   walletAddress,
   isLoading,
   onRefresh,
@@ -62,10 +67,17 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
   } catch {}
 
   const userVolume = Math.max(dashboardData?.user?.totalVolumeUSD ?? 0.0, cachedVolume);
-  
+
+  // Campaign settings managed in the admin panel
+  const usd = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const cashbackEnabled = campaign ? campaign.cashbackEnabled : true;
+  const cashbackPct = dashboardData?.cashbackStats?.cashbackPercentage ?? campaign?.cashbackPercentage ?? 5;
+  const referralReward = campaign?.referralRewardUSD ?? 5;
+  const referralVolume = campaign?.referralQualifyingVolUSD ?? 2000;
+
   // Real Cashback from backend ledger (or estimated on cached volume if syncing)
   const serverCashback = dashboardData?.cashbackStats?.totalCashbackUSD ?? 0.0;
-  const estimatedCashback = cachedVolume > 0 ? Number((cachedVolume * 0.005 * 0.05).toFixed(2)) : 0.0;
+  const estimatedCashback = cachedVolume > 0 && cashbackEnabled ? Number((cachedVolume * 0.005 * (cashbackPct / 100)).toFixed(2)) : 0.0;
   const cashbackEarned = Math.max(serverCashback, estimatedCashback);
   
   // Real Bonus rewards (milestone bonuses + referral bonuses)
@@ -79,7 +91,8 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
   const qualifiedReferralsCount = dashboardData?.referralStats?.qualifiedReferralsCount ?? 0;
 
   // Total accumulated eligible rewards towards $500 claim activation threshold
-  const claimThreshold = dashboardData?.claimStats?.claimThresholdUSD ?? 500.0;
+  const claimThreshold = dashboardData?.claimStats?.claimThresholdUSD ?? campaign?.claimThresholdUSD ?? 500.0;
+  const thresholdText = `$${usd(claimThreshold)}`;
   const accumulatedRewards = dashboardData?.claimStats?.totalAccumulatedRewardsUSD ?? 
     (cashbackEarned + totalBonusEarned);
   const progressPercent = Math.min(100, Math.round((accumulatedRewards / claimThreshold) * 100));
@@ -124,36 +137,28 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
     }
   };
 
-  // Official 3 Milestones: $10,000 ($25), $25,000 ($50), $50,000 ($100)
-  const officialMilestones = [
-    {
-      id: 'ms_genesis_1',
-      title: '$10,000 Volume',
-      target: 10000,
-      reward: 25.0,
-      rewardText: '$25 USDT',
-      isCompleted: userVolume >= 10000,
-      color: 'blue',
-    },
-    {
-      id: 'ms_genesis_2',
-      title: '$25,000 Volume',
-      target: 25000,
-      reward: 50.0,
-      rewardText: '$50 USDT',
-      isCompleted: userVolume >= 25000,
-      color: 'blue',
-    },
-    {
-      id: 'ms_genesis_3',
-      title: '$50,000 Volume',
-      target: 50000,
-      reward: 100.0,
-      rewardText: '$100 USDT',
-      isCompleted: userVolume >= 50000,
-      color: 'purple',
-    },
-  ];
+  // Milestones from the admin panel (user dashboard first, then campaign settings, then the official defaults)
+  const milestoneSource: { id: string; targetVolumeUSD: number; rewardAmountUSD: number }[] =
+    dashboardData?.milestones?.length
+      ? dashboardData.milestones
+      : milestones?.length
+        ? milestones
+        : campaign
+          ? []
+          : [
+              { id: 'ms_genesis_1', targetVolumeUSD: 10000, rewardAmountUSD: 25 },
+              { id: 'ms_genesis_2', targetVolumeUSD: 25000, rewardAmountUSD: 50 },
+              { id: 'ms_genesis_3', targetVolumeUSD: 50000, rewardAmountUSD: 100 },
+            ];
+  const officialMilestones = milestoneSource.map((m, i) => ({
+    id: m.id,
+    title: `$${usd(m.targetVolumeUSD)} Volume`,
+    target: m.targetVolumeUSD,
+    reward: m.rewardAmountUSD,
+    rewardText: `$${usd(m.rewardAmountUSD)} USDT`,
+    isCompleted: userVolume >= m.targetVolumeUSD,
+    color: i === milestoneSource.length - 1 ? 'purple' : 'blue',
+  }));
 
   return (
     <div className="w-full max-w-5xl mx-auto px-4 mt-6 sm:mt-8 mb-10 animate-in fade-in duration-300">
@@ -209,13 +214,13 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
                   <span>Your Campaign Progress</span>
                   <span
                     className="w-4 h-4 rounded-full bg-purple-900/60 text-purple-300 flex items-center justify-center text-[10px] cursor-help"
-                    title="Accumulate $500 in eligible rewards from cashback and bonuses to activate reward claim payout"
+                    title={`Accumulate ${thresholdText} in eligible rewards from cashback and bonuses to activate reward claim payout`}
                   >
                     i
                   </span>
                 </div>
                 <span className="text-xs text-slate-400 font-mono">
-                  Goal: $500
+                  Goal: {thresholdText}
                 </span>
               </div>
 
@@ -225,7 +230,7 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
                   ${accumulatedRewards >= 10 ? Math.round(accumulatedRewards) : accumulatedRewards.toFixed(2)}
                 </span>
                 <span className="text-base font-semibold text-slate-400">
-                  / $500
+                  / {thresholdText}
                 </span>
               </div>
 
@@ -248,7 +253,7 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
                   <button
                     onClick={() => onOpenClaimModal({
                       id: 'threshold_500',
-                      title: 'Genesis Rewards $500 Activation Claim',
+                      title: `Genesis Rewards ${thresholdText} Activation Claim`,
                       amountUSD: accumulatedRewards,
                       walletAddress: activeAddress,
                     })}
@@ -259,7 +264,7 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
                   </button>
                 ) : (
                   <div className="text-[11px] text-slate-400 bg-slate-900/60 border border-slate-800/80 rounded-xl p-2.5 flex items-center justify-between">
-                    <span>Claim unlocks at $500:</span>
+                    <span>Claim unlocks at {thresholdText}:</span>
                     <strong className="text-amber-300">${remainingToClaim.toFixed(2)} left</strong>
                   </div>
                 )}
@@ -332,9 +337,11 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
                     i
                   </span>
                 </div>
-                <span className="text-[10px] text-emerald-400 font-semibold">
-                  5% Active Cashback
-                </span>
+                {cashbackEnabled && (
+                  <span className="text-[10px] text-emerald-400 font-semibold">
+                    {usd(cashbackPct)}% Active Cashback
+                  </span>
+                )}
               </div>
 
               {/* Tree Roadmap */}
@@ -442,7 +449,7 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
                 Referral Rewards
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Earn <strong className="text-emerald-400">$5 USDT</strong> when your referred friends complete at least <strong className="text-emerald-400">$2,000 in eligible swap volume</strong>.
+                Earn <strong className="text-emerald-400">${usd(referralReward)} USDT</strong> when your referred friends complete at least <strong className="text-emerald-400">${usd(referralVolume)} in eligible swap volume</strong>.
               </p>
 
               {/* Referral Live Stats */}
@@ -483,13 +490,13 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
               <button
                 onClick={() => onOpenClaimModal({
                   id: 'threshold_500',
-                  title: 'Genesis Rewards $500 Activation Claim',
+                  title: `Genesis Rewards ${thresholdText} Activation Claim`,
                   amountUSD: accumulatedRewards,
                   walletAddress: activeAddress,
                 })}
                 className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98]"
               >
-                <span>Claim $500 Reward</span>
+                <span>Claim {thresholdText} Reward</span>
                 <ChevronRight size={15} />
               </button>
             ) : (

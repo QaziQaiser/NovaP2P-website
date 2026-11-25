@@ -1,13 +1,48 @@
 import React from 'react';
 import { Users, TrendingUp, Sparkles, RefreshCw, UserPlus, ChevronRight } from 'lucide-react';
+import { CampaignData, MilestoneItem } from '../../services/swapCampaignApi';
 
 interface GenesisRewardsPreviewCardProps {
+  /** Campaign settings from the admin panel (null while loading: the defaults below are shown) */
+  campaign?: CampaignData | null;
+  milestones?: MilestoneItem[];
   onOpenDetails?: () => void;
 }
 
+// Shown until the campaign settings load (and if they fail to load)
+const DEFAULT_MILESTONES = [
+  { id: 'default_1', targetVolumeUSD: 10000, rewardAmountUSD: 25 },
+  { id: 'default_2', targetVolumeUSD: 25000, rewardAmountUSD: 50 },
+  { id: 'default_3', targetVolumeUSD: 50000, rewardAmountUSD: 100 },
+];
+
+// Card styles, repeated in this order for each milestone
+const MILESTONE_STYLES = [
+  { Icon: Users, iconWrap: 'bg-blue-100 text-blue-600', reward: 'text-blue-600' },
+  { Icon: TrendingUp, iconWrap: 'bg-purple-100 text-purple-600', reward: 'text-purple-600' },
+  { Icon: Sparkles, iconWrap: 'bg-amber-100 text-amber-500', reward: 'text-amber-500' },
+];
+
+const usd = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+
 export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps> = ({
+  campaign,
+  milestones,
   onOpenDetails,
 }) => {
+  const heading = (campaign?.rewardsHeading || 'Genesis Rewards').trim();
+  const headingWords = heading.split(/\s+/);
+  const headingLast = headingWords.pop() || '';
+  const headingFirst = headingWords.join(' ');
+  const tagline = campaign?.description || 'Complete your swaps and earn amazing rewards!';
+  const badgeText = campaign?.rewardsBadgeText || 'Detailed Rewards and Progress (After Wallet Connect)';
+  const cards = milestones && milestones.length > 0 ? milestones : campaign ? [] : DEFAULT_MILESTONES;
+  const cashbackEnabled = campaign ? campaign.cashbackEnabled : true;
+  const cashbackPct = campaign?.cashbackPercentage ?? 5;
+  const referralReward = campaign?.referralRewardUSD ?? 5;
+  const referralVolume = campaign?.referralQualifyingVolUSD ?? 2000;
+  const gridCols = cards.length === 1 ? 'sm:grid-cols-1' : cards.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3';
+
   return (
     <div className="w-full max-w-4xl mx-auto px-4 mt-6 sm:mt-8 animate-in fade-in duration-300">
       {/* Outer Card with royal navy-purple gradient and glowing border */}
@@ -31,13 +66,13 @@ export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps>
 
             <div>
               <h3 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white flex items-center gap-2 flex-wrap">
-                <span>Genesis</span>
+                {headingFirst && <span>{headingFirst}</span>}
                 <span className="bg-gradient-to-r from-purple-400 via-fuchsia-300 to-indigo-300 bg-clip-text text-transparent">
-                  Rewards
+                  {headingLast}
                 </span>
               </h3>
               <p className="text-xs sm:text-sm text-slate-300 mt-0.5 font-medium">
-                Complete your swaps and earn amazing rewards!
+                {tagline}
               </p>
             </div>
           </div>
@@ -47,55 +82,49 @@ export const GenesisRewardsPreviewCard: React.FC<GenesisRewardsPreviewCardProps>
             <span className="w-5 h-5 rounded-full bg-purple-500 text-white flex items-center justify-center font-bold text-[10px]">
               4
             </span>
-            <span>Detailed Rewards and Progress (After Wallet Connect)</span>
+            <span>{badgeText}</span>
           </div>
         </div>
 
-        {/* 3 White Milestone Cards */}
-        <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 my-4 sm:my-5">
-          {/* Milestone 1: $10,000 Volume */}
-          <div className="bg-white rounded-2xl p-4 text-center shadow-md border border-slate-100 flex flex-col items-center justify-center transition-transform hover:-translate-y-0.5">
-            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-2">
-              <Users size={20} className="stroke-[2.5]" />
-            </div>
-            <div className="text-xs sm:text-sm font-bold text-gray-900">$10,000 Volume</div>
-            <div className="text-sm sm:text-base font-extrabold text-blue-600 mt-0.5">+$25 USDT Bonus</div>
+        {/* White Milestone Cards (from the admin Milestones list) */}
+        {cards.length > 0 && (
+          <div className={`relative z-10 grid grid-cols-1 ${gridCols} gap-3 sm:gap-4 my-4 sm:my-5`}>
+            {cards.map((ms, i) => {
+              const style = MILESTONE_STYLES[i % MILESTONE_STYLES.length];
+              const Icon = style.Icon;
+              return (
+                <div
+                  key={ms.id}
+                  className="bg-white rounded-2xl p-4 text-center shadow-md border border-slate-100 flex flex-col items-center justify-center transition-transform hover:-translate-y-0.5"
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${style.iconWrap}`}>
+                    <Icon size={20} className="stroke-[2.5]" />
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-gray-900">${usd(ms.targetVolumeUSD)} Volume</div>
+                  <div className={`text-sm sm:text-base font-extrabold mt-0.5 ${style.reward}`}>+${usd(ms.rewardAmountUSD)} USDT Bonus</div>
+                </div>
+              );
+            })}
           </div>
+        )}
 
-          {/* Milestone 2: $25,000 Volume */}
-          <div className="bg-white rounded-2xl p-4 text-center shadow-md border border-slate-100 flex flex-col items-center justify-center transition-transform hover:-translate-y-0.5">
-            <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 mb-2">
-              <TrendingUp size={20} className="stroke-[2.5]" />
+        {/* Bottom Strip 1: Cashback Pill (hidden when cashback is turned off in the admin panel) */}
+        {cashbackEnabled && (
+          <div className="relative z-10 max-w-xl mx-auto w-full">
+            <div className="rounded-full bg-[#0d122e]/90 border border-indigo-500/30 px-4 py-2 sm:py-2.5 flex items-center justify-center gap-2 text-xs sm:text-sm text-slate-200 shadow-inner text-center">
+              <RefreshCw size={15} className="text-sky-400 shrink-0" />
+              <span>
+                Earn <strong className="text-yellow-400 font-bold">{usd(cashbackPct)}% cashback</strong> on eligible Nova Swap fees.
+              </span>
             </div>
-            <div className="text-xs sm:text-sm font-bold text-gray-900">$25,000 Volume</div>
-            <div className="text-sm sm:text-base font-extrabold text-purple-600 mt-0.5">+$50 USDT Bonus</div>
           </div>
-
-          {/* Milestone 3: $50,000 Volume */}
-          <div className="bg-white rounded-2xl p-4 text-center shadow-md border border-slate-100 flex flex-col items-center justify-center transition-transform hover:-translate-y-0.5">
-            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-500 mb-2">
-              <Sparkles size={20} className="stroke-[2.5]" />
-            </div>
-            <div className="text-xs sm:text-sm font-bold text-gray-900">$50,000 Volume</div>
-            <div className="text-sm sm:text-base font-extrabold text-amber-500 mt-0.5">+$100 USDT Bonus</div>
-          </div>
-        </div>
-
-        {/* Bottom Strip 1: 5% Cashback Pill */}
-        <div className="relative z-10 max-w-xl mx-auto w-full">
-          <div className="rounded-full bg-[#0d122e]/90 border border-indigo-500/30 px-4 py-2 sm:py-2.5 flex items-center justify-center gap-2 text-xs sm:text-sm text-slate-200 shadow-inner text-center">
-            <RefreshCw size={15} className="text-sky-400 shrink-0" />
-            <span>
-              Earn <strong className="text-yellow-400 font-bold">5% cashback</strong> on eligible Nova Swap fees.
-            </span>
-          </div>
-        </div>
+        )}
 
         {/* Bottom Strip 2: Referral Rewards Info */}
         <div className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm text-slate-300 mt-3 text-center px-2">
           <UserPlus size={15} className="text-slate-400 shrink-0" />
           <span>
-            Invite Friends: Earn <strong className="text-yellow-300 font-bold">$5 USDT</strong> when your referral completes <strong className="text-yellow-300 font-bold">$2,000 swap volume</strong>.
+            Invite Friends: Earn <strong className="text-yellow-300 font-bold">${usd(referralReward)} USDT</strong> when your referral completes <strong className="text-yellow-300 font-bold">${usd(referralVolume)} swap volume</strong>.
           </span>
         </div>
 
