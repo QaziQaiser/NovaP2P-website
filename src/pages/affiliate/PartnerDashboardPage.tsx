@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useAffiliateRates, fmtPct } from '../../services/useAffiliateRates';
 import { Link } from 'react-router-dom';
 import {
   Link2,
@@ -28,6 +29,12 @@ import logoImg from '../../assets/logo.png';
 type PartnerTab = 'dashboard' | 'referrals' | 'commissions' | 'payouts';
 
 export const PartnerDashboardPage: React.FC = () => {
+  const affRates = useAffiliateRates();
+  const partnerPct = fmtPct(affRates.partnerRatePct);
+  const bdmDirectPct = fmtPct(affRates.bdmDirectRatePct);
+  const bdmOverridePct = fmtPct(affRates.bdmOverrideRatePct);
+  const partnerVolPct = fmtPct(affRates.partnerVolumePct, true);
+  const bdmOverrideVolPct = fmtPct(affRates.bdmOverrideVolumePct, true);
   const { account, isConnected, disconnectWallet } = useWallet();
   const [activeTab, setActiveTab] = useState<PartnerTab>('dashboard');
   const [dashboard, setDashboard] = useState<PartnerDashboardData | null>(null);
@@ -100,7 +107,7 @@ export const PartnerDashboardPage: React.FC = () => {
         {
           label: 'Total Earnings',
           value: `$${dashboard.stats.totalEarningsUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`,
-          subtext: `Paid: $${dashboard.stats.paidBalanceUSD.toFixed(2)} • Lifetime 20% fee`,
+          subtext: `Paid: $${dashboard.stats.paidBalanceUSD.toFixed(2)} • Lifetime ${partnerPct}% fee`,
           icon: <Wallet size={20} />,
           accent: 'teal',
         },
@@ -114,7 +121,7 @@ export const PartnerDashboardPage: React.FC = () => {
         {
           label: 'Referred Volume',
           value: `$${dashboard.stats.referredVolumeUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-          subtext: `0.10% commission on volume`,
+          subtext: `${partnerVolPct}% commission on volume`,
           icon: <TrendingUp size={20} />,
           accent: 'emerald',
         },
@@ -309,7 +316,7 @@ export const PartnerDashboardPage: React.FC = () => {
                   <div className="min-w-0">
                     <h2 className="text-lg font-bold text-white">Your Referral Link</h2>
                     <p className="text-xs sm:text-sm text-slate-400">
-                      Share your link and earn <strong className="text-teal-400">20% of the 0.5% fee (0.10% of volume)</strong> lifetime • Referrals get 5% cashback
+                      Share your link and earn <strong className="text-teal-400">{partnerPct}% of the 0.5% fee ({partnerVolPct}% of volume)</strong> lifetime • Referrals get 5% cashback
                     </p>
                   </div>
                 </div>
@@ -374,7 +381,7 @@ export const PartnerDashboardPage: React.FC = () => {
                         <th className="py-3.5 px-6">User Wallet</th>
                         <th className="py-3.5 px-6">Total Swaps</th>
                         <th className="py-3.5 px-6">Lifetime Volume</th>
-                        <th className="py-3.5 px-6">Your Commission (0.10%)</th>
+                        <th className="py-3.5 px-6">Your Commission ({partnerVolPct}%)</th>
                         <th className="py-3.5 px-6 text-right">Joined Date</th>
                       </tr>
                     </thead>

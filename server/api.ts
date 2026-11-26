@@ -120,6 +120,7 @@ apiRouter.get('/campaign', (req: Request, res: Response) => {
         claimThresholdUSD: getClaimThresholdUSD(campaign),
         rewardsHeading: campaign.rewards_heading,
         rewardsBadgeText: campaign.rewards_badge_text,
+        resetAt: campaign.reset_at || null,
         enabledChains: ENABLED_CHAINS,
       },
       milestones: milestones.map((m: any) => ({
@@ -379,7 +380,8 @@ export function recordSwapTransactionInternal(params: {
   rawRouteData?: any;
   verificationSource?: string;
   verifiedAt?: string;
-}): { success: boolean; newlyUnlocked: string[]; duplicate?: boolean; belowMin?: boolean; txId?: string } {
+  swapTimestamp?: string; // when the swap happened on-chain (used to skip swaps made before a campaign reset)
+}): { success: boolean; newlyUnlocked: string[]; duplicate?: boolean; belowMin?: boolean; beforeReset?: boolean; txId?: string } {
   // All writes for one swap (transaction, volume, cashback, milestones, referral, affiliate commission)
   // commit together or not at all.
   const run = db.transaction(() => {
@@ -394,6 +396,13 @@ export function recordSwapTransactionInternal(params: {
     const minSwapUSD = campaign ? campaign.min_swap_usd : 1.0;
     if (params.volumeUSD < minSwapUSD) {
       return { success: false, newlyUnlocked: [], belowMin: true };
+    }
+
+    // After an admin reset, only swaps made in the new round count
+    const swapTime = Date.parse(params.swapTimestamp || params.verifiedAt || '');
+    const resetTime = Date.parse(campaign?.reset_at || '');
+    if (Number.isFinite(resetTime) && Number.isFinite(swapTime) && swapTime < resetTime) {
+      return { success: false, newlyUnlocked: [], beforeReset: true };
     }
 
     const now = params.verifiedAt || new Date().toISOString();
@@ -633,6 +642,7 @@ export async function syncUserTransfersFromLiFi(walletAddress: string, campaignI
           lifiRouteId: t.transactionId || null,
           verificationSource: 'lifi_analytics_api',
           verifiedAt,
+          swapTimestamp: verifiedAt,
         });
       }
     }
@@ -996,10 +1006,17 @@ apiRouter.post('/submit-transaction', async (req: Request, res: Response) => {
       rawRouteData,
       verificationSource: 'lifi_status_api',
       verifiedAt: now,
+      swapTimestamp: lifiData.sending?.timestamp
+        ? new Date(Number(lifiData.sending.timestamp) * 1000).toISOString()
+        : now,
     });
 
     if (result.duplicate) {
       return res.status(409).json({ error: 'Transaction hash has already been credited for this chain' });
+    }
+
+    if (result.beforeReset) {
+      return res.status(400).json({ error: 'This swap was made before the current campaign round started and does not count toward it.' });
     }
 
     if (result.belowMin) {
@@ -1429,6 +1446,131 @@ apiRouter.put('/admin/campaign', verifyAdmin, (req: Request, res: Response) => {
   }
 });
 
+// Admin: reset the campaign so it starts again from zero for every user.
+// The finished round (users, swaps, rewards, claims, referrals) is moved to an archived, ended copy of the
+// campaign so the history and any open claims stay visible in the admin panel. Every wallet keeps its
+// referral code and referrer, but volume, milestones, cashback and claims start fresh. Swaps made before
+// the reset never count toward the new round.
+apiRouter.post('/admin/campaign/reset', verifyAdmin, (req: Request, res: Response) => {
+  try {
+    if (String(req.body?.confirm || '') !== 'RESET') {
+      return res.status(400).json({ error: 'Type RESET to confirm the campaign reset.' });
+    }
+
+    const campaignId = DEFAULT_CAMPAIGN_ID;
+    const campaign = db.prepare('SELECT * FROM swap_campaigns WHERE id = ?').get(campaignId) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const stamp = nowDate.getTime().toString(36).toUpperCase();
+    const archiveId = `${campaignId}_archive_${stamp}`;
+
+    const summary = db.transaction(() => {
+      // 1. Archived copy of the campaign (ended, so it never shows on the live site)
+      const cols = (db.prepare('PRAGMA table_info(swap_campaigns)').all() as any[]).map((c: any) => c.name);
+      const overrides: Record<string, any> = {
+        id: archiveId,
+        slug: `${campaign.slug}-archive-${stamp.toLowerCase()}`,
+        title: `${campaign.title} (archived ${now.slice(0, 10)})`,
+        status: 'ended',
+        end_date: now,
+        updated_at: now,
+      };
+      db.prepare(`INSERT INTO swap_campaigns (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
+        .run(...cols.map((c) => (c in overrides ? overrides[c] : campaign[c])));
+
+      // 2. Move the finished round's records to the archive
+      const users = db.prepare('SELECT * FROM swap_campaign_users WHERE campaign_id = ?').all(campaignId) as any[];
+      const claimsCount = (db.prepare('SELECT COUNT(*) AS n FROM swap_reward_claims WHERE campaign_id = ?').get(campaignId) as any)?.n || 0;
+      for (const table of [
+        'swap_transactions',
+        'swap_cashback_ledger',
+        'swap_rewards',
+        'swap_reward_claims',
+        'swap_referrals',
+        'swap_campaign_events',
+      ]) {
+        db.prepare(`UPDATE ${table} SET campaign_id = ? WHERE campaign_id = ?`).run(archiveId, campaignId);
+      }
+      // Archived wallets give up their referral code so the new round can reuse it
+      db.prepare(`
+        UPDATE swap_campaign_users
+        SET campaign_id = ?, referral_code = referral_code || '-' || ?
+        WHERE campaign_id = ?
+      `).run(archiveId, stamp, campaignId);
+
+      // 3. Fresh, zeroed user records for the new round (same wallet, same referral code)
+      const newIdByOldId = new Map<string, string>();
+      users.forEach((u) => newIdByOldId.set(u.id, 'usr_' + crypto.randomUUID()));
+      const insertUser = db.prepare(`
+        INSERT INTO swap_campaign_users (
+          id, campaign_id, wallet_address, chain_id, signature, verified_at,
+          referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
+          is_flagged, flag_reason, last_active_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 0, ?, ?, ?, ?)
+      `);
+      users.forEach((u) => {
+        insertUser.run(
+          newIdByOldId.get(u.id),
+          campaignId,
+          u.wallet_address,
+          u.chain_id,
+          u.signature,
+          u.verified_at,
+          u.referral_code,
+          u.referred_by_user_id ? newIdByOldId.get(u.referred_by_user_id) || null : null,
+          u.is_flagged,
+          u.flag_reason,
+          u.last_active_at,
+          now
+        );
+      });
+
+      // 4. Referral links carry over so referrers can earn the referral bonus again in the new round
+      const insertReferral = db.prepare(`
+        INSERT OR IGNORE INTO swap_referrals (
+          id, campaign_id, referrer_user_id, referred_user_id, referral_code,
+          visitor_ip, status, qualifying_volume_usd, reward_amount_usd, created_at
+        ) VALUES (?, ?, ?, ?, ?, NULL, 'connected', 0.0, 0.0, ?)
+      `);
+      const byOldId = new Map(users.map((u) => [u.id, u]));
+      users.forEach((u) => {
+        const referrer = u.referred_by_user_id ? byOldId.get(u.referred_by_user_id) : null;
+        if (!referrer) return;
+        insertReferral.run(
+          'ref_' + crypto.randomUUID(),
+          campaignId,
+          newIdByOldId.get(referrer.id),
+          newIdByOldId.get(u.id),
+          referrer.referral_code,
+          now
+        );
+      });
+
+      // 5. New round starts now with an untouched budget (milestones and settings stay as configured)
+      db.prepare(`
+        UPDATE swap_campaigns
+        SET spent_budget_usd = 0.0, start_date = ?, reset_at = ?, status = 'active', updated_at = ?
+        WHERE id = ?
+      `).run(now, now, now, campaignId);
+
+      const result = { archiveId, usersReset: users.length, claimsArchived: claimsCount };
+      db.prepare(`
+        INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
+        VALUES (?, 'admin', 'reset_campaign', 'campaign', ?, ?, ?, ?)
+      `).run('log_' + crypto.randomUUID(), campaignId, JSON.stringify(result), clientIp(req), now);
+      return result;
+    })();
+
+    res.json({ success: true, ...summary });
+  } catch (err: any) {
+    sendServerError(res, err, 'swap api');
+  }
+});
+
 // Admin add/update milestone
 apiRouter.post('/admin/milestones', verifyAdmin, (req: Request, res: Response) => {
   try {
@@ -1696,9 +1838,9 @@ apiRouter.get('/admin/users', verifyAdmin, (req: Request, res: Response) => {
         (SELECT COUNT(*) FROM swap_referrals WHERE referrer_user_id = u.id) as referrals_count,
         (SELECT COUNT(*) FROM swap_rewards WHERE user_id = u.id AND status = 'paid') as rewards_paid_count
       FROM swap_campaign_users u
-      WHERE 1=1
+      WHERE u.campaign_id = ?
     `;
-    const params: any[] = [];
+    const params: any[] = [DEFAULT_CAMPAIGN_ID];
 
     if (flagged === 'true') {
       query += ' AND u.is_flagged = 1';

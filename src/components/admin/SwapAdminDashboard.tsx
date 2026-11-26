@@ -156,6 +156,30 @@ export const SwapAdminDashboard: React.FC = () => {
     }
   };
 
+  // 1b. Reset campaign to zero for every user (new round)
+  const handleResetCampaign = async () => {
+    const typed = prompt(
+      'This resets the campaign to 0 for ALL users: volume, milestones, cashback, referral bonuses and claims.\n' +
+        'The old round is archived and cannot be undone.\n\nType RESET to confirm:'
+    );
+    if (typed === null) return;
+    if (typed.trim() !== 'RESET') {
+      setErrorMessage('Reset cancelled: you must type RESET to confirm.');
+      return;
+    }
+    try {
+      setIsLoading(true);
+      setErrorMessage(null);
+      const res = await swapCampaignApi.resetAdminCampaign(adminKey);
+      notifySuccess(`Campaign reset. ${res.usersReset} users now start from 0 (${res.claimsArchived} past claims archived).`);
+      loadAllData(adminKey);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to reset campaign');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // 2. Save Milestone
   const handleSaveMilestone = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -888,6 +912,25 @@ export const SwapAdminDashboard: React.FC = () => {
                   </button>
                 </form>
               )}
+
+              {/* Reset: start the campaign again from zero for every user */}
+              <div className="mt-6 p-4 rounded-2xl bg-red-500/5 border border-red-500/30 text-xs">
+                <div className="text-white font-semibold">Reset Campaign (Start New Round)</div>
+                <p className="text-[11px] text-slate-400 mt-1 mb-3">
+                  Every user&apos;s volume, milestones, cashback, referral bonuses and claims go back to $0, including users who
+                  already claimed, so everyone can earn the rewards again. Settings, milestones and referral codes stay the same.
+                  Only swaps made after the reset count. The old round is archived: past claims (including unpaid ones) remain in
+                  the Claims tab.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleResetCampaign}
+                  disabled={isLoading}
+                  className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold text-xs transition-all cursor-pointer"
+                >
+                  Reset Campaign to 0
+                </button>
+              </div>
             </div>
 
             {/* Right: Milestones Manager (5 cols) */}

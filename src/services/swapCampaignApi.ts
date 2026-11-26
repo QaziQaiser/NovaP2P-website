@@ -20,6 +20,7 @@ export interface CampaignData {
   claimThresholdUSD?: number;
   rewardsHeading?: string;
   rewardsBadgeText?: string;
+  resetAt?: string | null; // set when the admin reset the campaign (new round)
   enabledChains: number[];
 }
 
@@ -270,6 +271,17 @@ export const swapCampaignApi = {
     });
     if (!res.ok) throw new Error('Failed to update campaign');
     return res.json();
+  },
+
+  async resetAdminCampaign(adminKey: string): Promise<{ success: boolean; usersReset: number; claimsArchived: number }> {
+    const res = await fetch(`${API_BASE}/admin/campaign/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
+      body: JSON.stringify({ confirm: 'RESET' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Failed to reset campaign');
+    return data;
   },
 
   async saveAdminMilestone(adminKey: string, milestone: any): Promise<any> {

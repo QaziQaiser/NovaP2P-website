@@ -58,7 +58,11 @@ export const GenesisRewardsDashboard: React.FC<GenesisRewardsDashboardProps> = (
       const cacheKey = `nova_swaps_${activeAddress.toLowerCase()}`;
       const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
       if (Array.isArray(cached)) {
-        cachedVolume = cached.reduce(
+        // Swaps cached before an admin campaign reset belong to the previous round
+        const resetTime = Date.parse(campaign?.resetAt || '');
+        cachedVolume = cached
+          .filter((tx: any) => !Number.isFinite(resetTime) || Date.parse(tx?.date || '') >= resetTime)
+          .reduce(
           (sum: number, tx: any) => sum + (Number(tx.verifiedVolume) || Number(tx.volumeUSD) || 0),
           0
         );

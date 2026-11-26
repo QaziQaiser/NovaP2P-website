@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useAffiliateRates, fmtPct } from '../../services/useAffiliateRates';
 import { useNavigate, Link } from 'react-router-dom';
 import { Clock, ShieldCheck, ArrowRight, Loader2, LogOut, Sparkles, XCircle, RefreshCw } from 'lucide-react';
 import { useWallet } from '../../context/WalletContext';
@@ -24,6 +25,12 @@ function readBdmReferral(): string | null {
 }
 
 export const BecomePartnerPage: React.FC = () => {
+  const affRates = useAffiliateRates();
+  const partnerPct = fmtPct(affRates.partnerRatePct);
+  const bdmDirectPct = fmtPct(affRates.bdmDirectRatePct);
+  const bdmOverridePct = fmtPct(affRates.bdmOverrideRatePct);
+  const partnerVolPct = fmtPct(affRates.partnerVolumePct, true);
+  const bdmOverrideVolPct = fmtPct(affRates.bdmOverrideVolumePct, true);
   const { account, isConnected, disconnectWallet } = useWallet();
   const navigate = useNavigate();
   const [bdmReferral] = useState<string | null>(() => (typeof window !== 'undefined' ? readBdmReferral() : null));
@@ -73,13 +80,13 @@ export const BecomePartnerPage: React.FC = () => {
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-primary font-medium text-xs sm:text-sm mb-4">
             <Sparkles size={15} />
-            <span>Nova Swap Partner Program • 20% Lifetime Commission</span>
+            <span>Nova Swap Partner Program • {partnerPct}% Lifetime Commission</span>
           </div>
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 mb-4">
             Become a Nova Swap Partner
           </h1>
           <p className="text-base sm:text-lg text-gray-600 max-w-2xl mx-auto">
-            Earn <strong>20% of platform trading fees (0.1% of volume)</strong> for life on every user who trades through your referral link. Your referrals also receive 5% cashback on their swaps.
+            Earn <strong>{partnerPct}% of platform trading fees ({partnerVolPct}% of volume)</strong> for life on every user who trades through your referral link. Your referrals also receive 5% cashback on their swaps.
           </p>
         </div>
 

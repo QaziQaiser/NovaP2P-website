@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, XCircle, Loader2, Users, DollarSign, ShieldCheck, Mail, X } from 'lucide-react';
-import { affiliateApi } from '../../services/affiliateApi';
+import { CheckCircle, XCircle, Loader2, Users, DollarSign, ShieldCheck, Mail, X, Percent, Minus, Plus } from 'lucide-react';
+import { affiliateApi, type AffiliateRates } from '../../services/affiliateApi';
 import { buildDecisionMailtoLink } from '../../services/emailNotifications';
 
 interface AffiliateAdminPanelProps {
@@ -21,6 +21,11 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
   const [rejectReason, setRejectReason] = useState('');
   const [assignBdmWallet, setAssignBdmWallet] = useState('');
 
+  // Commission rates (% of the 0.5% platform fee)
+  const [rates, setRates] = useState<AffiliateRates | null>(null);
+  const [savedRates, setSavedRates] = useState<AffiliateRates | null>(null);
+  const [isSavingRates, setIsSavingRates] = useState(false);
+
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -28,6 +33,10 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
       setApplications(res.applications || []);
       setAffiliates(res.affiliates || []);
       setPayouts(res.payouts || []);
+      if (res.rates) {
+        setRates(res.rates);
+        setSavedRates(res.rates);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load affiliate data');
     } finally {
@@ -132,6 +141,55 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
 
   const bdmList = affiliates.filter((a) => a.role === 'bdm');
 
+  const RATE_FIELDS: Array<{ key: keyof AffiliateRates; label: string; hint: string }> = [
+    { key: 'partnerRatePct', label: 'Partner Commission', hint: 'Partner earns this % of the fee on users they refer' },
+    { key: 'bdmDirectRatePct', label: 'BDM Direct Commission', hint: "BDM earns this % on users from the BDM's own link" },
+    { key: 'bdmOverrideRatePct', label: 'BDM Override', hint: "BDM earns this % on volume from their Partners' users" },
+  ];
+
+  const adjustRate = (key: keyof AffiliateRates, delta: number) => {
+    if (!rates) return;
+    const next = Math.min(100, Math.max(0, Number((Number(rates[key] || 0) + delta).toFixed(2))));
+    setRates({ ...rates, [key]: next });
+  };
+
+  const ratesChanged =
+    !!rates && !!savedRates && RATE_FIELDS.some((f) => Number(rates[f.key]) !== Number(savedRates[f.key]));
+
+  const volumeShare = (ratePct: number) => String(Number(((Number(ratePct) || 0) * 0.005).toFixed(4)));
+
+  const saveRates = async () => {
+    if (!rates) return;
+    for (const f of RATE_FIELDS) {
+      const v = Number(rates[f.key]);
+      if (String(rates[f.key]) === '' || !Number.isFinite(v) || v < 0 || v > 100) {
+        setError(`${f.label} must be between 0 and 100.`);
+        return;
+      }
+    }
+    if (Number(rates.partnerRatePct) + Number(rates.bdmOverrideRatePct) > 100) {
+      setError('Partner % plus BDM override % cannot exceed 100% of the platform fee.');
+      return;
+    }
+    if (!confirm('Save the new commission rates? They apply to swaps credited from now on; past commissions keep their old rate.')) return;
+    try {
+      setIsSavingRates(true);
+      setError(null);
+      const res = await affiliateApi.updateRates(adminKey, {
+        partnerRatePct: Number(rates.partnerRatePct),
+        bdmDirectRatePct: Number(rates.bdmDirectRatePct),
+        bdmOverrideRatePct: Number(rates.bdmOverrideRatePct),
+      });
+      setRates(res.rates);
+      setSavedRates(res.rates);
+      setNotice('Commission rates updated. New swaps are credited with the new rates.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to update commission rates');
+    } finally {
+      setIsSavingRates(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {notice && (
@@ -152,6 +210,86 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
           {error}
         </div>
       )}
+
+      {/* Commission rates (Partner & BDM %) */}
+      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Percent size={18} className="text-teal-400" />
+            Commission Rates
+          </h3>
+          {isSavingRates && <Loader2 size={16} className="animate-spin text-teal-400" />}
+        </div>
+        <p className="text-[11px] text-slate-400 mb-4">
+          Percent of the 0.5% platform fee. Changes apply to swaps credited after you save; past commissions keep their rate.
+        </p>
+        {rates ? (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {RATE_FIELDS.map((f) => (
+                <div key={f.key} className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                  <div className="text-white font-semibold text-xs">{f.label}</div>
+                  <div className="text-[11px] text-slate-400 mb-2.5">{f.hint}</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => adjustRate(f.key, -1)}
+                      aria-label={`Decrease ${f.label}`}
+                      className="w-8 h-8 shrink-0 rounded-lg bg-slate-700 hover:bg-slate-600 text-white flex items-center justify-center cursor-pointer"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <div className="relative flex-1 min-w-0">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={rates[f.key]}
+                        onChange={(e) =>
+                          setRates({ ...rates, [f.key]: e.target.value === '' ? ('' as any) : parseFloat(e.target.value) })
+                        }
+                        className="w-full px-3 py-2 pr-7 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm font-bold text-center"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">%</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => adjustRate(f.key, 1)}
+                      aria-label={`Increase ${f.label}`}
+                      className="w-8 h-8 shrink-0 rounded-lg bg-slate-700 hover:bg-slate-600 text-white flex items-center justify-center cursor-pointer"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-teal-300 mt-2">= {volumeShare(rates[f.key])}% of swap volume</div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 mt-4">
+              {ratesChanged && (
+                <button
+                  type="button"
+                  onClick={() => setRates(savedRates)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
+                >
+                  Undo Changes
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={saveRates}
+                disabled={!ratesChanged || isSavingRates}
+                className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 text-xs font-bold cursor-pointer"
+              >
+                Save Commission Rates
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="text-xs text-slate-500">Loading rates…</div>
+        )}
+      </div>
 
       {/* 1. Partner & BDM Applications */}
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5">

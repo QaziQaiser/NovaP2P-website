@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAffiliateRates, fmtPct } from '../../services/useAffiliateRates';
 import { Send, CheckCircle2, AlertCircle, Wallet, Loader2 } from 'lucide-react';
 import { affiliateApi } from '../../services/affiliateApi';
 import { useWallet } from '../../context/WalletContext';
@@ -13,6 +14,12 @@ export const BdmApplicationForm: React.FC<BdmApplicationFormProps> = ({
   walletAddress,
   onSubmitted,
 }) => {
+  const affRates = useAffiliateRates();
+  const partnerPct = fmtPct(affRates.partnerRatePct);
+  const bdmDirectPct = fmtPct(affRates.bdmDirectRatePct);
+  const bdmOverridePct = fmtPct(affRates.bdmOverrideRatePct);
+  const partnerVolPct = fmtPct(affRates.partnerVolumePct, true);
+  const bdmOverrideVolPct = fmtPct(affRates.bdmOverrideVolumePct, true);
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -105,7 +112,7 @@ export const BdmApplicationForm: React.FC<BdmApplicationFormProps> = ({
       <div className="border-b border-gray-100 pb-5">
         <h2 className="text-2xl font-bold text-gray-900">Business Development Manager (BDM) Application</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Onboard &amp; manage Nova Swap Partners and earn a 10% override fee on all partner volume, plus 20% on direct referrals.
+          Onboard &amp; manage Nova Swap Partners and earn a {bdmOverridePct}% override fee on all partner volume, plus {bdmDirectPct}% on direct referrals.
         </p>
       </div>
 

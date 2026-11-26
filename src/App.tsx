@@ -15,7 +15,6 @@ import { ContactForm } from './components/ContactForm';
 import emailjs from '@emailjs/browser';
 import { WalletProvider, useWallet } from './context/WalletContext';
 import logoImg from './assets/logo.png';
-import promotionalBannerImg from './assets/images/promotional-banner.jpeg';
 import portalDesktopImg from './assets/images/portal-desktop.png';
 import portalMobileImg from './assets/images/portal-mobile.png';
 import { TawkToWidget } from './components/chat/TawkToWidget';
@@ -836,7 +835,7 @@ const FAQ = () => {
     { q: "Is Nova Swap safe?", a: <>Nova Swap is non-custodial: tokens move from your wallet and arrive back in it, and you approve every transaction yourself. Routes still depend on third-party DEXs and bridges, so check the token, amount and destination network before you confirm, and read our <Link to="/risk-disclosure" className={faqLink}>Risk Disclosure</Link>.</> },
     { q: "How long does a cross-chain swap take?", a: <>Same-chain swaps usually finish in seconds; most cross-chain swaps take a few minutes. Time depends on the networks, congestion and the bridge used. The quote shows an estimated time before you sign.</> },
     { q: "Do I need an account to use Nova Swap?", a: <>No. You only need a supported wallet with the tokens you want to swap and enough of the network's native token for gas. An account is needed for the P2P marketplace.</> },
-    { q: "How do Genesis Rewards work?", a: <>Your swap volume counts toward three milestones: $10,000 earns a $25 USDT bonus, $25,000 earns $50 and $50,000 earns $100. You also get 5% cashback on eligible fees and $5 USDT per friend who swaps $2,000. Full rules are in the <a href="#rewards" className={faqLink}>Genesis Rewards</a> section.</> },
+    { q: "How do Genesis Rewards work?", a: <>Genesis Rewards pay you back for swapping on Nova Swap. Connect your wallet and every eligible swap adds to your swap volume. As your volume grows you unlock milestone bonuses in USDT, earn cashback on part of your swap fees, and get a referral bonus when friends you invite start swapping. Once your rewards reach the claim threshold, you can claim them straight to your wallet. The campaign runs in rounds: when a new round starts, the progress of every user resets to zero, so you can unlock every reward again, even ones you already claimed. The current targets and reward amounts are always shown in the <a href="#rewards" className={faqLink}>Genesis Rewards</a> section.</> },
     { q: "What is P2P trading on Nova P2P?", a: <>P2P (peer-to-peer) trading lets you buy or sell USDT directly with another user, paying in naira, without a central exchange taking the other side. Nova P2P provides the marketplace, escrow and dispute support.</> },
     { q: "How does P2P escrow work?", a: <>When a trade starts, the seller's USDT is locked in escrow. The buyer pays the seller using the agreed method and marks the trade as paid. Once the seller confirms the payment, the USDT is released. If something goes wrong, either side can open a dispute.</> },
     { q: "What are the P2P fees?", a: <>Merchants (makers) pay 0%, and takers pay $0.03 per trade. See the <Link to="/fee-structure" className={faqLink}>Fee Structure</Link> page for details.</> }
@@ -2906,63 +2905,6 @@ const ReportIssue = () => {
   );
 };
 
-const PromotionalPopup = () => {
-  const [isOpen, setIsOpen] = useState(true);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  if (!isOpen) return null;
-
-  return (
-    <AnimatePresence>
-      <div 
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm transition-opacity"
-        onClick={() => setIsOpen(false)}
-      >
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.92, y: 16 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.92, y: 16 }}
-          transition={{ duration: 0.22, ease: "easeOut" }}
-          className="relative max-w-4xl w-full my-auto rounded-2xl overflow-visible shadow-2xl bg-slate-900 border border-slate-700/60"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Small Cross Icon */}
-          <button
-            onClick={() => setIsOpen(false)}
-            aria-label="Close promotional banner"
-            className="absolute -top-3 -right-3 md:-top-4 md:-right-4 w-9 h-9 rounded-full bg-white text-gray-800 hover:text-black hover:bg-gray-100 flex items-center justify-center shadow-xl border border-gray-300 z-20 cursor-pointer transition-transform hover:scale-110 active:scale-95"
-          >
-            <X size={18} className="stroke-[2.5]" />
-          </button>
-
-          {/* Promotional Image */}
-          <div className="relative rounded-2xl overflow-hidden bg-slate-950">
-            <a 
-              href="https://app.novap2p.com/register" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="block cursor-pointer focus:outline-none"
-            >
-              <img
-                src={promotionalBannerImg}
-                alt="Nova Swap Genesis Rewards"
-                className="w-full h-auto block rounded-2xl object-contain hover:opacity-95 transition-opacity"
-              />
-            </a>
-          </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
-  );
-};
-
 const Home = () => {
   useEffect(() => {
     document.title = "NovaP2P – Cross-Chain Crypto Swap Across 70+ Blockchains";
@@ -3056,7 +2998,6 @@ const AppShell = () => {
       }
     >
       {!isStandaloneDarkPortal && <Navbar />}
-      {!isStandaloneDarkPortal && <PromotionalPopup />}
       <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
         <Route path="/" element={<Home />} />

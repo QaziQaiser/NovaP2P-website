@@ -379,9 +379,27 @@ export function initDb() {
     if (!campaignCols.includes('rewards_badge_text')) {
       db.exec("ALTER TABLE swap_campaigns ADD COLUMN rewards_badge_text TEXT NOT NULL DEFAULT 'Detailed Rewards and Progress (After Wallet Connect)';");
     }
+    // Set when the admin resets the campaign; swaps made before it never count toward the new round
+    if (!campaignCols.includes('reset_at')) {
+      db.exec("ALTER TABLE swap_campaigns ADD COLUMN reset_at TEXT;");
+    }
   } catch (err) {
     console.error('[DB] swap_campaigns display settings migration failed:', err);
   }
+
+  // Admin-editable affiliate commission rates (percent of the 0.5% platform fee)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS affiliate_settings (
+      key TEXT PRIMARY KEY,
+      value REAL NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  const seedSetting = db.prepare('INSERT OR IGNORE INTO affiliate_settings (key, value, updated_at) VALUES (?, ?, ?)');
+  const seededAt = new Date().toISOString();
+  seedSetting.run('partner_rate_pct', 20, seededAt);
+  seedSetting.run('bdm_direct_rate_pct', 20, seededAt);
+  seedSetting.run('bdm_override_rate_pct', 10, seededAt);
 
   // Seed the Genesis campaign on first run only. Existing settings are managed from the admin panel
   // and must survive restarts/deploys, so they are never overwritten here.

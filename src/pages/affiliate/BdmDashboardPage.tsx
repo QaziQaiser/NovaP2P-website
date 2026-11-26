@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useAffiliateRates, fmtPct } from '../../services/useAffiliateRates';
 import { Link } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -34,6 +35,12 @@ import logoImg from '../../assets/logo.png';
 type BdmSidebarTab = 'overview' | 'partners' | 'earnings' | 'payouts' | 'reports' | 'resources';
 
 export const BdmDashboardPage: React.FC = () => {
+  const affRates = useAffiliateRates();
+  const partnerPct = fmtPct(affRates.partnerRatePct);
+  const bdmDirectPct = fmtPct(affRates.bdmDirectRatePct);
+  const bdmOverridePct = fmtPct(affRates.bdmOverrideRatePct);
+  const partnerVolPct = fmtPct(affRates.partnerVolumePct, true);
+  const bdmOverrideVolPct = fmtPct(affRates.bdmOverrideVolumePct, true);
   const { account, isConnected, disconnectWallet } = useWallet();
   const [activeTab, setActiveTab] = useState<BdmSidebarTab>('overview');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -149,7 +156,7 @@ export const BdmDashboardPage: React.FC = () => {
         {
           label: 'Total Earnings',
           value: `$${dashboard.stats.totalEarningsUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`,
-          subtext: `10% override + 20% direct`,
+          subtext: `${bdmOverridePct}% override + ${bdmDirectPct}% direct`,
           icon: <BarChart3 size={20} />,
           accent: 'emerald',
         },
@@ -393,7 +400,7 @@ export const BdmDashboardPage: React.FC = () => {
                       Manage Partners &amp; Track Override Commissions
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                      Earn <strong className="text-teal-400">10% fee override</strong> on your Partners&apos; volume + <strong className="text-teal-400">full 20% fee</strong> on your direct referral swaps.
+                      Earn <strong className="text-teal-400">{bdmOverridePct}% fee override</strong> on your Partners&apos; volume + <strong className="text-teal-400">{bdmDirectPct}% fee</strong> on your direct referral swaps.
                     </p>
                   </div>
 
@@ -415,7 +422,7 @@ export const BdmDashboardPage: React.FC = () => {
                 <div className="mt-5 pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
                   <div className="flex items-center gap-2 text-xs text-slate-400 shrink-0">
                     <Link2 size={15} className="text-teal-400" />
-                    <span>Direct BDM Referral Link (20% Commission):</span>
+                    <span>Direct BDM Referral Link ({bdmDirectPct}% Commission):</span>
                   </div>
                   <div className="flex-1 min-w-0 w-full flex items-center gap-2">
                     <div className="flex-1 min-w-0 bg-[#060c14] border border-slate-700/80 rounded-lg px-3 py-2 font-mono text-xs text-slate-200 truncate">
@@ -436,7 +443,7 @@ export const BdmDashboardPage: React.FC = () => {
                   <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
                     <div className="flex items-center gap-2 text-xs text-slate-400 shrink-0">
                       <Link2 size={15} className="text-teal-400" />
-                      <span>Partner Recruitment Link (10% Override):</span>
+                      <span>Partner Recruitment Link ({bdmOverridePct}% Override):</span>
                     </div>
                     <div className="flex-1 min-w-0 w-full flex items-center gap-2">
                       <div className="flex-1 min-w-0 bg-[#060c14] border border-slate-700/80 rounded-lg px-3 py-2 font-mono text-xs text-slate-200 truncate">
@@ -463,7 +470,7 @@ export const BdmDashboardPage: React.FC = () => {
                   <div className="px-6 py-4 border-b border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                       <h3 className="text-lg font-semibold text-white">Managed Partners Network</h3>
-                      <p className="text-xs text-slate-400">Live partner volumes, earnings &amp; 10% BDM override</p>
+                      <p className="text-xs text-slate-400">Live partner volumes, earnings &amp; {bdmOverridePct}% BDM override</p>
                     </div>
 
                     {/* Search Partners */}
@@ -485,8 +492,8 @@ export const BdmDashboardPage: React.FC = () => {
                         <tr className="border-b border-slate-800/80 text-xs font-medium text-slate-400 bg-[#080f18]/60">
                           <th className="py-3.5 px-6">Partner Wallet</th>
                           <th className="py-3.5 px-6">Referred Volume</th>
-                          <th className="py-3.5 px-6">Partner Earnings (20%)</th>
-                          <th className="py-3.5 px-6">BDM Override (10%)</th>
+                          <th className="py-3.5 px-6">Partner Earnings ({partnerPct}%)</th>
+                          <th className="py-3.5 px-6">BDM Override ({bdmOverridePct}%)</th>
                           <th className="py-3.5 px-6 text-right">Status</th>
                         </tr>
                       </thead>
@@ -552,8 +559,8 @@ export const BdmDashboardPage: React.FC = () => {
                     status: c.status,
                     subtitle:
                       c.commissionType === 'bdm_override' && c.sourcePartnerWallet
-                        ? `10% Override via Partner ${formatWallet(c.sourcePartnerWallet)}`
-                        : 'Direct BDM Referral (20%)',
+                        ? `${c.commissionRatePct}% Override via Partner ${formatWallet(c.sourcePartnerWallet)}`
+                        : `Direct BDM Referral (${c.commissionRatePct}%)`,
                   }))}
                 />
               )}
@@ -637,7 +644,7 @@ export const BdmDashboardPage: React.FC = () => {
                     <div className="p-4 rounded-xl bg-[#080f18] border border-slate-800">
                       <h4 className="font-bold text-teal-400 mb-1.5">Commission Rules</h4>
                       <p className="text-xs text-slate-400 leading-relaxed">
-                        Platform fee is 0.5%. Partners receive 20% (0.10% of volume). You receive a 10% override fee on all volume generated by Partners under your management, plus full 20% on users who join via your direct BDM link.
+                        Platform fee is 0.5%. Partners receive {partnerPct}% ({partnerVolPct}% of volume). You receive a {bdmOverridePct}% override fee on all volume generated by Partners under your management, plus {bdmDirectPct}% on users who join via your direct BDM link.
                       </p>
                     </div>
                     <div className="p-4 rounded-xl bg-[#080f18] border border-slate-800">

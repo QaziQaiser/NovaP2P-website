@@ -13,6 +13,33 @@ import { sendAdminAffiliateApplicationEmail, sendApplicantDecisionEmail } from '
 
 export const affiliateRouter = Router();
 
+// Commission rates are a percent of the 0.5% platform fee and are edited from the admin panel
+export const PLATFORM_FEE_PCT = 0.5;
+const DEFAULT_AFFILIATE_RATES = { partnerRatePct: 20, bdmDirectRatePct: 20, bdmOverrideRatePct: 10 };
+export type AffiliateRates = typeof DEFAULT_AFFILIATE_RATES;
+
+export function getAffiliateRates(): AffiliateRates {
+  const rates = { ...DEFAULT_AFFILIATE_RATES };
+  try {
+    const rows = db.prepare('SELECT key, value FROM affiliate_settings').all() as any[];
+    const byKey: Record<string, number> = {};
+    rows.forEach((r) => { byKey[r.key] = Number(r.value); });
+    const pick = (key: string, fallback: number) =>
+      Number.isFinite(byKey[key]) && byKey[key] >= 0 && byKey[key] <= 100 ? byKey[key] : fallback;
+    rates.partnerRatePct = pick('partner_rate_pct', rates.partnerRatePct);
+    rates.bdmDirectRatePct = pick('bdm_direct_rate_pct', rates.bdmDirectRatePct);
+    rates.bdmOverrideRatePct = pick('bdm_override_rate_pct', rates.bdmOverrideRatePct);
+  } catch (err) {
+    console.warn('[Affiliate] Could not read affiliate rates, using defaults:', err);
+  }
+  return rates;
+}
+
+/** Rate as a percent of swap volume, e.g. 20% of the 0.5% fee = 0.10%. */
+function volumePct(ratePct: number): number {
+  return Number(((ratePct * PLATFORM_FEE_PCT) / 100).toFixed(4));
+}
+
 /** Public site origin used in email links (APP_URL env, else the request host). */
 function getSiteOrigin(req: Request): string {
   const configured = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
@@ -247,7 +274,8 @@ function creditAffiliateSwapCommission(params: {
     if (attribution.referrer_wallet_address.toLowerCase() === cleanTrader) return;
 
     const now = params.verifiedAt || new Date().toISOString();
-    const platformFeeUSD = Number((params.volumeUSD * 0.005).toFixed(6)); // 0.5% platform fee
+    const platformFeeUSD = Number((params.volumeUSD * (PLATFORM_FEE_PCT / 100)).toFixed(6)); // 0.5% platform fee
+    const rates = getAffiliateRates();
 
     // Update referral lifetime volume
     db.prepare(`
@@ -262,8 +290,8 @@ function creditAffiliateSwapCommission(params: {
 
     if (!referrer) return;
 
-    // 1. Direct commission (20% of platform fee = 0.10% of volume) for Partner or Direct-BDM
-    const directRate = 0.2;
+    // 1. Direct commission (admin-set % of platform fee) for Partner or Direct-BDM
+    const directRate = (referrer.role === 'bdm' ? rates.bdmDirectRatePct : rates.partnerRatePct) / 100;
     const directCommissionUSD = Number((platformFeeUSD * directRate).toFixed(4));
     const commissionType = referrer.role === 'bdm' ? 'direct_bdm' : 'direct_partner';
 
@@ -299,7 +327,7 @@ function creditAffiliateSwapCommission(params: {
       `).run(params.volumeUSD, directCommissionUSD, directCommissionUSD, now, referrer.id);
     }
 
-    // 2. BDM Override (10% of platform fee = 0.05% of volume) if referrer is a Partner linked to a BDM
+    // 2. BDM Override (admin-set % of platform fee) if referrer is a Partner linked to a BDM
     const bdmWallet = referrer.bdm_wallet_address || attribution.bdm_wallet_address;
     if (referrer.role === 'partner' && bdmWallet && bdmWallet.toLowerCase() !== cleanTrader) {
       const bdm = db
@@ -307,7 +335,7 @@ function creditAffiliateSwapCommission(params: {
         .get(bdmWallet.toLowerCase(), 'bdm', 'active') as any;
 
       if (bdm) {
-        const overrideRate = 0.1;
+        const overrideRate = rates.bdmOverrideRatePct / 100;
         const overrideCommissionUSD = Number((platformFeeUSD * overrideRate).toFixed(4));
 
         if (overrideCommissionUSD > 0) {
@@ -643,8 +671,8 @@ affiliateRouter.get('/partner/dashboard/:walletAddress', (req: Request, res: Res
         status: partner.status,
         bdmWalletAddress: partner.bdm_wallet_address,
         referralLink: `https://novap2p.com/swap?ref=${partner.wallet_address}`,
-        commissionRatePct: 20, // 20% of 0.5% fee
-        effectiveVolumePct: 0.1, // 0.10% of volume
+        commissionRatePct: getAffiliateRates().partnerRatePct, // % of the 0.5% fee
+        effectiveVolumePct: volumePct(getAffiliateRates().partnerRatePct), // % of volume
         createdAt: partner.created_at,
       },
       stats: {
@@ -663,7 +691,7 @@ affiliateRouter.get('/partner/dashboard/:walletAddress', (req: Request, res: Res
         swapVolumeUSD: c.swap_volume_usd,
         platformFeeUSD: c.platform_fee_usd,
         commissionRatePct: Number((c.commission_rate * 100).toFixed(2)),
-        effectiveVolumePct: Number((c.commission_rate * 0.5).toFixed(2)),
+        effectiveVolumePct: Number((c.commission_rate * PLATFORM_FEE_PCT).toFixed(4)),
         commissionAmountUSD: c.commission_amount_usd,
         status: c.status, // 'paid' | 'pending'
       })),
@@ -766,8 +794,9 @@ affiliateRouter.get('/bdm/dashboard/:walletAddress', (req: Request, res: Respons
         status: bdm.status,
         referralLink: `https://novap2p.com/swap?ref=${bdm.wallet_address}`,
         partnerInviteLink: `https://novap2p.com/become-partner?bdm=${bdm.wallet_address}`,
-        directCommissionRatePct: 20, // 20% of fee on direct BDM link
-        overrideRatePct: 10, // 10% of fee on managed partners
+        directCommissionRatePct: getAffiliateRates().bdmDirectRatePct, // % of fee on direct BDM link
+        overrideRatePct: getAffiliateRates().bdmOverrideRatePct, // % of fee on managed partners
+        partnerRatePct: getAffiliateRates().partnerRatePct, // % of fee earned by managed partners
         createdAt: bdm.created_at,
       },
       stats: {
@@ -891,6 +920,63 @@ affiliateRouter.post('/payout/request', (req: Request, res: Response) => {
 // ADMIN ENDPOINTS (Future/Integrated Admin Panel Approvals)
 // ---------------------------------------------------------------------------
 
+// Public: current commission rates (used by the program pages and dashboards)
+affiliateRouter.get('/rates', (req: Request, res: Response) => {
+  try {
+    const rates = getAffiliateRates();
+    res.json({
+      ...rates,
+      platformFeePct: PLATFORM_FEE_PCT,
+      partnerVolumePct: volumePct(rates.partnerRatePct),
+      bdmDirectVolumePct: volumePct(rates.bdmDirectRatePct),
+      bdmOverrideVolumePct: volumePct(rates.bdmOverrideRatePct),
+    });
+  } catch (err: any) {
+    sendServerError(res, err, 'affiliate api');
+  }
+});
+
+// Admin: update commission rates. Applies to swaps credited from now on; past commissions keep their rate.
+affiliateRouter.put('/admin/rates', verifyAffiliateAdmin, (req: Request, res: Response) => {
+  try {
+    const fields: Array<[string, string]> = [
+      ['partnerRatePct', 'partner_rate_pct'],
+      ['bdmDirectRatePct', 'bdm_direct_rate_pct'],
+      ['bdmOverrideRatePct', 'bdm_override_rate_pct'],
+    ];
+    const values: Record<string, number> = {};
+    for (const [field] of fields) {
+      const n = Number(req.body?.[field]);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        return res.status(400).json({ error: 'Each rate must be a number between 0 and 100.' });
+      }
+      values[field] = Number(n.toFixed(2));
+    }
+    // Partner + BDM override are both paid out of the same fee
+    if (values.partnerRatePct + values.bdmOverrideRatePct > 100) {
+      return res.status(400).json({ error: 'Partner % plus BDM override % cannot exceed 100% of the platform fee.' });
+    }
+
+    const before = getAffiliateRates();
+    const now = new Date().toISOString();
+    const upsert = db.prepare(`
+      INSERT INTO affiliate_settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `);
+    db.transaction(() => {
+      for (const [field, key] of fields) upsert.run(key, values[field], now);
+      db.prepare(`
+        INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
+        VALUES (?, 'admin', 'update_affiliate_rates', 'affiliate_settings', 'rates', ?, ?, ?)
+      `).run('log_' + crypto.randomUUID(), JSON.stringify({ before, after: values }), String(req.ip || ''), now);
+    })();
+
+    res.json({ success: true, rates: getAffiliateRates() });
+  } catch (err: any) {
+    sendServerError(res, err, 'affiliate api');
+  }
+});
+
 // Admin Overview: Applications, Affiliates, Payouts
 affiliateRouter.get('/admin/overview', verifyAffiliateAdmin, (req: Request, res: Response) => {
   try {
@@ -910,6 +996,7 @@ affiliateRouter.get('/admin/overview', verifyAffiliateAdmin, (req: Request, res:
       applications,
       affiliates,
       payouts,
+      rates: getAffiliateRates(),
     });
   } catch (err: any) {
     sendServerError(res, err, 'affiliate api');

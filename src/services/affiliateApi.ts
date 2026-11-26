@@ -160,6 +160,19 @@ export interface BdmDashboardData {
   payouts: AffiliatePayoutItem[];
 }
 
+export interface AffiliateRates {
+  partnerRatePct: number; // % of the platform fee earned by a Partner
+  bdmDirectRatePct: number; // % of the fee a BDM earns on their own referral link
+  bdmOverrideRatePct: number; // % of the fee a BDM earns on their Partners' volume
+}
+
+export interface AffiliateRatesResponse extends AffiliateRates {
+  platformFeePct: number;
+  partnerVolumePct: number;
+  bdmDirectVolumePct: number;
+  bdmOverrideVolumePct: number;
+}
+
 const API_BASE = '/api/affiliate';
 
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -246,10 +259,19 @@ export const affiliateApi = {
       }
     ),
 
+  getRates: () => requestJson<AffiliateRatesResponse>(`${API_BASE}/rates`),
+
   // Admin methods
   getAdminOverview: (adminKey: string) =>
-    requestJson<{ applications: any[]; affiliates: any[]; payouts: any[] }>(`${API_BASE}/admin/overview`, {
+    requestJson<{ applications: any[]; affiliates: any[]; payouts: any[]; rates?: AffiliateRates }>(`${API_BASE}/admin/overview`, {
       headers: { 'x-admin-key': adminKey },
+    }),
+
+  updateRates: (adminKey: string, rates: AffiliateRates) =>
+    requestJson<{ success: boolean; rates: AffiliateRates }>(`${API_BASE}/admin/rates`, {
+      method: 'PUT',
+      headers: { 'x-admin-key': adminKey },
+      body: JSON.stringify(rates),
     }),
 
   reviewApplication: (

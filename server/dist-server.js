@@ -372,9 +372,24 @@ function initDb() {
     if (!campaignCols.includes("rewards_badge_text")) {
       db.exec("ALTER TABLE swap_campaigns ADD COLUMN rewards_badge_text TEXT NOT NULL DEFAULT 'Detailed Rewards and Progress (After Wallet Connect)';");
     }
+    if (!campaignCols.includes("reset_at")) {
+      db.exec("ALTER TABLE swap_campaigns ADD COLUMN reset_at TEXT;");
+    }
   } catch (err) {
     console.error("[DB] swap_campaigns display settings migration failed:", err);
   }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS affiliate_settings (
+      key TEXT PRIMARY KEY,
+      value REAL NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  const seedSetting = db.prepare("INSERT OR IGNORE INTO affiliate_settings (key, value, updated_at) VALUES (?, ?, ?)");
+  const seededAt = (/* @__PURE__ */ new Date()).toISOString();
+  seedSetting.run("partner_rate_pct", 20, seededAt);
+  seedSetting.run("bdm_direct_rate_pct", 20, seededAt);
+  seedSetting.run("bdm_override_rate_pct", 10, seededAt);
   const campaignId = "campaign_genesis_001";
   const existingCampaign = db.prepare("SELECT id FROM swap_campaigns WHERE slug = ?").get("genesis");
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -897,6 +912,28 @@ function sendServerError(res, err, context) {
 
 // server/affiliateApi.ts
 var affiliateRouter = Router();
+var PLATFORM_FEE_PCT = 0.5;
+var DEFAULT_AFFILIATE_RATES = { partnerRatePct: 20, bdmDirectRatePct: 20, bdmOverrideRatePct: 10 };
+function getAffiliateRates() {
+  const rates = { ...DEFAULT_AFFILIATE_RATES };
+  try {
+    const rows = db.prepare("SELECT key, value FROM affiliate_settings").all();
+    const byKey = {};
+    rows.forEach((r) => {
+      byKey[r.key] = Number(r.value);
+    });
+    const pick = (key, fallback) => Number.isFinite(byKey[key]) && byKey[key] >= 0 && byKey[key] <= 100 ? byKey[key] : fallback;
+    rates.partnerRatePct = pick("partner_rate_pct", rates.partnerRatePct);
+    rates.bdmDirectRatePct = pick("bdm_direct_rate_pct", rates.bdmDirectRatePct);
+    rates.bdmOverrideRatePct = pick("bdm_override_rate_pct", rates.bdmOverrideRatePct);
+  } catch (err) {
+    console.warn("[Affiliate] Could not read affiliate rates, using defaults:", err);
+  }
+  return rates;
+}
+function volumePct(ratePct) {
+  return Number((ratePct * PLATFORM_FEE_PCT / 100).toFixed(4));
+}
 function getSiteOrigin(req) {
   const configured = (process.env.APP_URL || "").trim().replace(/\/+$/, "");
   if (/^https?:\/\//.test(configured)) return configured;
@@ -1037,7 +1074,8 @@ function creditAffiliateSwapCommission(params) {
     if (!attribution) return;
     if (attribution.referrer_wallet_address.toLowerCase() === cleanTrader) return;
     const now = params.verifiedAt || (/* @__PURE__ */ new Date()).toISOString();
-    const platformFeeUSD = Number((params.volumeUSD * 5e-3).toFixed(6));
+    const platformFeeUSD = Number((params.volumeUSD * (PLATFORM_FEE_PCT / 100)).toFixed(6));
+    const rates = getAffiliateRates();
     db.prepare(`
       UPDATE affiliate_referrals
       SET total_volume_usd = total_volume_usd + ?, swaps_count = swaps_count + 1, last_swap_at = ?
@@ -1045,7 +1083,7 @@ function creditAffiliateSwapCommission(params) {
     `).run(params.volumeUSD, now, attribution.id);
     const referrer = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ? AND status = ?").get(attribution.referrer_wallet_address.toLowerCase(), "active");
     if (!referrer) return;
-    const directRate = 0.2;
+    const directRate = (referrer.role === "bdm" ? rates.bdmDirectRatePct : rates.partnerRatePct) / 100;
     const directCommissionUSD = Number((platformFeeUSD * directRate).toFixed(4));
     const commissionType = referrer.role === "bdm" ? "direct_bdm" : "direct_partner";
     if (directCommissionUSD > 0) {
@@ -1082,7 +1120,7 @@ function creditAffiliateSwapCommission(params) {
     if (referrer.role === "partner" && bdmWallet && bdmWallet.toLowerCase() !== cleanTrader) {
       const bdm = db.prepare("SELECT * FROM affiliates WHERE LOWER(wallet_address) = ? AND role = ? AND status = ?").get(bdmWallet.toLowerCase(), "bdm", "active");
       if (bdm) {
-        const overrideRate = 0.1;
+        const overrideRate = rates.bdmOverrideRatePct / 100;
         const overrideCommissionUSD = Number((platformFeeUSD * overrideRate).toFixed(4));
         if (overrideCommissionUSD > 0) {
           db.prepare(`
@@ -1348,10 +1386,10 @@ affiliateRouter.get("/partner/dashboard/:walletAddress", (req, res) => {
         status: partner.status,
         bdmWalletAddress: partner.bdm_wallet_address,
         referralLink: `https://novap2p.com/swap?ref=${partner.wallet_address}`,
-        commissionRatePct: 20,
-        // 20% of 0.5% fee
-        effectiveVolumePct: 0.1,
-        // 0.10% of volume
+        commissionRatePct: getAffiliateRates().partnerRatePct,
+        // % of the 0.5% fee
+        effectiveVolumePct: volumePct(getAffiliateRates().partnerRatePct),
+        // % of volume
         createdAt: partner.created_at
       },
       stats: {
@@ -1370,7 +1408,7 @@ affiliateRouter.get("/partner/dashboard/:walletAddress", (req, res) => {
         swapVolumeUSD: c.swap_volume_usd,
         platformFeeUSD: c.platform_fee_usd,
         commissionRatePct: Number((c.commission_rate * 100).toFixed(2)),
-        effectiveVolumePct: Number((c.commission_rate * 0.5).toFixed(2)),
+        effectiveVolumePct: Number((c.commission_rate * PLATFORM_FEE_PCT).toFixed(4)),
         commissionAmountUSD: c.commission_amount_usd,
         status: c.status
         // 'paid' | 'pending'
@@ -1452,10 +1490,12 @@ affiliateRouter.get("/bdm/dashboard/:walletAddress", (req, res) => {
         status: bdm.status,
         referralLink: `https://novap2p.com/swap?ref=${bdm.wallet_address}`,
         partnerInviteLink: `https://novap2p.com/become-partner?bdm=${bdm.wallet_address}`,
-        directCommissionRatePct: 20,
-        // 20% of fee on direct BDM link
-        overrideRatePct: 10,
-        // 10% of fee on managed partners
+        directCommissionRatePct: getAffiliateRates().bdmDirectRatePct,
+        // % of fee on direct BDM link
+        overrideRatePct: getAffiliateRates().bdmOverrideRatePct,
+        // % of fee on managed partners
+        partnerRatePct: getAffiliateRates().partnerRatePct,
+        // % of fee earned by managed partners
         createdAt: bdm.created_at
       },
       stats: {
@@ -1557,6 +1597,56 @@ affiliateRouter.post("/payout/request", (req, res) => {
     sendServerError(res, err, "affiliate api");
   }
 });
+affiliateRouter.get("/rates", (req, res) => {
+  try {
+    const rates = getAffiliateRates();
+    res.json({
+      ...rates,
+      platformFeePct: PLATFORM_FEE_PCT,
+      partnerVolumePct: volumePct(rates.partnerRatePct),
+      bdmDirectVolumePct: volumePct(rates.bdmDirectRatePct),
+      bdmOverrideVolumePct: volumePct(rates.bdmOverrideRatePct)
+    });
+  } catch (err) {
+    sendServerError(res, err, "affiliate api");
+  }
+});
+affiliateRouter.put("/admin/rates", verifyAdmin, (req, res) => {
+  try {
+    const fields = [
+      ["partnerRatePct", "partner_rate_pct"],
+      ["bdmDirectRatePct", "bdm_direct_rate_pct"],
+      ["bdmOverrideRatePct", "bdm_override_rate_pct"]
+    ];
+    const values = {};
+    for (const [field] of fields) {
+      const n = Number(req.body?.[field]);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        return res.status(400).json({ error: "Each rate must be a number between 0 and 100." });
+      }
+      values[field] = Number(n.toFixed(2));
+    }
+    if (values.partnerRatePct + values.bdmOverrideRatePct > 100) {
+      return res.status(400).json({ error: "Partner % plus BDM override % cannot exceed 100% of the platform fee." });
+    }
+    const before = getAffiliateRates();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const upsert = db.prepare(`
+      INSERT INTO affiliate_settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `);
+    db.transaction(() => {
+      for (const [field, key] of fields) upsert.run(key, values[field], now);
+      db.prepare(`
+        INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
+        VALUES (?, 'admin', 'update_affiliate_rates', 'affiliate_settings', 'rates', ?, ?, ?)
+      `).run("log_" + crypto3.randomUUID(), JSON.stringify({ before, after: values }), String(req.ip || ""), now);
+    })();
+    res.json({ success: true, rates: getAffiliateRates() });
+  } catch (err) {
+    sendServerError(res, err, "affiliate api");
+  }
+});
 affiliateRouter.get("/admin/overview", verifyAdmin, (req, res) => {
   try {
     const applications = db.prepare("SELECT * FROM affiliate_applications ORDER BY created_at DESC").all();
@@ -1565,7 +1655,8 @@ affiliateRouter.get("/admin/overview", verifyAdmin, (req, res) => {
     res.json({
       applications,
       affiliates,
-      payouts
+      payouts,
+      rates: getAffiliateRates()
     });
   } catch (err) {
     sendServerError(res, err, "affiliate api");
@@ -1787,6 +1878,7 @@ apiRouter.get("/campaign", (req, res) => {
         claimThresholdUSD: getClaimThresholdUSD(campaign),
         rewardsHeading: campaign.rewards_heading,
         rewardsBadgeText: campaign.rewards_badge_text,
+        resetAt: campaign.reset_at || null,
         enabledChains: ENABLED_CHAINS
       },
       milestones: milestones.map((m) => ({
@@ -2002,6 +2094,11 @@ function recordSwapTransactionInternal(params) {
     if (params.volumeUSD < minSwapUSD) {
       return { success: false, newlyUnlocked: [], belowMin: true };
     }
+    const swapTime = Date.parse(params.swapTimestamp || params.verifiedAt || "");
+    const resetTime = Date.parse(campaign?.reset_at || "");
+    if (Number.isFinite(resetTime) && Number.isFinite(swapTime) && swapTime < resetTime) {
+      return { success: false, newlyUnlocked: [], beforeReset: true };
+    }
     const now = params.verifiedAt || (/* @__PURE__ */ new Date()).toISOString();
     const txId = "tx_" + crypto4.randomUUID();
     db.prepare(`
@@ -2199,7 +2296,8 @@ async function syncUserTransfersFromLiFi(walletAddress, campaignId = DEFAULT_CAM
           toAmount,
           lifiRouteId: t.transactionId || null,
           verificationSource: "lifi_analytics_api",
-          verifiedAt
+          verifiedAt,
+          swapTimestamp: verifiedAt
         });
       }
     }
@@ -2502,10 +2600,14 @@ apiRouter.post("/submit-transaction", async (req, res) => {
       lifiRouteId: typeof lifiRouteId === "string" ? lifiRouteId : null,
       rawRouteData,
       verificationSource: "lifi_status_api",
-      verifiedAt: now
+      verifiedAt: now,
+      swapTimestamp: lifiData.sending?.timestamp ? new Date(Number(lifiData.sending.timestamp) * 1e3).toISOString() : now
     });
     if (result.duplicate) {
       return res.status(409).json({ error: "Transaction hash has already been credited for this chain" });
+    }
+    if (result.beforeReset) {
+      return res.status(400).json({ error: "This swap was made before the current campaign round started and does not count toward it." });
     }
     if (result.belowMin) {
       return res.status(400).json({
@@ -2863,6 +2965,109 @@ apiRouter.put("/admin/campaign", verifyAdmin, (req, res) => {
     sendServerError(res, err, "swap api");
   }
 });
+apiRouter.post("/admin/campaign/reset", verifyAdmin, (req, res) => {
+  try {
+    if (String(req.body?.confirm || "") !== "RESET") {
+      return res.status(400).json({ error: "Type RESET to confirm the campaign reset." });
+    }
+    const campaignId = DEFAULT_CAMPAIGN_ID;
+    const campaign = db.prepare("SELECT * FROM swap_campaigns WHERE id = ?").get(campaignId);
+    if (!campaign) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+    const nowDate = /* @__PURE__ */ new Date();
+    const now = nowDate.toISOString();
+    const stamp = nowDate.getTime().toString(36).toUpperCase();
+    const archiveId = `${campaignId}_archive_${stamp}`;
+    const summary = db.transaction(() => {
+      const cols = db.prepare("PRAGMA table_info(swap_campaigns)").all().map((c) => c.name);
+      const overrides = {
+        id: archiveId,
+        slug: `${campaign.slug}-archive-${stamp.toLowerCase()}`,
+        title: `${campaign.title} (archived ${now.slice(0, 10)})`,
+        status: "ended",
+        end_date: now,
+        updated_at: now
+      };
+      db.prepare(`INSERT INTO swap_campaigns (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`).run(...cols.map((c) => c in overrides ? overrides[c] : campaign[c]));
+      const users = db.prepare("SELECT * FROM swap_campaign_users WHERE campaign_id = ?").all(campaignId);
+      const claimsCount = db.prepare("SELECT COUNT(*) AS n FROM swap_reward_claims WHERE campaign_id = ?").get(campaignId)?.n || 0;
+      for (const table of [
+        "swap_transactions",
+        "swap_cashback_ledger",
+        "swap_rewards",
+        "swap_reward_claims",
+        "swap_referrals",
+        "swap_campaign_events"
+      ]) {
+        db.prepare(`UPDATE ${table} SET campaign_id = ? WHERE campaign_id = ?`).run(archiveId, campaignId);
+      }
+      db.prepare(`
+        UPDATE swap_campaign_users
+        SET campaign_id = ?, referral_code = referral_code || '-' || ?
+        WHERE campaign_id = ?
+      `).run(archiveId, stamp, campaignId);
+      const newIdByOldId = /* @__PURE__ */ new Map();
+      users.forEach((u) => newIdByOldId.set(u.id, "usr_" + crypto4.randomUUID()));
+      const insertUser = db.prepare(`
+        INSERT INTO swap_campaign_users (
+          id, campaign_id, wallet_address, chain_id, signature, verified_at,
+          referral_code, referred_by_user_id, total_volume_usd, eligible_swaps_count,
+          is_flagged, flag_reason, last_active_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 0, ?, ?, ?, ?)
+      `);
+      users.forEach((u) => {
+        insertUser.run(
+          newIdByOldId.get(u.id),
+          campaignId,
+          u.wallet_address,
+          u.chain_id,
+          u.signature,
+          u.verified_at,
+          u.referral_code,
+          u.referred_by_user_id ? newIdByOldId.get(u.referred_by_user_id) || null : null,
+          u.is_flagged,
+          u.flag_reason,
+          u.last_active_at,
+          now
+        );
+      });
+      const insertReferral = db.prepare(`
+        INSERT OR IGNORE INTO swap_referrals (
+          id, campaign_id, referrer_user_id, referred_user_id, referral_code,
+          visitor_ip, status, qualifying_volume_usd, reward_amount_usd, created_at
+        ) VALUES (?, ?, ?, ?, ?, NULL, 'connected', 0.0, 0.0, ?)
+      `);
+      const byOldId = new Map(users.map((u) => [u.id, u]));
+      users.forEach((u) => {
+        const referrer = u.referred_by_user_id ? byOldId.get(u.referred_by_user_id) : null;
+        if (!referrer) return;
+        insertReferral.run(
+          "ref_" + crypto4.randomUUID(),
+          campaignId,
+          newIdByOldId.get(referrer.id),
+          newIdByOldId.get(u.id),
+          referrer.referral_code,
+          now
+        );
+      });
+      db.prepare(`
+        UPDATE swap_campaigns
+        SET spent_budget_usd = 0.0, start_date = ?, reset_at = ?, status = 'active', updated_at = ?
+        WHERE id = ?
+      `).run(now, now, now, campaignId);
+      const result = { archiveId, usersReset: users.length, claimsArchived: claimsCount };
+      db.prepare(`
+        INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
+        VALUES (?, 'admin', 'reset_campaign', 'campaign', ?, ?, ?, ?)
+      `).run("log_" + crypto4.randomUUID(), campaignId, JSON.stringify(result), clientIp(req), now);
+      return result;
+    })();
+    res.json({ success: true, ...summary });
+  } catch (err) {
+    sendServerError(res, err, "swap api");
+  }
+});
 apiRouter.post("/admin/milestones", verifyAdmin, (req, res) => {
   try {
     const { id, milestoneNumber, title, targetVolumeUSD, rewardAmountUSD, rewardDescription, isActive, sortOrder } = req.body;
@@ -3083,9 +3288,9 @@ apiRouter.get("/admin/users", verifyAdmin, (req, res) => {
         (SELECT COUNT(*) FROM swap_referrals WHERE referrer_user_id = u.id) as referrals_count,
         (SELECT COUNT(*) FROM swap_rewards WHERE user_id = u.id AND status = 'paid') as rewards_paid_count
       FROM swap_campaign_users u
-      WHERE 1=1
+      WHERE u.campaign_id = ?
     `;
-    const params = [];
+    const params = [DEFAULT_CAMPAIGN_ID];
     if (flagged === "true") {
       query += " AND u.is_flagged = 1";
     }
