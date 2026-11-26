@@ -12,6 +12,7 @@ export {
   isKnownPath,
   GONE_PATH_RE,
   renderNotFoundHead,
+  setAffiliateRates,
 } from './seo-data.js';
 
 const fileExists = new Map();

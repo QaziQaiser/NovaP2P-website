@@ -37,4 +37,7 @@ if (process.env.LEGACY_LIVE_CHAT === 'true') {
   startChatEmailSync();
 }
 
+// server.js reads the admin-set commission rates for the SEO FAQ text
+export { getAffiliateRates } from './affiliateApi.ts';
+
 export default apiApp;

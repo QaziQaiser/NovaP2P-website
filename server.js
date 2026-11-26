@@ -4,10 +4,11 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
-import apiApp from './server/dist-server.js';
+import apiApp, { getAffiliateRates } from './server/dist-server.js';
 import {
   renderSeoHead,
   renderNotFoundHead,
+  setAffiliateRates,
   isKnownPath,
   GONE_PATH_RE,
   SITE_ORIGIN,
@@ -208,6 +209,9 @@ app.get('*', (req, res) => {
       if (SEO_BLOCK_RE.test(html)) {
         // Unknown URLs get a real 404 status; the app shows its "Page not found" page.
         const known = isKnownPath(req.path);
+        try {
+          setAffiliateRates(getAffiliateRates());
+        } catch {}
         const head = known ? renderSeoHead(req.path, distDir) : renderNotFoundHead();
         res.set('Cache-Control', 'no-cache');
         return res

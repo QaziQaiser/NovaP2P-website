@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { renderSeoHead, renderNotFoundHead, isKnownPath } from '../../server/seo-data.js';
+import { renderSeoHead, renderNotFoundHead, isKnownPath, setAffiliateRates } from '../../server/seo-data.js';
+import { useAffiliateRates } from '../services/useAffiliateRates';
 
 // Tags owned by the SEO metadata (server/seo-data.js). Everything else in <head>
 // (favicons, analytics, fonts, app styles) is left untouched.
@@ -16,9 +17,11 @@ const SEO_TAGS =
  */
 export const SeoHeadSync = () => {
   const { pathname } = useLocation();
+  const rates = useAffiliateRates();
 
   useEffect(() => {
     try {
+      setAffiliateRates(rates);
       // Share images are deployed with the site, so they always exist here.
       const html = isKnownPath(pathname) ? renderSeoHead(pathname, () => true) : renderNotFoundHead();
       const tpl = document.createElement('template');
@@ -32,7 +35,7 @@ export const SeoHeadSync = () => {
     } catch (err) {
       console.warn('[SEO] Could not update head tags:', err);
     }
-  }, [pathname]);
+  }, [pathname, rates]);
 
   return null;
 };

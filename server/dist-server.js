@@ -3414,8 +3414,8 @@ var CHAT_SYSTEM_PROMPT = `You are "Nova Assistant", the friendly virtual assista
 - Rewards can be claimed once the claimable balance reaches $500; claims are reviewed by the team before payment. Abusive or sybil activity is disqualified.
 
 # Partner & BDM affiliate program
-- Platform fee is 0.5%. Partners earn 20% of the fee (0.1% of referred volume) for the lifetime of every user they refer.
-- BDMs (Business Development Managers) recruit and manage Partners and earn a 10% override of the fee on their Partners' volume (0.05% of that volume), or the full 20% on users referred through the BDM's own link.
+- Platform fee is 0.5%. Partners earn {{PARTNER_PCT}}% of the fee ({{PARTNER_VOL_PCT}}% of referred volume) for the lifetime of every user they refer.
+- BDMs (Business Development Managers) recruit and manage Partners and earn a {{BDM_OVERRIDE_PCT}}% override of the fee on their Partners' volume ({{BDM_OVERRIDE_VOL_PCT}}% of that volume), or {{BDM_DIRECT_PCT}}% on users referred through the BDM's own link.
 - Referred users get 5% cashback. Partners/BDMs do not get cashback on referred users' volume, only on their own swaps.
 - Apply at /become-partner or /become-bdm: connect a wallet, fill in the form and sign the message. Reviews take up to 24 hours and the result is emailed.
 - Partners need an active X/Twitter account and a Telegram channel or group (YouTube optional). BDMs need crypto affiliate / BD experience.
@@ -3426,6 +3426,12 @@ var CHAT_SYSTEM_PROMPT = `You are "Nova Assistant", the friendly virtual assista
 # NovaP2P P2P platform fees (for the upcoming P2P marketplace)
 - 0% maker fees. $0.03 taker fee. No annual platform fee. No deposit fees (network fees still apply). Small flat withdrawal fee based on network costs. Full details at /fee-structure.
 `;
+function getChatSystemPrompt() {
+  const r = getAffiliateRates();
+  const pct = (n) => String(Number(n.toFixed(2)));
+  const vol = (n) => String(Number((n * PLATFORM_FEE_PCT / 100).toFixed(4)));
+  return CHAT_SYSTEM_PROMPT.replace("{{PARTNER_PCT}}", pct(r.partnerRatePct)).replace("{{PARTNER_VOL_PCT}}", vol(r.partnerRatePct)).replace("{{BDM_OVERRIDE_PCT}}", pct(r.bdmOverrideRatePct)).replace("{{BDM_OVERRIDE_VOL_PCT}}", vol(r.bdmOverrideRatePct)).replace("{{BDM_DIRECT_PCT}}", pct(r.bdmDirectRatePct));
+}
 var HANDOFF_MARKER = "[[HANDOFF]]";
 
 // server/chatApi.ts
@@ -3532,7 +3538,7 @@ async function callGemini(history) {
           method: "POST",
           headers: target.headers,
           body: JSON.stringify({
-            systemInstruction: { parts: [{ text: CHAT_SYSTEM_PROMPT }] },
+            systemInstruction: { parts: [{ text: getChatSystemPrompt() }] },
             contents: history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
             generationConfig: {
               temperature: 0.4,
@@ -4363,5 +4369,6 @@ if (process.env.LEGACY_LIVE_CHAT === "true") {
 var index_default = apiApp;
 export {
   apiApp,
-  index_default as default
+  index_default as default,
+  getAffiliateRates
 };

@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { db } from './db.ts';
 import { verifyAdmin, rateLimit, safeEqual, sendServerError } from './auth.ts';
 import { sendMail, escapeHtml, ADMIN_EMAIL } from './notifications.ts';
-import { CHAT_SYSTEM_PROMPT, HANDOFF_MARKER } from './chatKnowledge.ts';
+import { getChatSystemPrompt, HANDOFF_MARKER } from './chatKnowledge.ts';
 
 // ---------------------------------------------------------------------------
 // LIVE CHAT: visitor <-> AI assistant (Gemini) <-> support team
@@ -167,7 +167,7 @@ async function callGemini(history: { role: 'user' | 'model'; text: string }[]): 
           method: 'POST',
           headers: target.headers,
           body: JSON.stringify({
-            systemInstruction: { parts: [{ text: CHAT_SYSTEM_PROMPT }] },
+            systemInstruction: { parts: [{ text: getChatSystemPrompt() }] },
             contents: history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
             generationConfig: {
               temperature: 0.4,
