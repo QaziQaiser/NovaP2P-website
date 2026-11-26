@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { motion } from 'motion/react';
 import { Sparkles, Wallet, ShieldCheck, AlertCircle, Loader2, CheckCircle2, Gift, Users } from 'lucide-react';
 import { LiFiSwapWidget } from './LiFiSwapWidget';
@@ -14,6 +14,9 @@ import {
   UserDashboardData,
 } from '../../services/swapCampaignApi';
 import { affiliateApi } from '../../services/affiliateApi';
+
+// Limit mode (CoW Protocol) is separate from the Market swap and only loaded when selected
+const LimitOrderPanel = lazy(() => import('./limit/LimitOrderPanel').then((m) => ({ default: m.LimitOrderPanel })));
 
 interface NovaSwapSectionProps {
   /** Show the "Multi-Chain DEX / NovaP2P Swap" header above the swap box (hidden on the homepage) */
@@ -33,6 +36,9 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
   // (A wallet only authorized for the site, e.g. from another page, is not the widget's wallet.)
   const effectiveAccount = detectedWallet;
   const isWalletConnected = !!effectiveAccount;
+
+  // Market (LI.FI widget, unchanged) or Limit (CoW Protocol limit orders)
+  const [swapMode, setSwapMode] = useState<'market' | 'limit'>('market');
 
   // Campaign state
   const [campaign, setCampaign] = useState<CampaignData | null>(null);
@@ -348,12 +354,45 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
         </div>
       )}
 
-      {/* LI.FI SWAP WIDGET */}
+      {/* MARKET | LIMIT TOGGLE */}
+      <div className="flex justify-center mb-4 px-4">
+        <div role="tablist" aria-label="Order type" className="inline-flex p-1 rounded-full bg-white border border-gray-200 shadow-sm">
+          {(['market', 'limit'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="tab"
+              aria-selected={swapMode === mode}
+              onClick={() => setSwapMode(mode)}
+              className={`px-6 py-2 rounded-full text-sm font-semibold transition-colors cursor-pointer ${
+                swapMode === mode ? 'bg-primary text-white shadow' : 'text-gray-600 hover:text-primary'
+              }`}
+            >
+              {mode === 'market' ? 'Market' : 'Limit'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* LIMIT ORDERS (same chain, CoW Protocol) */}
+      {swapMode === 'limit' && (
+        <Suspense
+          fallback={
+            <div className="flex justify-center py-16 text-gray-400">
+              <Loader2 size={22} className="animate-spin" />
+            </div>
+          }
+        >
+          <LimitOrderPanel />
+        </Suspense>
+      )}
+
+      {/* LI.FI SWAP WIDGET (Market mode; stays mounted and is only hidden in Limit mode) */}
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="relative flex justify-center items-center max-w-5xl mx-auto px-0 sm:px-2 w-full"
+        className={`relative ${swapMode === 'market' ? 'flex' : 'hidden'} justify-center items-center max-w-5xl mx-auto px-0 sm:px-2 w-full`}
       >
         {/* Subtle ambient gradient glow in background */}
         <div className="absolute w-full max-w-[600px] h-[400px] sm:h-[550px] bg-gradient-to-tr from-blue-200/40 via-purple-100/30 to-orange-100/40 rounded-full blur-3xl -z-10 pointer-events-none" />
