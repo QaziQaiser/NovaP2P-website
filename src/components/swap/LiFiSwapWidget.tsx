@@ -10,6 +10,8 @@ import {
   APPKIT_METADATA,
   FEATURED_WALLET_IDS,
 } from '../../config/appkit';
+import { gasFallbackRequestInterceptor } from './lifiGasRefuel';
+import { DestinationGasSummary } from './DestinationGasSummary';
 
 // Real on-chain tx hash (EVM) or Solana / non-EVM signature; placeholders such as route ids are never submitted
 const REAL_TX_HASH = /^(0x[a-fA-F0-9]{64}|[1-9A-HJ-NP-Za-km-z]{43,100})$/;
@@ -482,6 +484,14 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
       appearance: 'light',
       buildUrl: false,
 
+      // Destination gas delivery (LI.FI "Get gas" via Gas.zip) is built into the widget and stays on: it is
+      // only offered when LI.FI's gas suggestion reports support for the destination chain and the receiving
+      // wallet is low on gas. This interceptor drops the gas part when LI.FI has no gas-inclusive route,
+      // so the normal swap routes still load.
+      sdkConfig: {
+        requestInterceptor: gasFallbackRequestInterceptor,
+      },
+
       // Internal wallet management forces LI.FI to run its full native modal logic
       // for injected wallets, WalletConnect QR code modal, and Coinbase Wallet
       walletConfig: {
@@ -922,6 +932,7 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
   );
 
   return (
+    <div className="w-full flex flex-col items-center">
     <div
       ref={containerRef}
       data-wallet-connected={hasConnectedWallet ? 'true' : 'false'}
@@ -1036,6 +1047,9 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
       <div className="w-full max-w-full flex justify-center items-center">
         <LiFiWidget config={widgetConfig} integrator={partnerName} />
       </div>
+    </div>
+    {/* Destination gas (LI.FI gas refuel) amount, cost and total received; hidden when the route has no gas leg */}
+    <DestinationGasSummary apiKey={lifiApiKey} />
     </div>
   );
 };
