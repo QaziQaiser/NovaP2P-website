@@ -28,9 +28,26 @@ export const getCowChain = (chainId: number) => COW_CHAINS.find((c) => c.id === 
 export const COW_SETTLEMENT = '0x9008D19f58AAbD9eD0D60971565AA8510560ab41';
 export const COW_VAULT_RELAYER = '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110';
 
-// App data identifies orders placed from Nova Swap. The orderbook accepts the full JSON and hashes it.
-export const NOVA_APP_DATA = JSON.stringify({ appCode: 'NovaSwap', metadata: {}, version: '1.3.0' });
+// Nova Swap partner fee on limit orders (Limit mode only; the LI.FI Market swap is not affected).
+// CoW applies it at settlement and pays it weekly in WETH on Ethereum to the recipient; CoW keeps 25% of it.
+export const NOVA_PARTNER_FEE_BPS = 25; // 0.25% of order volume
+export const NOVA_PARTNER_FEE_RECIPIENT = '0x9b708d93d1230DA9957F71D07beC6F9a1EE31C12';
+
+// App data identifies orders placed from Nova Swap and carries the partner fee. It is part of the signed
+// order, so the fee is visible to and approved by the user. The orderbook accepts the full JSON and hashes it.
+export const NOVA_APP_DATA = JSON.stringify({
+  appCode: 'NovaSwap',
+  metadata: { partnerFee: { volumeBps: NOVA_PARTNER_FEE_BPS, recipient: NOVA_PARTNER_FEE_RECIPIENT } },
+  version: '1.6.0',
+});
 export const NOVA_APP_DATA_HASH = keccak256(toUtf8Bytes(NOVA_APP_DATA));
+
+// Orders placed before the fee was added (still listed in "Your Limit Orders")
+const LEGACY_NOVA_APP_DATA_HASHES = ['0x3230754c0e71ebfbe685c7060ed28119597134332029ad017f3e988113e15ab9'];
+const NOVA_APP_DATA_HASHES = new Set([NOVA_APP_DATA_HASH, ...LEGACY_NOVA_APP_DATA_HASHES].map((h) => h.toLowerCase()));
+
+/** Amount left after the Nova partner fee (CoW quotes do not include it). */
+export const afterPartnerFee = (amount: bigint) => (amount * BigInt(10000 - NOVA_PARTNER_FEE_BPS)) / 10000n;
 
 const apiBase = (chainId: number) => {
   const chain = getCowChain(chainId);
@@ -220,9 +237,15 @@ export async function cancelCowOrders(params: { chainId: number; signer: TypedDa
 /** The wallet's recent orders on one chain, limited to orders placed from Nova Swap. */
 export async function getCowAccountOrders(chainId: number, owner: string, limit = 50): Promise<CowOrder[]> {
   const orders = await cowFetch<CowOrder[]>(`${apiBase(chainId)}/account/${owner}/orders?offset=0&limit=${limit}`);
-  return (orders || []).filter(
-    (o) => (o.appData || '').toLowerCase() === NOVA_APP_DATA_HASH.toLowerCase() || o.fullAppData === NOVA_APP_DATA
-  );
+  const isNova = (o: CowOrder) => {
+    if (NOVA_APP_DATA_HASHES.has((o.appData || '').toLowerCase())) return true;
+    try {
+      return JSON.parse(o.fullAppData || '{}')?.appCode === 'NovaSwap';
+    } catch {
+      return false;
+    }
+  };
+  return (orders || []).filter(isNova);
 }
 
 export const orderExplorerUrl = (chainId: number, uid: string) => {

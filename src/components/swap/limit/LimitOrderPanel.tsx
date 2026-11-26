@@ -2,7 +2,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Loader2, Info, CheckCircle2 } from 'lucide-react';
 import { useWallet } from '../../../context/WalletContext';
 import { openAppKitModal } from '../../../config/appkit';
-import { COW_CHAINS, COW_VAULT_RELAYER, getCowChain, getCowQuote, placeCowLimitOrder } from './cowApi';
+import {
+  COW_CHAINS,
+  COW_VAULT_RELAYER,
+  NOVA_PARTNER_FEE_BPS,
+  afterPartnerFee,
+  getCowChain,
+  getCowQuote,
+  placeCowLimitOrder,
+} from './cowApi';
 import {
   loadLimitTokens,
   readTokenBalance,
@@ -144,8 +152,8 @@ export const LimitOrderPanel: React.FC = () => {
           from: owner,
         });
         if (!alive) return;
-        // Rate including network costs, i.e. what the market gives for the full amount right now
-        const price = priceFromAmounts(amount, sellToken.decimals, q.buyAmount, buyToken.decimals);
+        // What the market gives for the full amount right now, after network costs and the Nova fee
+        const price = priceFromAmounts(amount, sellToken.decimals, afterPartnerFee(q.buyAmount), buyToken.decimals);
         setMarketPrice(price);
         setQuoteError(null);
         if (!priceTouched) setPriceInput(price);
@@ -373,6 +381,7 @@ export const LimitOrderPanel: React.FC = () => {
             {marketPrice && sellToken && buyToken ? (
               <span>
                 Current market price: 1 {sellToken.symbol} = {marketPrice} {buyToken.symbol}
+                <span className="text-gray-400"> (after fee)</span>
               </span>
             ) : quoteError ? (
               <span className="text-amber-600">{quoteError}</span>
@@ -385,6 +394,21 @@ export const LimitOrderPanel: React.FC = () => {
               Your price is below the market, so the order will likely fill right away near the market price.
             </div>
           )}
+        </div>
+
+        {/* Nova fee */}
+        <div className="flex items-center justify-between mt-3 text-xs">
+          <span className="text-gray-500">Nova fee</span>
+          <span className="text-gray-700 font-semibold">
+            {(NOVA_PARTNER_FEE_BPS / 100).toFixed(2)}%
+            {buyAmount && buyToken && buyAmount > 0n ? (
+              <span className="text-gray-400 font-normal">
+                {' '}
+                (≈ {formatTokenAmount((buyAmount * BigInt(NOVA_PARTNER_FEE_BPS)) / BigInt(10000 - NOVA_PARTNER_FEE_BPS), buyToken.decimals, 4)}{' '}
+                {buyToken.symbol})
+              </span>
+            ) : null}
+          </span>
         </div>
 
         {/* Expiry */}
@@ -427,7 +451,8 @@ export const LimitOrderPanel: React.FC = () => {
         <div className="mt-3 flex gap-1.5 text-[11px] text-gray-500 leading-relaxed">
           <Info size={13} className="shrink-0 mt-px text-gray-400" />
           <span>
-            Same-network only. Placing and cancelling is free (a signature, no gas). Your tokens stay in your wallet until
+            Same-network only. Placing and cancelling is free (a signature, no gas). A {(NOVA_PARTNER_FEE_BPS / 100).toFixed(2)}% Nova
+            fee is included in the signed order and taken only if it fills; you still receive at least the amount shown. Your tokens stay in your wallet until
             the order fills at your price or better. To sell {chain?.wrappedNative.replace(/^W/, '') || 'the native coin'}, use{' '}
             {chain?.wrappedNative}. Powered by CoW Protocol.
           </span>
