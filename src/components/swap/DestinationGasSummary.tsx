@@ -1,17 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { widgetEvents, WidgetEvent } from '@lifi/widget';
 import {
-  buildGasQuote,
+  LIFI_API_URL,
+  buildRouteGasSummary,
   fetchGasDeliveryStatus,
   findGasZipStep,
-  getLastGasFallback,
   getSourceTxHash,
-  onGasFallback,
+  onGasDecision,
   GasDeliveryStatus,
-  GasQuote,
+  RouteGasSummary,
 } from './lifiGasRefuel';
 
-const CHAIN_NAMES: Record<number, string> = {
+// Chain names from LI.FI (one request per page load); a few common ones as fallback
+const FALLBACK_NAMES: Record<number, string> = {
   1: 'Ethereum',
   10: 'Optimism',
   56: 'BNB Chain',
@@ -21,7 +22,24 @@ const CHAIN_NAMES: Record<number, string> = {
   43114: 'Avalanche',
   1151111081099710: 'Solana',
 };
-const chainName = (id?: number) => (id && CHAIN_NAMES[id]) || 'the destination chain';
+let chainNamesPromise: Promise<Record<number, string>> | null = null;
+const loadChainNames = (apiKey?: string) => {
+  if (!chainNamesPromise) {
+    chainNamesPromise = fetch(`${LIFI_API_URL}/chains?chainTypes=EVM,SVM,UTXO,MVM,TVM`, {
+      headers: apiKey ? { 'x-lifi-api-key': apiKey } : {},
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const names: Record<number, string> = { ...FALLBACK_NAMES };
+        for (const chain of data?.chains ?? []) {
+          if (!FALLBACK_NAMES[chain.id]) names[chain.id] = chain.name;
+        }
+        return names;
+      })
+      .catch(() => ({ ...FALLBACK_NAMES }));
+  }
+  return chainNamesPromise;
+};
 
 const fmt = (n: number, max = 6) =>
   n === 0 ? '0' : n < 10 ** -max ? `<${10 ** -max}` : n.toLocaleString('en-US', { maximumFractionDigits: n >= 1 ? 4 : max });
@@ -30,39 +48,49 @@ const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits
 const STATUS_POLL_MS = 10_000;
 const STATUS_POLL_MAX = 60; // ~10 minutes
 
+const BADGES: Record<RouteGasSummary['status'], { label: string; className: string }> = {
+  included: { label: 'Destination Gas Included', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  unavailable: { label: 'Gas Delivery Unavailable', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  normal: { label: 'Normal Swap Route', className: 'bg-slate-100 text-slate-600 border-slate-200' },
+};
+
 /**
- * Quote summary for LI.FI destination gas delivery. Renders nothing unless the selected route
- * includes LI.FI's gas leg (gasZip step) or LI.FI could not add gas to the current route.
+ * Quote summary for a cross-chain route: whether LI.FI destination gas is included, the gas amount and
+ * its cost, total fees and the final estimated amount received. Hidden for same-chain swaps.
  */
 export const DestinationGasSummary: React.FC<{ apiKey?: string }> = ({ apiKey }) => {
-  const [quote, setQuote] = useState<GasQuote | null>(null);
-  const [fallbackChain, setFallbackChain] = useState<number | null>(null);
-  const [delivery, setDelivery] = useState<(GasDeliveryStatus & { chainId: number }) | null>(null);
+  const [summary, setSummary] = useState<RouteGasSummary | null>(null);
+  const [chainNames, setChainNames] = useState<Record<number, string>>(FALLBACK_NAMES);
+  const [delivery, setDelivery] = useState<(GasDeliveryStatus & { chainId: number; txHash: string }) | null>(null);
   const currentRoute = useRef<any>(null);
   const requestId = useRef(0);
+  const namesRef = useRef(chainNames);
+
+  const chainName = (id?: number) => (id && chainNames[id]) || 'the destination chain';
+
+  useEffect(() => {
+    let alive = true;
+    loadChainNames(apiKey).then((names) => {
+      if (!alive) return;
+      namesRef.current = names;
+      setChainNames(names);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [apiKey]);
 
   useEffect(() => {
     const showRoute = async (route: any) => {
       currentRoute.current = route;
       const id = ++requestId.current;
       if (!route) {
-        setQuote(null);
-        setFallbackChain(null);
+        setSummary(null);
         return;
       }
-      const next = await buildGasQuote(route, apiKey);
-      if (id !== requestId.current) return;
-      setQuote(next);
-
-      // No gas leg although gas was requested: tell the user the swap runs without it
-      const fb = getLastGasFallback();
-      const fellBack =
-        !findGasZipStep(route) &&
-        fb &&
-        fb.fromChainId === route.fromChainId &&
-        fb.toChainId === route.toChainId &&
-        Date.now() - fb.at < 2 * 60 * 1000;
-      setFallbackChain(fellBack ? route.toChainId : null);
+      const name = namesRef.current[route.toChainId] || 'the destination chain';
+      const next = await buildRouteGasSummary(route, name, apiKey);
+      if (id === requestId.current) setSummary(next);
     };
 
     const onRoutes = (routes: any[]) => showRoute(routes?.[0] ?? null);
@@ -71,12 +99,12 @@ export const DestinationGasSummary: React.FC<{ apiKey?: string }> = ({ apiKey })
       // Inputs changed: the old quote no longer applies until LI.FI returns new routes
       if (data?.fieldName && data.fieldName !== 'toAddress') {
         requestId.current++;
-        setQuote(null);
-        setFallbackChain(null);
+        currentRoute.current = null;
+        setSummary(null);
         setDelivery(null);
       }
     };
-    const offFallback = onGasFallback(() => {
+    const offDecision = onGasDecision(() => {
       if (currentRoute.current) showRoute(currentRoute.current);
     });
 
@@ -87,7 +115,7 @@ export const DestinationGasSummary: React.FC<{ apiKey?: string }> = ({ apiKey })
       widgetEvents.off(WidgetEvent.AvailableRoutes, onRoutes);
       widgetEvents.off(WidgetEvent.RouteSelected, onSelected);
       widgetEvents.off(WidgetEvent.FormFieldChanged, onField);
-      offFallback();
+      offDecision();
     };
   }, [apiKey]);
 
@@ -101,7 +129,7 @@ export const DestinationGasSummary: React.FC<{ apiKey?: string }> = ({ apiKey })
       const txHash = getSourceTxHash(route);
       if (!txHash) return;
       const chainId = route.toChainId;
-      setDelivery({ status: 'PENDING', chainId });
+      setDelivery({ status: 'PENDING', chainId, txHash });
       let attempts = 0;
       const poll = async () => {
         if (disposed) return;
@@ -109,11 +137,11 @@ export const DestinationGasSummary: React.FC<{ apiKey?: string }> = ({ apiKey })
         const status = await fetchGasDeliveryStatus(txHash, apiKey);
         if (disposed) return;
         if (status?.status === 'DONE') {
-          setDelivery({ ...status, chainId });
+          setDelivery({ ...status, chainId, txHash });
           return;
         }
         if (attempts >= STATUS_POLL_MAX) {
-          setDelivery({ status: 'NOT_FOUND', chainId });
+          setDelivery({ status: 'NOT_FOUND', chainId, txHash });
           return;
         }
         timer = setTimeout(poll, STATUS_POLL_MS);
@@ -129,47 +157,66 @@ export const DestinationGasSummary: React.FC<{ apiKey?: string }> = ({ apiKey })
     };
   }, [apiKey]);
 
-  if (!quote && !fallbackChain && !delivery) return null;
+  if (!summary && !delivery) return null;
+
+  const badge = summary ? BADGES[summary.status] : null;
 
   return (
     <div className="w-full max-w-[436px] mx-auto mt-3 px-4 sm:px-0">
-      {quote && (
+      {summary && badge && (
         <div className="rounded-2xl bg-white/90 border border-slate-200/80 shadow-sm px-4 py-3 text-[13px] text-slate-700">
-          <div className="flex items-center gap-2 font-semibold text-slate-900 mb-2">
-            <span aria-hidden>⛽</span>
-            <span>Includes {quote.gasSymbol} gas on {chainName(quote.destinationChainId)}</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <span className="font-semibold text-slate-900">Quote details</span>
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${badge.className}`}>
+              {badge.label}
+            </span>
           </div>
           <dl className="space-y-1">
             <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">Gas delivered</dt>
+              <dt className="text-slate-500">Estimated swap output</dt>
               <dd className="text-right font-medium">
-                {fmt(quote.gasAmount)} {quote.gasSymbol} <span className="text-slate-400">(~{usd(quote.gasUSD)})</span>
+                {fmt(summary.toAmount, 4)} {summary.toSymbol}{' '}
+                <span className="text-slate-400">(~{usd(summary.toAmountUSD)})</span>
               </dd>
             </div>
+            {summary.status === 'included' && (
+              <>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Gas on {chainName(summary.destinationChainId)}</dt>
+                  <dd className="text-right font-medium">
+                    {fmt(summary.gasAmount ?? 0)} {summary.gasSymbol}{' '}
+                    <span className="text-slate-400">(~{usd(summary.gasUSD ?? 0)})</span>
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Gas delivery cost</dt>
+                  <dd className="text-right font-medium">
+                    {fmt(summary.gasCostAmount ?? 0)} {summary.gasCostSymbol}{' '}
+                    <span className="text-slate-400">(~{usd(summary.gasCostUSD ?? 0)})</span>
+                  </dd>
+                </div>
+              </>
+            )}
             <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">Gas cost</dt>
-              <dd className="text-right font-medium">
-                {fmt(quote.costAmount)} {quote.costSymbol} <span className="text-slate-400">(~{usd(quote.costUSD)})</span>
-              </dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">You receive</dt>
-              <dd className="text-right font-medium">
-                {fmt(quote.toAmount, 4)} {quote.toSymbol} + {fmt(quote.gasAmount)} {quote.gasSymbol}
-              </dd>
+              <dt className="text-slate-500">Total fees</dt>
+              <dd className="text-right font-medium">~{usd(summary.totalFeesUSD)}</dd>
             </div>
             <div className="flex justify-between gap-3 pt-1 border-t border-slate-100">
-              <dt className="text-slate-500">Estimated total value</dt>
-              <dd className="text-right font-semibold text-slate-900">~{usd(quote.totalReceivedUSD)}</dd>
+              <dt className="text-slate-500">Final estimated received</dt>
+              <dd className="text-right font-semibold text-slate-900">
+                {summary.status === 'included'
+                  ? `${fmt(summary.toAmount, 4)} ${summary.toSymbol} + ${fmt(summary.gasAmount ?? 0)} ${summary.gasSymbol}`
+                  : `${fmt(summary.toAmount, 4)} ${summary.toSymbol}`}{' '}
+                <span className="text-slate-400 font-medium">(~{usd(summary.totalReceivedUSD)})</span>
+              </dd>
             </div>
           </dl>
-          <p className="mt-2 text-[11px] text-slate-400">Gas delivered by Gas.zip via LI.FI. Turn off "Get gas" in the swap card to skip it.</p>
-        </div>
-      )}
-
-      {!quote && fallbackChain && (
-        <div className="rounded-2xl bg-slate-50 border border-slate-200/80 px-4 py-2.5 text-[12px] text-slate-600">
-          Gas delivery to {chainName(fallbackChain)} isn't available for this route right now, so the swap runs without it.
+          {summary.reason && <p className="mt-2 text-[12px] text-slate-500">{summary.reason}</p>}
+          {summary.status === 'included' && (
+            <p className="mt-2 text-[11px] text-slate-400">
+              Gas delivered by Gas.zip via LI.FI. Turn off "Get gas" in the swap card to skip it.
+            </p>
+          )}
         </div>
       )}
 
@@ -191,7 +238,18 @@ export const DestinationGasSummary: React.FC<{ apiKey?: string }> = ({ apiKey })
           ) : delivery.status === 'PENDING' ? (
             <>Confirming gas delivery on {chainName(delivery.chainId)}…</>
           ) : (
-            <>Gas delivery status not reported yet. Check your {chainName(delivery.chainId)} wallet balance.</>
+            <>
+              Gas delivery status not reported yet. Check your {chainName(delivery.chainId)} wallet balance or{' '}
+              <a
+                href={`https://scan.li.fi/tx/${delivery.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#4F7DF3] underline"
+              >
+                track it on LI.FI
+              </a>
+              .
+            </>
           )}
         </div>
       )}
