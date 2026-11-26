@@ -387,6 +387,19 @@ export function initDb() {
     console.error('[DB] swap_campaigns display settings migration failed:', err);
   }
 
+  // Per-affiliate custom commission % set by the admin (NULL = use the default rate)
+  try {
+    const affCols = (db.prepare("PRAGMA table_info(affiliates)").all() as any[]).map((col: any) => col.name);
+    if (!affCols.includes('custom_rate_pct')) {
+      db.exec("ALTER TABLE affiliates ADD COLUMN custom_rate_pct REAL;");
+    }
+    if (!affCols.includes('custom_override_pct')) {
+      db.exec("ALTER TABLE affiliates ADD COLUMN custom_override_pct REAL;");
+    }
+  } catch (err) {
+    console.error('[DB] affiliates custom rate migration failed:', err);
+  }
+
   // Admin-editable affiliate commission rates (percent of the 0.5% platform fee)
   db.exec(`
     CREATE TABLE IF NOT EXISTS affiliate_settings (

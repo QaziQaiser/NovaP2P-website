@@ -30,14 +30,13 @@ type PartnerTab = 'dashboard' | 'referrals' | 'commissions' | 'payouts';
 
 export const PartnerDashboardPage: React.FC = () => {
   const affRates = useAffiliateRates();
-  const partnerPct = fmtPct(affRates.partnerRatePct);
-  const bdmDirectPct = fmtPct(affRates.bdmDirectRatePct);
-  const bdmOverridePct = fmtPct(affRates.bdmOverrideRatePct);
-  const partnerVolPct = fmtPct(affRates.partnerVolumePct, true);
-  const bdmOverrideVolPct = fmtPct(affRates.bdmOverrideVolumePct, true);
   const { account, isConnected, disconnectWallet } = useWallet();
   const [activeTab, setActiveTab] = useState<PartnerTab>('dashboard');
   const [dashboard, setDashboard] = useState<PartnerDashboardData | null>(null);
+  // This partner's own rate (custom % set by the admin, or the default) once the dashboard loads
+  const myRatePct = Number(dashboard?.partner?.commissionRatePct ?? affRates.partnerRatePct);
+  const partnerPct = fmtPct(myRatePct);
+  const partnerVolPct = fmtPct((myRatePct * 0.5) / 100, true);
   const [isLoading, setIsLoading] = useState(false);
   const [accessDeniedReason, setAccessDeniedReason] = useState<string | null>(null);
   const [roleRedirect, setRoleRedirect] = useState<'partner' | 'bdm' | null>(null);

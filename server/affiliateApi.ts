@@ -35,6 +35,24 @@ export function getAffiliateRates(): AffiliateRates {
   return rates;
 }
 
+/**
+ * Rates that apply to one Partner/BDM: their custom % if the admin set one, otherwise the default.
+ * directPct = Partner commission (partner) or direct-link commission (BDM); overridePct = BDM override.
+ */
+export function getEffectiveAffiliateRates(aff: any, defaults: AffiliateRates = getAffiliateRates()) {
+  const custom = (v: any) => (v === null || v === undefined || v === '' ? null : Number(v));
+  const valid = (v: number | null) => v !== null && Number.isFinite(v) && v >= 0 && v <= 100;
+  const directCustom = custom(aff?.custom_rate_pct);
+  const overrideCustom = custom(aff?.custom_override_pct);
+  const directDefault = aff?.role === 'bdm' ? defaults.bdmDirectRatePct : defaults.partnerRatePct;
+  return {
+    directPct: valid(directCustom) ? (directCustom as number) : directDefault,
+    overridePct: valid(overrideCustom) ? (overrideCustom as number) : defaults.bdmOverrideRatePct,
+    directIsCustom: valid(directCustom),
+    overrideIsCustom: valid(overrideCustom),
+  };
+}
+
 /** Rate as a percent of swap volume, e.g. 20% of the 0.5% fee = 0.10%. */
 function volumePct(ratePct: number): number {
   return Number(((ratePct * PLATFORM_FEE_PCT) / 100).toFixed(4));
@@ -291,7 +309,7 @@ function creditAffiliateSwapCommission(params: {
     if (!referrer) return;
 
     // 1. Direct commission (admin-set % of platform fee) for Partner or Direct-BDM
-    const directRate = (referrer.role === 'bdm' ? rates.bdmDirectRatePct : rates.partnerRatePct) / 100;
+    const directRate = getEffectiveAffiliateRates(referrer, rates).directPct / 100;
     const directCommissionUSD = Number((platformFeeUSD * directRate).toFixed(4));
     const commissionType = referrer.role === 'bdm' ? 'direct_bdm' : 'direct_partner';
 
@@ -335,7 +353,7 @@ function creditAffiliateSwapCommission(params: {
         .get(bdmWallet.toLowerCase(), 'bdm', 'active') as any;
 
       if (bdm) {
-        const overrideRate = rates.bdmOverrideRatePct / 100;
+        const overrideRate = getEffectiveAffiliateRates(bdm, rates).overridePct / 100;
         const overrideCommissionUSD = Number((platformFeeUSD * overrideRate).toFixed(4));
 
         if (overrideCommissionUSD > 0) {
@@ -671,8 +689,8 @@ affiliateRouter.get('/partner/dashboard/:walletAddress', (req: Request, res: Res
         status: partner.status,
         bdmWalletAddress: partner.bdm_wallet_address,
         referralLink: `https://novap2p.com/swap?ref=${partner.wallet_address}`,
-        commissionRatePct: getAffiliateRates().partnerRatePct, // % of the 0.5% fee
-        effectiveVolumePct: volumePct(getAffiliateRates().partnerRatePct), // % of volume
+        commissionRatePct: getEffectiveAffiliateRates(partner).directPct, // % of the 0.5% fee (custom or default)
+        effectiveVolumePct: volumePct(getEffectiveAffiliateRates(partner).directPct), // % of volume
         createdAt: partner.created_at,
       },
       stats: {
@@ -794,8 +812,8 @@ affiliateRouter.get('/bdm/dashboard/:walletAddress', (req: Request, res: Respons
         status: bdm.status,
         referralLink: `https://novap2p.com/swap?ref=${bdm.wallet_address}`,
         partnerInviteLink: `https://novap2p.com/become-partner?bdm=${bdm.wallet_address}`,
-        directCommissionRatePct: getAffiliateRates().bdmDirectRatePct, // % of fee on direct BDM link
-        overrideRatePct: getAffiliateRates().bdmOverrideRatePct, // % of fee on managed partners
+        directCommissionRatePct: getEffectiveAffiliateRates(bdm).directPct, // % of fee on direct BDM link (custom or default)
+        overrideRatePct: getEffectiveAffiliateRates(bdm).overridePct, // % of fee on managed partners (custom or default)
         partnerRatePct: getAffiliateRates().partnerRatePct, // % of fee earned by managed partners
         createdAt: bdm.created_at,
       },
@@ -1138,6 +1156,53 @@ affiliateRouter.post('/admin/affiliates/:walletAddress/update', verifyAffiliateA
     `).run(newStatus, newBdm, now, existing.id);
 
     res.json({ success: true });
+  } catch (err: any) {
+    sendServerError(res, err, 'affiliate api');
+  }
+});
+
+// Admin: give one Partner/BDM a custom commission % (null = back to the default rate).
+// Applies to swaps credited from now on; past commissions keep their rate.
+affiliateRouter.post('/admin/affiliates/:walletAddress/rates', verifyAffiliateAdmin, (req: Request, res: Response) => {
+  try {
+    const cleanWallet = String(req.params.walletAddress || '').trim().toLowerCase();
+    const existing = db.prepare('SELECT * FROM affiliates WHERE LOWER(wallet_address) = ?').get(cleanWallet) as any;
+    if (!existing) {
+      return res.status(404).json({ error: 'Affiliate not found' });
+    }
+
+    const parse = (v: any): number | null | 'invalid' => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 && n <= 100 ? Number(n.toFixed(2)) : 'invalid';
+    };
+    const customRate = parse(req.body?.customRatePct);
+    const customOverride = existing.role === 'bdm' ? parse(req.body?.customOverridePct) : null;
+    if (customRate === 'invalid' || customOverride === 'invalid') {
+      return res.status(400).json({ error: 'Custom % must be a number between 0 and 100 (or empty for the default).' });
+    }
+
+    const now = new Date().toISOString();
+    db.transaction(() => {
+      db.prepare('UPDATE affiliates SET custom_rate_pct = ?, custom_override_pct = ?, updated_at = ? WHERE id = ?')
+        .run(customRate, customOverride, now, existing.id);
+      db.prepare(`
+        INSERT INTO swap_admin_audit_logs (id, admin_identifier, action, target_type, target_id, details, ip_address, created_at)
+        VALUES (?, 'admin', 'set_affiliate_custom_rate', 'affiliate', ?, ?, ?, ?)
+      `).run(
+        'log_' + crypto.randomUUID(),
+        existing.wallet_address,
+        JSON.stringify({
+          before: { customRatePct: existing.custom_rate_pct, customOverridePct: existing.custom_override_pct },
+          after: { customRatePct: customRate, customOverridePct: customOverride },
+        }),
+        String(req.ip || ''),
+        now
+      );
+    })();
+
+    const updated = db.prepare('SELECT * FROM affiliates WHERE id = ?').get(existing.id) as any;
+    res.json({ success: true, effective: getEffectiveAffiliateRates(updated) });
   } catch (err: any) {
     sendServerError(res, err, 'affiliate api');
   }

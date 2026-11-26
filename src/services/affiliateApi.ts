@@ -267,6 +267,17 @@ export const affiliateApi = {
       headers: { 'x-admin-key': adminKey },
     }),
 
+  setAffiliateCustomRates: (
+    adminKey: string,
+    walletAddress: string,
+    payload: { customRatePct: number | null; customOverridePct?: number | null }
+  ) =>
+    requestJson<{ success: boolean }>(`${API_BASE}/admin/affiliates/${encodeURIComponent(walletAddress)}/rates`, {
+      method: 'POST',
+      headers: { 'x-admin-key': adminKey },
+      body: JSON.stringify(payload),
+    }),
+
   updateRates: (adminKey: string, rates: AffiliateRates) =>
     requestJson<{ success: boolean; rates: AffiliateRates }>(`${API_BASE}/admin/rates`, {
       method: 'PUT',

@@ -37,14 +37,14 @@ type BdmSidebarTab = 'overview' | 'partners' | 'earnings' | 'payouts' | 'reports
 export const BdmDashboardPage: React.FC = () => {
   const affRates = useAffiliateRates();
   const partnerPct = fmtPct(affRates.partnerRatePct);
-  const bdmDirectPct = fmtPct(affRates.bdmDirectRatePct);
-  const bdmOverridePct = fmtPct(affRates.bdmOverrideRatePct);
   const partnerVolPct = fmtPct(affRates.partnerVolumePct, true);
-  const bdmOverrideVolPct = fmtPct(affRates.bdmOverrideVolumePct, true);
   const { account, isConnected, disconnectWallet } = useWallet();
   const [activeTab, setActiveTab] = useState<BdmSidebarTab>('overview');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [dashboard, setDashboard] = useState<BdmDashboardData | null>(null);
+  // This BDM's own rates (custom % set by the admin, or the defaults) once the dashboard loads
+  const bdmDirectPct = fmtPct(Number(dashboard?.bdm?.directCommissionRatePct ?? affRates.bdmDirectRatePct));
+  const bdmOverridePct = fmtPct(Number(dashboard?.bdm?.overrideRatePct ?? affRates.bdmOverrideRatePct));
   const [isLoading, setIsLoading] = useState(false);
   const [accessDeniedReason, setAccessDeniedReason] = useState<string | null>(null);
   const [roleRedirect, setRoleRedirect] = useState<'partner' | 'bdm' | null>(null);
@@ -492,7 +492,7 @@ export const BdmDashboardPage: React.FC = () => {
                         <tr className="border-b border-slate-800/80 text-xs font-medium text-slate-400 bg-[#080f18]/60">
                           <th className="py-3.5 px-6">Partner Wallet</th>
                           <th className="py-3.5 px-6">Referred Volume</th>
-                          <th className="py-3.5 px-6">Partner Earnings ({partnerPct}%)</th>
+                          <th className="py-3.5 px-6">Partner Earnings</th>
                           <th className="py-3.5 px-6">BDM Override ({bdmOverridePct}%)</th>
                           <th className="py-3.5 px-6 text-right">Status</th>
                         </tr>

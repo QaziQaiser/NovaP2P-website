@@ -26,6 +26,12 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
   const [savedRates, setSavedRates] = useState<AffiliateRates | null>(null);
   const [isSavingRates, setIsSavingRates] = useState(false);
 
+  // Custom % for one Partner/BDM (empty input = use the default rate)
+  const [rateModal, setRateModal] = useState<any | null>(null);
+  const [customRateInput, setCustomRateInput] = useState('');
+  const [customOverrideInput, setCustomOverrideInput] = useState('');
+  const [isSavingCustomRate, setIsSavingCustomRate] = useState(false);
+
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -140,6 +146,88 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
   };
 
   const bdmList = affiliates.filter((a) => a.role === 'bdm');
+
+  const hasCustom = (v: any) => v !== null && v !== undefined && v !== '';
+  const defaultDirectPct = (aff: any) =>
+    aff.role === 'bdm' ? Number(rates?.bdmDirectRatePct ?? 20) : Number(rates?.partnerRatePct ?? 20);
+  const defaultOverridePct = () => Number(rates?.bdmOverrideRatePct ?? 10);
+  const effectiveDirectPct = (aff: any) => (hasCustom(aff.custom_rate_pct) ? Number(aff.custom_rate_pct) : defaultDirectPct(aff));
+  const effectiveOverridePct = (aff: any) =>
+    hasCustom(aff.custom_override_pct) ? Number(aff.custom_override_pct) : defaultOverridePct();
+  const affiliateByWallet = (wallet: string) =>
+    affiliates.find((a) => String(a.wallet_address).toLowerCase() === String(wallet || '').toLowerCase());
+
+  const openRateModal = (aff: any) => {
+    setError(null);
+    setCustomRateInput(hasCustom(aff.custom_rate_pct) ? String(aff.custom_rate_pct) : '');
+    setCustomOverrideInput(hasCustom(aff.custom_override_pct) ? String(aff.custom_override_pct) : '');
+    setRateModal(aff);
+  };
+
+  const saveCustomRate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rateModal) return;
+    const parse = (v: string) => (v.trim() === '' ? null : Number(v));
+    const direct = parse(customRateInput);
+    const override = rateModal.role === 'bdm' ? parse(customOverrideInput) : null;
+    for (const v of [direct, override]) {
+      if (v !== null && (!Number.isFinite(v) || v < 0 || v > 100)) {
+        setError('Custom % must be between 0 and 100 (leave empty to use the default rate).');
+        return;
+      }
+    }
+    try {
+      setIsSavingCustomRate(true);
+      setError(null);
+      await affiliateApi.setAffiliateCustomRates(adminKey, rateModal.wallet_address, {
+        customRatePct: direct,
+        customOverridePct: rateModal.role === 'bdm' ? override : null,
+      });
+      setNotice(
+        `Commission % updated for ${rateModal.full_name || rateModal.wallet_address}. It applies to swaps credited from now on.`
+      );
+      setRateModal(null);
+      loadData();
+    } catch (err: any) {
+      setError(err.message || 'Failed to update commission %');
+    } finally {
+      setIsSavingCustomRate(false);
+    }
+  };
+
+  const RateBadge: React.FC<{ aff: any }> = ({ aff }) => (
+    <div className="space-y-0.5">
+      <div className="text-white font-semibold">
+        {aff.role === 'bdm' ? 'Direct ' : ''}
+        {effectiveDirectPct(aff)}%
+        {hasCustom(aff.custom_rate_pct) ? (
+          <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold">CUSTOM</span>
+        ) : (
+          <span className="ml-1.5 text-slate-500 text-[10px]">default</span>
+        )}
+      </div>
+      {aff.role === 'bdm' && (
+        <div className="text-white font-semibold">
+          Override {effectiveOverridePct(aff)}%
+          {hasCustom(aff.custom_override_pct) ? (
+            <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold">CUSTOM</span>
+          ) : (
+            <span className="ml-1.5 text-slate-500 text-[10px]">default</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const SetRateButton: React.FC<{ aff: any }> = ({ aff }) => (
+    <button
+      type="button"
+      onClick={() => openRateModal(aff)}
+      className="px-2.5 py-1 rounded bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/30 inline-flex items-center gap-1 cursor-pointer"
+    >
+      <Percent size={12} /> Set %
+    </button>
+  );
 
   const RATE_FIELDS: Array<{ key: keyof AffiliateRates; label: string; hint: string }> = [
     { key: 'partnerRatePct', label: 'Partner Commission', hint: 'Partner earns this % of the fee on users they refer' },
@@ -389,6 +477,15 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
                           </button>
                         </div>
                       )}
+                      {app.status === 'approved' && affiliateByWallet(app.wallet_address) && (
+                        <div className="inline-flex flex-col items-end gap-1">
+                          <SetRateButton aff={affiliateByWallet(app.wallet_address)} />
+                          <span className="text-[10px] text-slate-400">
+                            {effectiveDirectPct(affiliateByWallet(app.wallet_address))}%
+                            {app.role === 'bdm' ? ` / ${effectiveOverridePct(affiliateByWallet(app.wallet_address))}% override` : ''}
+                          </span>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -414,13 +511,14 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
                 <th className="py-2.5 px-3">Assigned BDM</th>
                 <th className="py-2.5 px-3">Volume</th>
                 <th className="py-2.5 px-3">Earnings (Pending)</th>
+                <th className="py-2.5 px-3">Commission %</th>
                 <th className="py-2.5 px-3 text-right">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {affiliates.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-slate-500">
+                  <td colSpan={7} className="py-6 text-center text-slate-500">
                     No approved Partners or BDMs yet.
                   </td>
                 </tr>
@@ -458,6 +556,12 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
                     <td className="py-3 px-3 font-semibold text-white">${(aff.total_referred_volume_usd || 0).toFixed(2)}</td>
                     <td className="py-3 px-3 text-teal-300">
                       ${(aff.total_earnings_usd || 0).toFixed(4)} (${(aff.pending_balance_usd || 0).toFixed(2)} pending)
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap">
+                      <div className="flex items-center gap-2.5">
+                        <RateBadge aff={aff} />
+                        <SetRateButton aff={aff} />
+                      </div>
                     </td>
                     <td className="py-3 px-3 text-right">
                       <select
@@ -532,6 +636,110 @@ export const AffiliateAdminPanel: React.FC<AffiliateAdminPanelProps> = ({ adminK
           </table>
         </div>
       </div>
+      {/* Custom commission % modal */}
+      {rateModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <form
+            onSubmit={saveCustomRate}
+            className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl text-xs"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-base font-bold text-white flex items-center gap-2">
+                <Percent size={18} className="text-teal-400" />
+                Set Commission %
+              </h4>
+              <button
+                type="button"
+                onClick={() => setRateModal(null)}
+                className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="text-slate-300 bg-slate-800/60 border border-slate-700 rounded-xl p-3 mb-4 space-y-1">
+              <div><strong>{rateModal.role === 'bdm' ? 'BDM' : 'Partner'}:</strong> {rateModal.full_name || '—'}</div>
+              <div className="font-mono break-all"><strong className="font-sans">Wallet:</strong> {rateModal.wallet_address}</div>
+            </div>
+
+            <label className="block text-slate-300 font-semibold mb-1">
+              {rateModal.role === 'bdm' ? 'Direct link commission %' : 'Partner commission %'}
+            </label>
+            <div className="relative mb-1">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={customRateInput}
+                onChange={(e) => setCustomRateInput(e.target.value)}
+                placeholder={`Default: ${defaultDirectPct(rateModal)}%`}
+                className="w-full px-3 py-2.5 pr-8 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">%</span>
+            </div>
+            <div className="text-[11px] text-slate-500 mb-4">
+              Leave empty to use the default ({defaultDirectPct(rateModal)}%). Percent of the 0.5% platform fee.
+            </div>
+
+            {rateModal.role === 'bdm' && (
+              <>
+                <label className="block text-slate-300 font-semibold mb-1">Override % on their Partners&apos; volume</label>
+                <div className="relative mb-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={customOverrideInput}
+                    onChange={(e) => setCustomOverrideInput(e.target.value)}
+                    placeholder={`Default: ${defaultOverridePct()}%`}
+                    className="w-full px-3 py-2.5 pr-8 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">%</span>
+                </div>
+                <div className="text-[11px] text-slate-500 mb-4">Leave empty to use the default ({defaultOverridePct()}%).</div>
+              </>
+            )}
+
+            <p className="text-[11px] text-amber-300/90 mb-4">
+              Applies to swaps credited from now on. Commissions already earned keep their old %.
+            </p>
+
+            <div className="flex flex-wrap justify-end gap-2">
+              {(hasCustom(rateModal.custom_rate_pct) || hasCustom(rateModal.custom_override_pct)) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomRateInput('');
+                    setCustomOverrideInput('');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold cursor-pointer"
+                >
+                  Clear (Use Default)
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setRateModal(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingCustomRate}
+                className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-slate-950 font-bold cursor-pointer inline-flex items-center gap-1.5"
+              >
+                {isSavingCustomRate && <Loader2 size={12} className="animate-spin" />}
+                Save %
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Approve / Reject Modal */}
       {reviewModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
