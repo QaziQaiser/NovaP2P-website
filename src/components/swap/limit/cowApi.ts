@@ -12,17 +12,37 @@ export interface CowChain {
   wrappedNative: string; // CoW cannot sell native coins; users sell the wrapped version
 }
 
+// Every EVM network CoW Protocol runs an orderbook on (checked against api.cow.fi, Nov 2026)
 export const COW_CHAINS: CowChain[] = [
   { id: 1, name: 'Ethereum', apiNetwork: 'mainnet', rpcUrl: 'https://ethereum-rpc.publicnode.com', explorer: 'https://explorer.cow.fi', wrappedNative: 'WETH' },
   { id: 42161, name: 'Arbitrum', apiNetwork: 'arbitrum_one', rpcUrl: 'https://arbitrum-one-rpc.publicnode.com', explorer: 'https://explorer.cow.fi/arb1', wrappedNative: 'WETH' },
   { id: 8453, name: 'Base', apiNetwork: 'base', rpcUrl: 'https://base-rpc.publicnode.com', explorer: 'https://explorer.cow.fi/base', wrappedNative: 'WETH' },
   { id: 56, name: 'BNB Chain', apiNetwork: 'bnb', rpcUrl: 'https://bsc-rpc.publicnode.com', explorer: 'https://explorer.cow.fi/bnb', wrappedNative: 'WBNB' },
   { id: 137, name: 'Polygon', apiNetwork: 'polygon', rpcUrl: 'https://polygon-bor-rpc.publicnode.com', explorer: 'https://explorer.cow.fi/pol', wrappedNative: 'WPOL' },
-  { id: 100, name: 'Gnosis', apiNetwork: 'xdai', rpcUrl: 'https://gnosis-rpc.publicnode.com', explorer: 'https://explorer.cow.fi/gc', wrappedNative: 'WXDAI' },
   { id: 43114, name: 'Avalanche', apiNetwork: 'avalanche', rpcUrl: 'https://avalanche-c-chain-rpc.publicnode.com', explorer: 'https://explorer.cow.fi/avax', wrappedNative: 'WAVAX' },
+  { id: 59144, name: 'Linea', apiNetwork: 'linea', rpcUrl: 'https://linea-rpc.publicnode.com', explorer: 'https://explorer.cow.fi/linea', wrappedNative: 'WETH' },
+  { id: 100, name: 'Gnosis', apiNetwork: 'xdai', rpcUrl: 'https://gnosis-rpc.publicnode.com', explorer: 'https://explorer.cow.fi/gc', wrappedNative: 'WXDAI' },
+  { id: 57073, name: 'Ink', apiNetwork: 'ink', rpcUrl: 'https://rpc-gel.inkonchain.com', explorer: 'https://explorer.cow.fi/ink', wrappedNative: 'WETH' },
+  { id: 9745, name: 'Plasma', apiNetwork: 'plasma', rpcUrl: 'https://rpc.plasma.to', explorer: 'https://explorer.cow.fi/plasma', wrappedNative: 'WXPL' },
 ];
 
 export const getCowChain = (chainId: number) => COW_CHAINS.find((c) => c.id === chainId);
+
+// Popular EVM networks (available in the Market swap) where CoW Protocol has no limit orders yet.
+// Listed in the picker so users see a clear "not supported" message instead of the network missing.
+export const LIMIT_UNSUPPORTED_CHAINS: { id: number; name: string }[] = [
+  { id: 10, name: 'Optimism' },
+  { id: 324, name: 'zkSync' },
+  { id: 534352, name: 'Scroll' },
+  { id: 146, name: 'Sonic' },
+  { id: 130, name: 'Unichain' },
+];
+
+/** Display name for any EVM chain id (supported or not). */
+export const chainDisplayName = (chainId: number | null | undefined) =>
+  chainId == null
+    ? ''
+    : getCowChain(chainId)?.name || LIMIT_UNSUPPORTED_CHAINS.find((c) => c.id === chainId)?.name || `network ${chainId}`;
 
 /** GPv2Settlement (EIP-712 verifying contract) and GPv2VaultRelayer (token spender); same address on every chain. */
 export const COW_SETTLEMENT = '0x9008D19f58AAbD9eD0D60971565AA8510560ab41';

@@ -12,6 +12,7 @@ import {
 } from '../../config/appkit';
 import { gasFallbackRequestInterceptor } from './lifiGasRefuel';
 import { DestinationGasSummary } from './DestinationGasSummary';
+import { captureLifiEvmWallet } from './limit/lifiWalletBridge';
 
 // Real on-chain tx hash (EVM) or Solana / non-EVM signature; placeholders such as route ids are never submitted
 const REAL_TX_HASH = /^(0x[a-fA-F0-9]{64}|[1-9A-HJ-NP-Za-km-z]{43,100})$/;
@@ -559,6 +560,8 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
               iconUrl: 'https://novap2p.com/favicon-96x96.png',
             },
           },
+          // Same provider LI.FI builds by default; also shares this wallet session with Limit mode
+          sdkProvider: captureLifiEvmWallet,
         }),
         SolanaProvider(),
         SuiProvider(),

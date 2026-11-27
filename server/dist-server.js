@@ -1098,7 +1098,8 @@ function creditAffiliateSwapCommission(params) {
     if (!attribution) return;
     if (attribution.referrer_wallet_address.toLowerCase() === cleanTrader) return;
     const now = params.verifiedAt || (/* @__PURE__ */ new Date()).toISOString();
-    const platformFeeUSD = Number((params.volumeUSD * (PLATFORM_FEE_PCT / 100)).toFixed(6));
+    const feePct = params.platformFeePct ?? PLATFORM_FEE_PCT;
+    const platformFeeUSD = Number((params.volumeUSD * (feePct / 100)).toFixed(6));
     const rates = getAffiliateRates();
     db.prepare(`
       UPDATE affiliate_referrals
@@ -1861,6 +1862,130 @@ affiliateRouter.post("/admin/payouts/:id/pay", verifyAdmin, (req, res) => {
 
 // server/api.ts
 import crypto4 from "crypto";
+
+// server/cowSync.ts
+import { keccak256, toUtf8Bytes, formatUnits } from "ethers";
+var COW_NETWORKS = {
+  1: { api: "mainnet", rpc: "https://ethereum-rpc.publicnode.com" },
+  42161: { api: "arbitrum_one", rpc: "https://arb1.arbitrum.io/rpc" },
+  8453: { api: "base", rpc: "https://mainnet.base.org" },
+  56: { api: "bnb", rpc: "https://bsc-dataseed.binance.org" },
+  137: { api: "polygon", rpc: "https://polygon-bor-rpc.publicnode.com" },
+  43114: { api: "avalanche", rpc: "https://api.avax.network/ext/bc/C/rpc" },
+  59144: { api: "linea", rpc: "https://rpc.linea.build" },
+  100: { api: "xdai", rpc: "https://rpc.gnosischain.com" },
+  57073: { api: "ink", rpc: "https://rpc-gel.inkonchain.com" },
+  9745: { api: "plasma", rpc: "https://rpc.plasma.to" }
+};
+var NOVA_PARTNER_FEE_BPS = 25;
+var NOVA_PARTNER_FEE_RECIPIENT = "0x9b708d93d1230DA9957F71D07beC6F9a1EE31C12";
+var NOVA_APP_DATA = JSON.stringify({
+  appCode: "NovaSwap",
+  metadata: { partnerFee: { volumeBps: NOVA_PARTNER_FEE_BPS, recipient: NOVA_PARTNER_FEE_RECIPIENT } },
+  version: "1.6.0"
+});
+var CURRENT_APP_DATA_HASH = keccak256(toUtf8Bytes(NOVA_APP_DATA)).toLowerCase();
+var LEGACY_APP_DATA_HASH = "0x3230754c0e71ebfbe685c7060ed28119597134332029ad017f3e988113e15ab9";
+async function getJson(url, timeoutMs = 8e3, init) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, headers: { Accept: "application/json", ...init?.headers || {} }, signal: controller.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+function novaFeePctOf(order) {
+  const hash = String(order?.appData || "").toLowerCase();
+  let full = null;
+  try {
+    full = order?.fullAppData ? JSON.parse(order.fullAppData) : null;
+  } catch {
+    full = null;
+  }
+  const isNova = hash === CURRENT_APP_DATA_HASH || hash === LEGACY_APP_DATA_HASH || full?.appCode === "NovaSwap";
+  if (!isNova) return null;
+  const fee = full?.metadata?.partnerFee;
+  if (fee && String(fee.recipient || "").toLowerCase() === NOVA_PARTNER_FEE_RECIPIENT.toLowerCase()) {
+    const bps = Number(fee.volumeBps ?? fee.bps ?? 0);
+    return Number.isFinite(bps) && bps > 0 ? bps / 100 : 0;
+  }
+  return hash === CURRENT_APP_DATA_HASH ? NOVA_PARTNER_FEE_BPS / 100 : 0;
+}
+var tokenCache = /* @__PURE__ */ new Map();
+async function tokenInfo(chainId, address) {
+  const key = `${chainId}:${address.toLowerCase()}`;
+  const hit = tokenCache.get(key);
+  if (hit && Date.now() - hit.at < 5 * 60 * 1e3) return hit.data;
+  const d = await getJson(`https://li.quest/v1/token?chain=${chainId}&token=${address}`);
+  const data = d && Number.isFinite(Number(d.decimals)) ? { symbol: String(d.symbol || ""), decimals: Number(d.decimals), priceUSD: Number(d.priceUSD || 0) } : null;
+  tokenCache.set(key, { at: Date.now(), data });
+  return data;
+}
+async function blockTime(chainId, blockNumber) {
+  const net = COW_NETWORKS[chainId];
+  if (!net || !blockNumber) return null;
+  const d = await getJson(net.rpc, 6e3, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: ["0x" + blockNumber.toString(16), false] })
+  });
+  const ts = parseInt(d?.result?.timestamp, 16);
+  return Number.isFinite(ts) && ts > 0 ? new Date(ts * 1e3).toISOString() : null;
+}
+async function fetchNovaLimitFills(owner, isAlreadyHandled) {
+  const wallet = owner.toLowerCase();
+  const perChain = await Promise.all(
+    Object.entries(COW_NETWORKS).map(async ([id, net]) => {
+      const chainId = Number(id);
+      const orders = await getJson(`https://api.cow.fi/${net.api}/api/v1/account/${wallet}/orders?offset=0&limit=100`);
+      if (!Array.isArray(orders)) return [];
+      const fills = [];
+      for (const o of orders) {
+        if (String(o?.owner || "").toLowerCase() !== wallet) continue;
+        if (!["fulfilled", "cancelled", "expired"].includes(String(o?.status))) continue;
+        const novaFeePct = novaFeePctOf(o);
+        if (novaFeePct === null) continue;
+        const uid = String(o.uid || "").toLowerCase();
+        if (!/^0x[0-9a-f]{112}$/.test(uid) || isAlreadyHandled(chainId, uid)) continue;
+        const executedSell = BigInt(o.executedSellAmount || "0");
+        const executedBuy = BigInt(o.executedBuyAmount || "0");
+        if (executedSell <= 0n || executedBuy <= 0n) continue;
+        const trades = await getJson(`https://api.cow.fi/${net.api}/api/v1/trades?orderUid=${uid}`);
+        if (!Array.isArray(trades) || trades.length === 0) continue;
+        const last = trades.reduce((a, b) => Number(b.blockNumber) > Number(a.blockNumber) ? b : a);
+        const settlementTxHash = String(last.txHash || "").toLowerCase();
+        if (!/^0x[0-9a-f]{64}$/.test(settlementTxHash)) continue;
+        const [sellT, buyT] = await Promise.all([tokenInfo(chainId, o.sellToken), tokenInfo(chainId, o.buyToken)]);
+        const sellUSD = sellT && sellT.priceUSD > 0 ? Number(formatUnits(executedSell, sellT.decimals)) * sellT.priceUSD : 0;
+        const buyUSD = buyT && buyT.priceUSD > 0 ? Number(formatUnits(executedBuy, buyT.decimals)) * buyT.priceUSD : 0;
+        const volumeUSD = sellUSD > 0 && buyUSD > 0 ? Math.min(sellUSD, buyUSD) : Math.max(sellUSD, buyUSD);
+        if (!Number.isFinite(volumeUSD) || volumeUSD <= 0) continue;
+        const filledAt = await blockTime(chainId, Number(last.blockNumber)) || String(o.creationDate || (/* @__PURE__ */ new Date()).toISOString());
+        fills.push({
+          chainId,
+          orderUid: uid,
+          settlementTxHash,
+          volumeUSD: Number(volumeUSD.toFixed(4)),
+          novaFeePct,
+          fromToken: { symbol: sellT?.symbol || "", address: String(o.sellToken) },
+          toToken: { symbol: buyT?.symbol || "", address: String(o.buyToken) },
+          fromAmount: executedSell.toString(),
+          toAmount: executedBuy.toString(),
+          filledAt
+        });
+      }
+      return fills;
+    })
+  );
+  return perChain.flat();
+}
+
+// server/api.ts
 var apiRouter = Router2();
 var ENABLED_CHAINS = [1, 56, 137, 42161, 10, 8453];
 var DEFAULT_CAMPAIGN_ID = "campaign_genesis_001";
@@ -2203,7 +2328,7 @@ function recordSwapTransactionInternal(params) {
       WHERE id = ?
     `).run(newTotalVolume, newSwapsCount, now, params.userId);
     if (campaign && campaign.cashback_enabled) {
-      const novaFeeCollectedUSD = params.volumeUSD * 5e-3;
+      const novaFeeCollectedUSD = params.volumeUSD * ((params.novaFeePct ?? 0.5) / 100);
       const cashbackRate = (campaign.cashback_percentage ?? 5) / 100;
       const creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
       if (creditedCashbackUSD > 0) {
@@ -2294,7 +2419,8 @@ function recordSwapTransactionInternal(params) {
       traderWallet: params.normalizedAddress,
       transactionId: txId,
       volumeUSD: params.volumeUSD,
-      verifiedAt: now
+      verifiedAt: now,
+      platformFeePct: params.novaFeePct
     });
     return { success: true, newlyUnlocked, txId };
   });
@@ -2369,6 +2495,46 @@ async function syncUserTransfersFromLiFi(walletAddress, campaignId = DEFAULT_CAM
     console.warn(`[LI.FI Sync] Auto-sync skipped for ${normalized}:`, err?.message || err);
   }
 }
+var cowSyncCache = /* @__PURE__ */ new Map();
+var cowSyncInFlight = /* @__PURE__ */ new Set();
+var cowSkippedOrders = /* @__PURE__ */ new Set();
+var COW_SYNC_INTERVAL_MS = 3e4;
+function syncUserLimitOrdersFromCow(walletAddress, campaignId = DEFAULT_CAMPAIGN_ID) {
+  const normalized = walletAddress.toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(normalized)) return;
+  const now = Date.now();
+  if (cowSyncInFlight.has(normalized) || now - (cowSyncCache.get(normalized) || 0) < COW_SYNC_INTERVAL_MS) return;
+  cowSyncCache.set(normalized, now);
+  cowSyncInFlight.add(normalized);
+  fetchNovaLimitFills(
+    normalized,
+    (chainId, uid) => cowSkippedOrders.has(`${chainId}:${uid}`) || Boolean(db.prepare("SELECT id FROM swap_transactions WHERE chain_id = ? AND tx_hash = ?").get(chainId, uid))
+  ).then((fills) => {
+    if (fills.length === 0) return;
+    const user = findOrCreateCampaignUser(normalized, campaignId, fills[0].chainId);
+    for (const f of fills) {
+      const result = recordSwapTransactionInternal({
+        campaignId,
+        userId: user.id,
+        normalizedAddress: normalized,
+        numericChainId: f.chainId,
+        normalizedTxHash: f.orderUid,
+        volumeUSD: f.volumeUSD,
+        fromToken: f.fromToken,
+        toToken: f.toToken,
+        fromAmount: f.fromAmount,
+        toAmount: f.toAmount,
+        lifiRouteId: null,
+        rawRouteData: { source: "cow_limit_order", orderUid: f.orderUid, settlementTxHash: f.settlementTxHash, novaFeePct: f.novaFeePct },
+        verificationSource: "cow_orderbook_api",
+        verifiedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        swapTimestamp: f.filledAt,
+        novaFeePct: f.novaFeePct
+      });
+      if (result.belowMin || result.beforeReset) cowSkippedOrders.add(`${f.chainId}:${f.orderUid}`);
+    }
+  }).catch((err) => console.warn(`[CoW Sync] Limit order sync skipped for ${normalized}:`, err?.message || err)).finally(() => cowSyncInFlight.delete(normalized));
+}
 apiRouter.get("/user/:walletAddress", async (req, res) => {
   try {
     const { walletAddress } = req.params;
@@ -2378,6 +2544,7 @@ apiRouter.get("/user/:walletAddress", async (req, res) => {
     const normalizedAddress = walletAddress.toLowerCase();
     const campaignId = DEFAULT_CAMPAIGN_ID;
     await syncUserTransfersFromLiFi(walletAddress, campaignId);
+    syncUserLimitOrdersFromCow(walletAddress, campaignId);
     const user = findOrCreateCampaignUser(normalizedAddress, campaignId, 1);
     const campaign = db.prepare("SELECT * FROM swap_campaigns WHERE id = ?").get(campaignId);
     const milestones = db.prepare(`

@@ -3,6 +3,7 @@ import { db } from './db.ts';
 import { sendAdminClaimNotification } from './notifications.ts';
 import { bindAffiliateReferral, processAffiliateSwapCommission } from './affiliateApi.ts';
 import crypto from 'crypto';
+import { fetchNovaLimitFills } from './cowSync.ts';
 import {
   verifyAdmin,
   isValidAdminKey,
@@ -381,6 +382,7 @@ export function recordSwapTransactionInternal(params: {
   verificationSource?: string;
   verifiedAt?: string;
   swapTimestamp?: string; // when the swap happened on-chain (used to skip swaps made before a campaign reset)
+  novaFeePct?: number; // Nova fee charged on this swap, % of volume (Market swap: 0.5, limit orders: 0.25)
 }): { success: boolean; newlyUnlocked: string[]; duplicate?: boolean; belowMin?: boolean; beforeReset?: boolean; txId?: string } {
   // All writes for one swap (transaction, volume, cashback, milestones, referral, affiliate commission)
   // commit together or not at all.
@@ -452,7 +454,7 @@ export function recordSwapTransactionInternal(params: {
 
     // 3. Calculate and credit active 5% Cashback on Nova Swap fees (0.5% fee collected)
     if (campaign && campaign.cashback_enabled) {
-      const novaFeeCollectedUSD = params.volumeUSD * 0.005; // 0.5% Nova fee
+      const novaFeeCollectedUSD = params.volumeUSD * ((params.novaFeePct ?? 0.5) / 100); // 0.5% Nova fee on Market swaps
       const cashbackRate = (campaign.cashback_percentage ?? 5.0) / 100.0;
       const creditedCashbackUSD = Number((novaFeeCollectedUSD * cashbackRate).toFixed(4));
 
@@ -557,6 +559,7 @@ export function recordSwapTransactionInternal(params: {
       transactionId: txId,
       volumeUSD: params.volumeUSD,
       verifiedAt: now,
+      platformFeePct: params.novaFeePct,
     });
 
     return { success: true, newlyUnlocked, txId };
@@ -651,6 +654,55 @@ export async function syncUserTransfersFromLiFi(walletAddress: string, campaignI
   }
 }
 
+// Auto-sync filled Nova limit orders (CoW Protocol) for a wallet. Runs in the background so the dashboard
+// stays fast; newly credited fills show up on the dashboard's next refresh.
+const cowSyncCache = new Map<string, number>();
+const cowSyncInFlight = new Set<string>();
+const cowSkippedOrders = new Set<string>(); // below minimum / before a campaign reset: not re-checked
+const COW_SYNC_INTERVAL_MS = 30000;
+
+export function syncUserLimitOrdersFromCow(walletAddress: string, campaignId: string = DEFAULT_CAMPAIGN_ID): void {
+  const normalized = walletAddress.toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(normalized)) return;
+  const now = Date.now();
+  if (cowSyncInFlight.has(normalized) || now - (cowSyncCache.get(normalized) || 0) < COW_SYNC_INTERVAL_MS) return;
+  cowSyncCache.set(normalized, now);
+  cowSyncInFlight.add(normalized);
+
+  fetchNovaLimitFills(normalized, (chainId, uid) =>
+    cowSkippedOrders.has(`${chainId}:${uid}`) ||
+    Boolean(db.prepare('SELECT id FROM swap_transactions WHERE chain_id = ? AND tx_hash = ?').get(chainId, uid))
+  )
+    .then((fills) => {
+      if (fills.length === 0) return;
+      const user = findOrCreateCampaignUser(normalized, campaignId, fills[0].chainId);
+      for (const f of fills) {
+        // Keyed by the order UID (unique per order; one settlement tx can fill several orders)
+        const result = recordSwapTransactionInternal({
+          campaignId,
+          userId: user.id,
+          normalizedAddress: normalized,
+          numericChainId: f.chainId,
+          normalizedTxHash: f.orderUid,
+          volumeUSD: f.volumeUSD,
+          fromToken: f.fromToken,
+          toToken: f.toToken,
+          fromAmount: f.fromAmount,
+          toAmount: f.toAmount,
+          lifiRouteId: null,
+          rawRouteData: { source: 'cow_limit_order', orderUid: f.orderUid, settlementTxHash: f.settlementTxHash, novaFeePct: f.novaFeePct },
+          verificationSource: 'cow_orderbook_api',
+          verifiedAt: new Date().toISOString(),
+          swapTimestamp: f.filledAt,
+          novaFeePct: f.novaFeePct,
+        });
+        if (result.belowMin || result.beforeReset) cowSkippedOrders.add(`${f.chainId}:${f.orderUid}`);
+      }
+    })
+    .catch((err: any) => console.warn(`[CoW Sync] Limit order sync skipped for ${normalized}:`, err?.message || err))
+    .finally(() => cowSyncInFlight.delete(normalized));
+}
+
 // 6. Get complete user dashboard data (Volume, Milestones, Rewards, Referrals)
 apiRouter.get('/user/:walletAddress', async (req: Request, res: Response) => {
   try {
@@ -664,6 +716,8 @@ apiRouter.get('/user/:walletAddress', async (req: Request, res: Response) => {
 
     // Auto-sync completed swaps from LI.FI API for this wallet address
     await syncUserTransfersFromLiFi(walletAddress, campaignId);
+    // Filled limit orders (CoW Protocol) count toward the campaign too (background, non-blocking)
+    syncUserLimitOrdersFromCow(walletAddress, campaignId);
 
     // Auto-create user record so dashboard works immediately when wallet connects
     const user = findOrCreateCampaignUser(normalizedAddress, campaignId, 1);

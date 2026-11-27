@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Loader2, Info, CheckCircle2 } from 'lucide-react';
-import { useWallet } from '../../../context/WalletContext';
-import { openAppKitModal } from '../../../config/appkit';
+import { ChevronDown, Loader2, Info, CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
   COW_CHAINS,
   COW_VAULT_RELAYER,
+  chainDisplayName,
   NOVA_PARTNER_FEE_BPS,
   afterPartnerFee,
   getCowChain,
@@ -21,9 +20,10 @@ import {
   buyAmountForPrice,
   type LimitToken,
 } from './limitTokens';
-import { approveForCow, getLimitSigner, getWalletChainId, isUserRejection } from './limitWallet';
+import { approveForCow, getLimitSigner, getWalletChainId, switchWalletChain, isUserRejection } from './limitWallet';
 import { TokenSelectModal, TokenLogo } from './TokenSelectModal';
 import { LimitOrdersList } from './LimitOrdersList';
+import { LimitChainSelector } from './LimitChainSelector';
 
 const EXPIRY_OPTIONS = [
   { label: '1 Day', seconds: 86400 },
@@ -36,8 +36,16 @@ const EXPIRY_OPTIONS = [
 const DEFAULT_CHAIN = 42161;
 const isEvm = (a?: string | null) => !!a && /^0x[a-fA-F0-9]{40}$/.test(a);
 
-export const LimitOrderPanel: React.FC = () => {
-  const { account } = useWallet();
+interface LimitOrderPanelProps {
+  /** Wallet connected in the swap (shared with the Market tab) */
+  account: string | null;
+  /** Opens the swap's wallet connection (same wallet as the Market tab) */
+  onConnectWallet: () => void;
+  /** Switches to the Market tab */
+  onUseMarket: () => void;
+}
+
+export const LimitOrderPanel: React.FC<LimitOrderPanelProps> = ({ account, onConnectWallet, onUseMarket }) => {
   const owner = isEvm(account) ? (account as string) : null;
 
   const [chainId, setChainId] = useState<number>(DEFAULT_CHAIN);
@@ -57,33 +65,58 @@ export const LimitOrderPanel: React.FC = () => {
   const [allowance, setAllowance] = useState<bigint | null>(null);
   const [walletChain, setWalletChain] = useState<number | null>(null);
 
-  const [busy, setBusy] = useState<'approve' | 'place' | null>(null);
+  const [busy, setBusy] = useState<'approve' | 'place' | 'switch' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [ordersRefresh, setOrdersRefresh] = useState(0);
 
-  // Start on the wallet's network when Limit orders support it
-  const initialChainSet = useRef(false);
+  // Track the shared wallet's current network
   useEffect(() => {
-    if (initialChainSet.current || !owner) return;
-    getWalletChainId().then((id) => {
-      if (id && getCowChain(id)) setChainId(id);
-      initialChainSet.current = true;
-    });
-  }, [owner]);
-
-  // Track the wallet's current network (to show "Switch network")
-  useEffect(() => {
-    if (!owner) return;
+    if (!owner) {
+      setWalletChain(null);
+      return;
+    }
     let alive = true;
     const check = () => getWalletChainId().then((id) => alive && setWalletChain(id));
     check();
-    const t = setInterval(check, 3000);
+    const t = setInterval(check, 2500);
     return () => {
       alive = false;
       clearInterval(t);
     };
   }, [owner]);
+
+  // Follow the wallet: when it connects or moves to another network that supports limit orders
+  // (e.g. switched in the Market tab or in the wallet), show that network here too.
+  const lastWalletChain = useRef<number | null>(null);
+  useEffect(() => {
+    if (walletChain === null || walletChain === lastWalletChain.current) return;
+    lastWalletChain.current = walletChain;
+    if (getCowChain(walletChain)) setChainId(walletChain);
+  }, [walletChain]);
+
+  const chain = getCowChain(chainId);
+  const supported = !!chain;
+
+  // Picking a network in Limit mode also switches the wallet (one request; the user can decline)
+  const handleChainChange = async (id: number) => {
+    setChainId(id);
+    setError(null);
+    setSuccess(null);
+    setSellInput('');
+    if (!owner || !getCowChain(id) || walletChain === id) return;
+    try {
+      setBusy('switch');
+      await switchWalletChain(id);
+      const now = await getWalletChainId();
+      lastWalletChain.current = now;
+      setWalletChain(now);
+    } catch (err: any) {
+      if (!isUserRejection(err)) setError(err?.message || 'Could not switch network.');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   // Default pair per network: wrapped native -> USDC
   useEffect(() => {
@@ -93,13 +126,15 @@ export const LimitOrderPanel: React.FC = () => {
     setMarketPrice('');
     setPriceInput('');
     setPriceTouched(false);
+    setQuoteError(null);
+    if (!getCowChain(chainId)) return;
     loadLimitTokens(chainId)
       .then((list) => {
         if (!alive) return;
         const wrapped = getCowChain(chainId)?.wrappedNative.toUpperCase();
         const bySymbol = (s: string) => list.find((t) => t.symbol.toUpperCase() === s);
         setSellToken(bySymbol(wrapped || '') || list[0] || null);
-        setBuyToken(bySymbol('USDC') || bySymbol('USDT') || list[1] || null);
+        setBuyToken(bySymbol('USDC') || bySymbol('USDT') || bySymbol('USDT0') || bySymbol('USD₮0') || list[1] || null);
       })
       .catch(() => alive && setError('Could not load tokens for this network.'));
     return () => {
@@ -205,7 +240,22 @@ export const LimitOrderPanel: React.FC = () => {
   const needsApproval = !!(sellAmount && allowance !== null && allowance < sellAmount);
   const insufficient = !!(sellAmount && balance !== null && balance < sellAmount);
   const wrongNetwork = !!owner && walletChain !== null && walletChain !== chainId;
-  const chain = getCowChain(chainId);
+  const walletOnUnsupported = !!owner && walletChain !== null && !getCowChain(walletChain);
+
+  const handleSwitch = async () => {
+    try {
+      setBusy('switch');
+      setError(null);
+      await switchWalletChain(chainId);
+      const now = await getWalletChainId();
+      lastWalletChain.current = now;
+      setWalletChain(now);
+    } catch (err: any) {
+      if (!isUserRejection(err)) setError(err?.message || 'Could not switch network.');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const handleApprove = async () => {
     if (!owner || !sellToken) return;
@@ -254,15 +304,16 @@ export const LimitOrderPanel: React.FC = () => {
   };
 
   let action: { label: string; onClick?: () => void; disabled?: boolean } = { label: 'Place Limit Order', onClick: handlePlace };
-  if (!owner) action = { label: account ? 'Connect an EVM wallet' : 'Connect Wallet', onClick: () => openAppKitModal('Connect') };
+  if (!owner) action = { label: account ? 'Connect an EVM wallet' : 'Connect Wallet', onClick: onConnectWallet };
   else if (!sellToken || !buyToken) action = { label: 'Select tokens', disabled: true };
   else if (!sellAmount || sellAmount <= 0n) action = { label: 'Enter an amount', disabled: true };
   else if (!buyAmount || buyAmount <= 0n) action = { label: 'Enter a limit price', disabled: true };
   else if (insufficient) action = { label: `Insufficient ${sellToken.symbol} balance`, disabled: true };
-  else if (wrongNetwork) action = { label: `Switch to ${chain?.name}`, onClick: () => getLimitSigner(owner, chainId).catch(() => {}) };
+  else if (wrongNetwork) action = { label: `Switch wallet to ${chain?.name}`, onClick: handleSwitch };
   else if (needsApproval) action = { label: `Approve ${sellToken.symbol}`, onClick: handleApprove };
 
   const box = 'rounded-2xl bg-gray-50 border border-gray-100 p-3.5';
+  const fallbackChain = walletChain && getCowChain(walletChain) ? walletChain : DEFAULT_CHAIN;
 
   return (
     <div className="w-full flex flex-col items-center px-4">
@@ -270,22 +321,46 @@ export const LimitOrderPanel: React.FC = () => {
         {/* Network (same chain only) */}
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-bold text-gray-900">Limit Order</span>
-          <label className="relative">
-            <span className="sr-only">Network</span>
-            <select
-              value={chainId}
-              onChange={(e) => setChainId(Number(e.target.value))}
-              className="appearance-none text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-200 rounded-full pl-3 pr-7 py-1.5 cursor-pointer outline-none focus:border-primary"
-            >
-              {COW_CHAINS.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          </label>
+          <LimitChainSelector value={chainId} walletChainId={owner ? walletChain : null} onChange={handleChainChange} />
         </div>
+
+        {!supported ? (
+          /* Selected network has no CoW Protocol orderbook */
+          <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-center">
+            <AlertTriangle size={22} className="mx-auto text-amber-500" />
+            <div className="mt-2 text-sm font-bold text-gray-900">Limit orders are not available on {chainDisplayName(chainId)}</div>
+            <p className="mt-1 text-xs text-gray-600 leading-relaxed">
+              Nova limit orders run on CoW Protocol, which does not support this network yet. Pick a supported network
+              ({COW_CHAINS.map((c) => c.name).join(', ')}) or use a Market swap.
+            </p>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleChainChange(fallbackChain)}
+                className="px-3.5 py-2 rounded-full text-xs font-semibold bg-primary text-white hover:bg-primary-dark cursor-pointer"
+              >
+                Use {chainDisplayName(fallbackChain)}
+              </button>
+              <button
+                type="button"
+                onClick={onUseMarket}
+                className="px-3.5 py-2 rounded-full text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:border-primary hover:text-primary cursor-pointer"
+              >
+                Market swap instead
+              </button>
+            </div>
+          </div>
+        ) : (
+        <>
+        {walletOnUnsupported && (
+          <div className="mb-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex gap-1.5">
+            <AlertTriangle size={13} className="shrink-0 mt-px" />
+            <span>
+              Your wallet is on {chainDisplayName(walletChain)}, where limit orders are not available. Switch it to {chain?.name} to
+              continue.
+            </span>
+          </div>
+        )}
 
         {/* Sell */}
         <div className={box}>
@@ -445,7 +520,13 @@ export const LimitOrderPanel: React.FC = () => {
           className="mt-4 w-full py-3.5 rounded-2xl bg-primary hover:bg-primary-dark text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 cursor-pointer transition-colors"
         >
           {busy && <Loader2 size={16} className="animate-spin" />}
-          {busy === 'approve' ? 'Approving…' : busy === 'place' ? 'Confirm in your wallet…' : action.label}
+          {busy === 'approve'
+            ? 'Approving…'
+            : busy === 'place'
+            ? 'Confirm in your wallet…'
+            : busy === 'switch'
+            ? 'Switch network in your wallet…'
+            : action.label}
         </button>
 
         <div className="mt-3 flex gap-1.5 text-[11px] text-gray-500 leading-relaxed">
@@ -454,12 +535,14 @@ export const LimitOrderPanel: React.FC = () => {
             Same-network only. Placing and cancelling is free (a signature, no gas). A {(NOVA_PARTNER_FEE_BPS / 100).toFixed(2)}% Nova
             fee is included in the signed order and taken only if it fills; you still receive at least the amount shown. Your tokens stay in your wallet until
             the order fills at your price or better. To sell {chain?.wrappedNative.replace(/^W/, '') || 'the native coin'}, use{' '}
-            {chain?.wrappedNative}. Powered by CoW Protocol.
+            {chain?.wrappedNative}. Filled orders count toward your Genesis Rewards volume. Powered by CoW Protocol.
           </span>
         </div>
+        </>
+        )}
       </div>
 
-      {owner && <LimitOrdersList chainId={chainId} account={owner} refreshKey={ordersRefresh} />}
+      {owner && supported && <LimitOrdersList chainId={chainId} account={owner} refreshKey={ordersRefresh} />}
 
       {picker && (
         <TokenSelectModal

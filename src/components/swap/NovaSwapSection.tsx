@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { motion } from 'motion/react';
 import { Sparkles, Wallet, ShieldCheck, AlertCircle, Loader2, CheckCircle2, Gift, Users } from 'lucide-react';
 import { LiFiSwapWidget } from './LiFiSwapWidget';
@@ -39,6 +39,32 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
 
   // Market (LI.FI widget, unchanged) or Limit (CoW Protocol limit orders)
   const [swapMode, setSwapMode] = useState<'market' | 'limit'>('market');
+
+  // Limit mode uses the wallet connected in the Market swap widget (one shared session). "Connect Wallet"
+  // in Limit mode opens the widget's own wallet picker and returns to Limit once an EVM wallet is connected.
+  const marketRef = useRef<HTMLDivElement>(null);
+  const [returnToLimit, setReturnToLimit] = useState(false);
+  const openSwapWalletConnect = useCallback(() => {
+    setReturnToLimit(true);
+    setSwapMode('market');
+    let tries = 0;
+    const clickConnect = () => {
+      const root = marketRef.current;
+      let btn: HTMLButtonElement | null = null;
+      root?.querySelectorAll<HTMLButtonElement>('button').forEach((b: HTMLButtonElement) => {
+        if (!btn && /connect wallet/i.test(b.textContent || '') && b.offsetParent !== null) btn = b;
+      });
+      if (btn) (btn as HTMLButtonElement).click();
+      else if (++tries < 20) setTimeout(clickConnect, 100);
+    };
+    setTimeout(clickConnect, 50);
+  }, []);
+  useEffect(() => {
+    if (returnToLimit && detectedWallet && /^0x[a-fA-F0-9]{40}$/.test(detectedWallet)) {
+      setReturnToLimit(false);
+      setSwapMode('limit');
+    }
+  }, [returnToLimit, detectedWallet]);
 
   // Campaign state
   const [campaign, setCampaign] = useState<CampaignData | null>(null);
@@ -363,7 +389,10 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
               type="button"
               role="tab"
               aria-selected={swapMode === mode}
-              onClick={() => setSwapMode(mode)}
+              onClick={() => {
+                setReturnToLimit(false);
+                setSwapMode(mode);
+              }}
               className={`px-6 py-2 rounded-full text-sm font-semibold transition-colors cursor-pointer ${
                 swapMode === mode ? 'bg-primary text-white shadow' : 'text-gray-600 hover:text-primary'
               }`}
@@ -383,12 +412,20 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
             </div>
           }
         >
-          <LimitOrderPanel />
+          <LimitOrderPanel
+            account={detectedWallet}
+            onConnectWallet={openSwapWalletConnect}
+            onUseMarket={() => {
+              setReturnToLimit(false);
+              setSwapMode('market');
+            }}
+          />
         </Suspense>
       )}
 
       {/* LI.FI SWAP WIDGET (Market mode; stays mounted and is only hidden in Limit mode) */}
       <motion.div
+        ref={marketRef}
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}

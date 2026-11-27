@@ -257,6 +257,8 @@ export function processAffiliateSwapCommission(params: {
   transactionId: string;
   volumeUSD: number;
   verifiedAt?: string;
+  /** Nova fee actually charged on this swap, in % of volume (defaults to the Market swap fee) */
+  platformFeePct?: number;
 }): void {
   try {
     db.transaction(() => creditAffiliateSwapCommission(params))();
@@ -270,6 +272,7 @@ function creditAffiliateSwapCommission(params: {
   transactionId: string;
   volumeUSD: number;
   verifiedAt?: string;
+  platformFeePct?: number;
 }): void {
   {
     const cleanTrader = params.traderWallet.trim().toLowerCase();
@@ -292,7 +295,9 @@ function creditAffiliateSwapCommission(params: {
     if (attribution.referrer_wallet_address.toLowerCase() === cleanTrader) return;
 
     const now = params.verifiedAt || new Date().toISOString();
-    const platformFeeUSD = Number((params.volumeUSD * (PLATFORM_FEE_PCT / 100)).toFixed(6)); // 0.5% platform fee
+    // 0.5% platform fee on Market swaps; limit orders pass the fee they actually paid (0.25%)
+    const feePct = params.platformFeePct ?? PLATFORM_FEE_PCT;
+    const platformFeeUSD = Number((params.volumeUSD * (feePct / 100)).toFixed(6));
     const rates = getAffiliateRates();
 
     // Update referral lifetime volume
