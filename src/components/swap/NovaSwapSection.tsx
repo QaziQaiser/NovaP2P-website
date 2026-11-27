@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { motion } from 'motion/react';
-import { Sparkles, Wallet, ShieldCheck, AlertCircle, Loader2, CheckCircle2, Gift, Users } from 'lucide-react';
+import { Sparkles, Wallet, ShieldCheck, AlertCircle, Loader2, CheckCircle2, Gift, Users, ArrowDownUp, Shuffle, Clock } from 'lucide-react';
 import { LiFiSwapWidget } from './LiFiSwapWidget';
+import { MarketChainSelector } from './MarketChainSelector';
 import { GenesisRewardsPreviewCard } from '../campaign/GenesisRewardsPreviewCard';
 import { CampaignDetailsModal } from '../campaign/CampaignDetailsModal';
 import { GenesisRewardsDashboard } from '../campaign/GenesisRewardsDashboard';
@@ -17,6 +18,14 @@ import { affiliateApi } from '../../services/affiliateApi';
 
 // Limit mode (CoW Protocol) is separate from the Market swap and only loaded when selected
 const LimitOrderPanel = lazy(() => import('./limit/LimitOrderPanel').then((m) => ({ default: m.LimitOrderPanel })));
+
+type SwapMode = 'market' | 'cross' | 'limit';
+
+const SWAP_MODES: { id: SwapMode; label: string; icon: React.ElementType; caption: string }[] = [
+  { id: 'market', label: 'Market', icon: ArrowDownUp, caption: 'Instant swaps on one network at the best price across DEXs.' },
+  { id: 'cross', label: 'Cross Chain', icon: Shuffle, caption: 'Move assets between networks. Every bridge and DEX route compared.' },
+  { id: 'limit', label: 'Limit', icon: Clock, caption: 'Set your price. Fills on CoW Protocol when the market reaches it.' },
+];
 
 interface NovaSwapSectionProps {
   /** Show the "Multi-Chain DEX / NovaP2P Swap" header above the swap box (hidden on the homepage) */
@@ -37,8 +46,16 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
   const effectiveAccount = detectedWallet;
   const isWalletConnected = !!effectiveAccount;
 
-  // Market (LI.FI widget, unchanged) or Limit (CoW Protocol limit orders)
-  const [swapMode, setSwapMode] = useState<'market' | 'limit'>('market');
+  // Market (LI.FI, same-chain only), Cross Chain (LI.FI, full cross-chain routing) or Limit (CoW Protocol).
+  // Market and Cross Chain share one LI.FI widget, so the wallet session carries across all three tabs.
+  const [swapMode, setSwapMode] = useState<SwapMode>('market');
+  const [marketChainId, setMarketChainId] = useState<number>(1);
+  // The LI.FI widget keeps the last of Market / Cross Chain while the Limit tab is open
+  const [widgetMode, setWidgetMode] = useState<'market' | 'cross'>('market');
+  const selectMode = useCallback((mode: SwapMode) => {
+    setSwapMode(mode);
+    if (mode !== 'limit') setWidgetMode(mode);
+  }, []);
 
   // Limit mode uses the wallet connected in the Market swap widget (one shared session). "Connect Wallet"
   // in Limit mode opens the widget's own wallet picker and returns to Limit once an EVM wallet is connected.
@@ -46,7 +63,7 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
   const [returnToLimit, setReturnToLimit] = useState(false);
   const openSwapWalletConnect = useCallback(() => {
     setReturnToLimit(true);
-    setSwapMode('market');
+    setSwapMode(widgetMode);
     let tries = 0;
     const clickConnect = () => {
       const root = marketRef.current;
@@ -58,7 +75,7 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
       else if (++tries < 20) setTimeout(clickConnect, 100);
     };
     setTimeout(clickConnect, 50);
-  }, []);
+  }, [widgetMode]);
   useEffect(() => {
     if (returnToLimit && detectedWallet && /^0x[a-fA-F0-9]{40}$/.test(detectedWallet)) {
       setReturnToLimit(false);
@@ -380,28 +397,39 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
         </div>
       )}
 
-      {/* MARKET | LIMIT TOGGLE */}
-      <div className="flex justify-center mb-4 px-4">
-        <div role="tablist" aria-label="Order type" className="inline-flex p-1 rounded-full bg-white border border-gray-200 shadow-sm">
-          {(['market', 'limit'] as const).map((mode) => (
+      {/* MARKET | CROSS CHAIN | LIMIT */}
+      <div className="flex justify-center mb-2 px-4">
+        <div role="tablist" aria-label="Swap type" className="inline-flex p-1 rounded-full bg-white border border-gray-200 shadow-sm max-w-full">
+          {SWAP_MODES.map(({ id, label, icon: Icon }) => (
             <button
-              key={mode}
+              key={id}
               type="button"
               role="tab"
-              aria-selected={swapMode === mode}
+              aria-selected={swapMode === id}
               onClick={() => {
                 setReturnToLimit(false);
-                setSwapMode(mode);
+                selectMode(id);
               }}
-              className={`px-6 py-2 rounded-full text-sm font-semibold transition-colors cursor-pointer ${
-                swapMode === mode ? 'bg-primary text-white shadow' : 'text-gray-600 hover:text-primary'
+              className={`inline-flex items-center gap-1.5 px-3.5 sm:px-5 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                swapMode === id ? 'bg-primary text-white shadow' : 'text-gray-600 hover:text-primary'
               }`}
             >
-              {mode === 'market' ? 'Market' : 'Limit'}
+              <Icon size={15} className="hidden sm:block shrink-0" />
+              {label}
             </button>
           ))}
         </div>
       </div>
+      <p className="text-center text-xs text-gray-400 mb-4 px-4">{SWAP_MODES.find((m) => m.id === swapMode)?.caption}</p>
+
+      {/* MARKET NETWORK (same-chain swaps: both tokens stay on this network) */}
+      {swapMode === 'market' && (
+        <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1.5 mb-4 px-4 relative z-30">
+          <span className="text-xs font-semibold text-gray-500">Network</span>
+          <MarketChainSelector value={marketChainId} onChange={setMarketChainId} />
+          <span className="text-[11px] text-gray-400 basis-full sm:basis-auto text-center">Both tokens stay on this network</span>
+        </div>
+      )}
 
       {/* LIMIT ORDERS (same chain, CoW Protocol) */}
       {swapMode === 'limit' && (
@@ -417,19 +445,19 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
             onConnectWallet={openSwapWalletConnect}
             onUseMarket={() => {
               setReturnToLimit(false);
-              setSwapMode('market');
+              selectMode('market');
             }}
           />
         </Suspense>
       )}
 
-      {/* LI.FI SWAP WIDGET (Market mode; stays mounted and is only hidden in Limit mode) */}
+      {/* LI.FI SWAP WIDGET (Market and Cross Chain; stays mounted and is only hidden in Limit mode) */}
       <motion.div
         ref={marketRef}
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className={`relative ${swapMode === 'market' ? 'flex' : 'hidden'} justify-center items-center max-w-5xl mx-auto px-0 sm:px-2 w-full`}
+        className={`relative ${swapMode !== 'limit' ? 'flex' : 'hidden'} justify-center items-center max-w-5xl mx-auto px-0 sm:px-2 w-full`}
       >
         {/* Subtle ambient gradient glow in background */}
         <div className="absolute w-full max-w-[600px] h-[400px] sm:h-[550px] bg-gradient-to-tr from-blue-200/40 via-purple-100/30 to-orange-100/40 rounded-full blur-3xl -z-10 pointer-events-none" />
@@ -438,6 +466,8 @@ export const NovaSwapSection: React.FC<NovaSwapSectionProps> = ({ showHeader = t
           onSwapSuccess={handleSwapSuccess}
           onWalletChange={handleWidgetWalletChange}
           isWalletConnected={isWalletConnected}
+          mode={widgetMode}
+          marketChainId={marketChainId}
         />
       </motion.div>
 

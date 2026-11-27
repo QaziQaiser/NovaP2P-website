@@ -65,12 +65,31 @@ interface LiFiSwapWidgetProps {
   onSwapSuccess?: (txData: any) => void;
   onWalletChange?: (walletAddress: string | null) => void;
   isWalletConnected?: boolean;
+  /** 'market': same-chain swaps locked to marketChainId; 'cross': full LI.FI cross-chain routing */
+  mode?: 'market' | 'cross';
+  marketChainId?: number;
 }
+
+const NATIVE_TOKEN_ADDRESS: Record<number, string> = {
+  1151111081099710: '11111111111111111111111111111111', // Solana
+  9270000000000000: '0x2::sui::SUI', // Sui
+};
+const nativeTokenAddress = (chainId: number) => NATIVE_TOKEN_ADDRESS[chainId] || '0x0000000000000000000000000000000000000000';
+
+// Cross Chain opens on USDC (Ethereum) to USDC (Arbitrum)
+const CROSS_DEFAULTS = {
+  fromChain: 1,
+  fromToken: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  toChain: 42161,
+  toToken: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+};
 
 export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
   onSwapSuccess,
   onWalletChange,
   isWalletConnected = false,
+  mode = 'market',
+  marketChainId = 1,
 }) => {
   // Re-check on every mount (e.g. navigating back to a page with the widget), before the widget's wallet providers render
   useState(() => {
@@ -475,7 +494,9 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
   // 0.5% Fee (0.005) active and routed to user's Default EVM wallet on portal.li.fi
   const lifiFee = import.meta.env.VITE_LIFI_FEE ? parseFloat(import.meta.env.VITE_LIFI_FEE) : 0.005;
 
-  const widgetConfig: WidgetConfig = useMemo(
+  // Built once: providers, SDK config, fees and theme keep the same identity across mode / network
+  // changes, so the widget's wallet connection is never rebuilt when the user switches tabs.
+  const baseConfig: WidgetConfig = useMemo(
     () => ({
       integrator: partnerName,
       apiKey: lifiApiKey || undefined,
@@ -933,6 +954,33 @@ export const LiFiSwapWidget: React.FC<LiFiSwapWidgetProps> = ({
     }),
     [partnerName]
   );
+
+  // Market: both sides locked to one network (same-chain swaps). Cross Chain: every network on both sides.
+  // Only the chain allowlist and the starting tokens change; LI.FI routing, fees and wallets are untouched.
+  const widgetConfig: WidgetConfig = useMemo(() => {
+    if (mode === 'cross') {
+      return { ...baseConfig, ...CROSS_DEFAULTS, formUpdateKey: 'cross' };
+    }
+    const popular = baseConfig.tokens?.popular || [];
+    const findToken = (symbol: string) =>
+      popular.find((t) => t.chainId === marketChainId && t.symbol === symbol)?.address;
+    const native = nativeTokenAddress(marketChainId);
+    const fromToken = findToken('USDC') || native;
+    const toToken = findToken('USDT') || (fromToken !== native ? native : undefined);
+    return {
+      ...baseConfig,
+      chains: {
+        ...baseConfig.chains,
+        from: { allow: [marketChainId] },
+        to: { allow: [marketChainId] },
+      },
+      fromChain: marketChainId,
+      toChain: marketChainId,
+      fromToken,
+      toToken,
+      formUpdateKey: `market-${marketChainId}`,
+    };
+  }, [baseConfig, mode, marketChainId]);
 
   return (
     <div className="w-full flex flex-col items-center">
