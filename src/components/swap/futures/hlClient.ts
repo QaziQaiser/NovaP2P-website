@@ -9,7 +9,7 @@
 //    orders instant, with no wallet popup per trade.
 import { ExchangeClient, HttpTransport, InfoClient, SubscriptionClient, WebSocketTransport } from '@nktkas/hyperliquid';
 import { formatPrice, formatSize } from '@nktkas/hyperliquid/utils';
-import { BrowserProvider, Contract, parseUnits } from 'ethers';
+import { BrowserProvider, Contract, getAddress, parseUnits } from 'ethers';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import type { Client } from 'viem';
 import { getLifiEvmWallet } from '../limit/lifiWalletBridge';
@@ -155,7 +155,9 @@ export const orderBuilder = (approved: boolean) =>
 
 export const ARBITRUM_CHAIN_ID = 42161;
 export const ARBITRUM_USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831';
-export const HL_BRIDGE = '0x2Df1c51E09aECF9cacB7bc98fB1742757f163dF7';
+// Hyperliquid Bridge2 on Arbitrum (mainnet), from docs: for-developers/api/bridge2. Checksummed with
+// ethers.getAddress; the deposit code re-checks it so a typo can never send funds to a wrong address.
+export const HL_BRIDGE = '0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7';
 /** Hyperliquid's bridge ignores (and loses) deposits below 5 USDC. */
 export const MIN_DEPOSIT_USDC = 5;
 /** Hyperliquid charges 1 USDC per withdrawal. */
@@ -171,7 +173,8 @@ export async function depositUsdc(user: string, amount: string): Promise<string>
   const provider = new BrowserProvider({ request: (args: any) => (client as any).request(args) }, ARBITRUM_CHAIN_ID);
   const signer = await provider.getSigner(user);
   const usdc = new Contract(ARBITRUM_USDC, ['function transfer(address to, uint256 amount) returns (bool)'], signer);
-  const tx = await usdc.transfer(HL_BRIDGE, parseUnits(amount, 6));
+  // getAddress throws on a bad checksum, so a mistyped bridge address can never receive funds
+  const tx = await usdc.transfer(getAddress(HL_BRIDGE), parseUnits(amount, 6));
   await tx.wait(1);
   return tx.hash as string;
 }
