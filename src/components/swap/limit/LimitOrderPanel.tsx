@@ -77,12 +77,31 @@ export const LimitOrderPanel: React.FC<LimitOrderPanelProps> = ({ account, onCon
       return;
     }
     let alive = true;
-    const check = () => getWalletChainId().then((id) => alive && setWalletChain(id));
+    let checking = false;
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const id = await getWalletChainId();
+        if (alive) setWalletChain(id);
+      } finally {
+        checking = false;
+      }
+    };
     check();
-    const t = setInterval(check, 2500);
+    // Reading the network is local to the wallet (no RPC call), so a short interval is cheap
+    const t = setInterval(() => {
+      if (document.visibilityState !== 'hidden') check();
+    }, 1000);
+    // Re-check at once when the user comes back from the wallet app or extension popup (mobile)
+    const onVisible = () => document.visibilityState === 'visible' && check();
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
       clearInterval(t);
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [owner]);
 
@@ -171,10 +190,14 @@ export const LimitOrderPanel: React.FC<LimitOrderPanelProps> = ({ account, onCon
     refreshBalance();
   }, [refreshBalance]);
 
-  // Market price (debounced): based on the entered amount, or 1 token when empty
+  // Market price: based on the entered amount, or 1 token when empty. Only typing is debounced;
+  // a new network or token pair fetches the price right away.
+  const lastQuotedAmount = useRef<bigint | null>(null);
   useEffect(() => {
     if (!sellToken || !buyToken) return;
     let alive = true;
+    const typing = sellAmount !== lastQuotedAmount.current;
+    lastQuotedAmount.current = sellAmount;
     const amount = sellAmount && sellAmount > 0n ? sellAmount : 10n ** BigInt(sellToken.decimals);
     setQuoteLoading(true);
     const t = setTimeout(async () => {
@@ -199,7 +222,7 @@ export const LimitOrderPanel: React.FC<LimitOrderPanelProps> = ({ account, onCon
       } finally {
         if (alive) setQuoteLoading(false);
       }
-    }, 600);
+    }, typing ? 500 : 0);
     return () => {
       alive = false;
       clearTimeout(t);

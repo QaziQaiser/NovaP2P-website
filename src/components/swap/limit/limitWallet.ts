@@ -44,16 +44,55 @@ export async function getWalletChainId(): Promise<number | null> {
   }
 }
 
-/** Switches the shared wallet's network (the wallet asks the user; adds the network if it is missing). */
+const SWITCH_POLL_MS = 300;
+const SWITCH_TIMEOUT_MS = 45000;
+
+/**
+ * Switches the shared wallet's network (the wallet asks the user; adds the network if it is missing).
+ * Resolves as soon as the wallet reports the new network: some wallets (often mobile / WalletConnect)
+ * change network but answer the switch request late or never, which used to leave the UI spinning.
+ */
 export async function switchWalletChain(chainId: number): Promise<void> {
   const bridge = getLifiEvmWallet();
   if (!bridge) throw new WalletNotReadyError('Wallet is still loading. Please try again in a moment.');
+  if ((await getWalletChainId()) === chainId) return;
+  const name = getCowChain(chainId)?.name || 'this network';
+
+  let finished = false;
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const request = bridge.switchChain(chainId).then(
+    () => undefined,
+    (err: any) => {
+      if (isUserRejection(err)) throw err;
+      throw new Error(`Could not switch your wallet to ${name}. Please switch it in your wallet and try again.`);
+    }
+  );
+  request.catch(() => {}); // a late answer after the network already changed is ignored
+
+  const changed = new Promise<void>((resolve) => {
+    const tick = async () => {
+      if (finished) return;
+      if ((await getWalletChainId()) === chainId) return resolve();
+      pollTimer = setTimeout(tick, SWITCH_POLL_MS);
+    };
+    pollTimer = setTimeout(tick, SWITCH_POLL_MS);
+  });
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutTimer = setTimeout(
+      () => reject(new Error(`Your wallet did not switch to ${name}. Please switch it in your wallet and try again.`)),
+      SWITCH_TIMEOUT_MS
+    );
+  });
+
   try {
-    await bridge.switchChain(chainId);
-  } catch (err: any) {
-    if (isUserRejection(err)) throw err;
-    const name = getCowChain(chainId)?.name || 'this network';
-    throw new Error(`Could not switch your wallet to ${name}. Please switch it in your wallet and try again.`);
+    await Promise.race([request, changed, timeout]);
+  } finally {
+    finished = true;
+    clearTimeout(pollTimer);
+    clearTimeout(timeoutTimer);
   }
 }
 
