@@ -1985,6 +1985,445 @@ async function fetchNovaLimitFills(owner, isAlreadyHandled) {
   return perChain.flat();
 }
 
+// server/pdfTable.ts
+var PAGE_W = 842;
+var PAGE_H = 595;
+var MARGIN = 32;
+var CELL_PAD = 4;
+var MONO_W = 0.6;
+function pdfSafe(s) {
+  return s.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/₮/g, "T").replace(/[–—]/g, "-").replace(/[^\x20-\x7e]/g, "?");
+}
+var esc = (s) => pdfSafe(s).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+function fit(text, maxChars, shorten) {
+  if (text.length <= maxChars) return text;
+  if (maxChars <= 3) return text.slice(0, maxChars);
+  if (shorten && maxChars >= 9) {
+    const tail = Math.floor((maxChars - 2) / 2);
+    return `${text.slice(0, maxChars - 2 - tail)}..${text.slice(-tail)}`;
+  }
+  return text.slice(0, maxChars - 3) + "...";
+}
+function buildTablePdf(input) {
+  const usable = PAGE_W - MARGIN * 2;
+  const cols = input.columns;
+  const rows = input.rows.map((r) => r.map((c) => pdfSafe(String(c ?? ""))));
+  const natural = cols.map((c, i2) => {
+    const longest = rows.reduce((m, r) => Math.max(m, (r[i2] || "").length), 0);
+    const cap = c.shorten ? 16 : 34;
+    return Math.max(Math.min(c.label.length, 26), Math.min(longest, cap), 3);
+  });
+  let fs2 = 7.5;
+  const widthAt = (size, chars2) => chars2.reduce((s, n) => s + n * MONO_W * size + CELL_PAD * 2, 0);
+  while (fs2 > 5.5 && widthAt(fs2, natural) > usable) fs2 -= 0.5;
+  const chars = [...natural];
+  while (widthAt(fs2, chars) > usable) {
+    const widest = chars.indexOf(Math.max(...chars));
+    if (chars[widest] <= 6) break;
+    chars[widest] -= 1;
+  }
+  const spare = usable - widthAt(fs2, chars);
+  const widths = chars.map((n) => n * MONO_W * fs2 + CELL_PAD * 2 + spare / chars.length);
+  const rowH = fs2 * 2;
+  const headH = rowH + 2;
+  const titleBlock = input.subtitle ? 44 : 32;
+  const footer = 22;
+  const perFirst = Math.max(1, Math.floor((PAGE_H - MARGIN * 2 - titleBlock - headH - footer) / rowH));
+  const perNext = Math.max(1, Math.floor((PAGE_H - MARGIN * 2 - headH - footer) / rowH));
+  const pages = [];
+  let i = 0;
+  pages.push(rows.slice(0, perFirst));
+  i = perFirst;
+  while (i < rows.length) {
+    pages.push(rows.slice(i, i + perNext));
+    i += perNext;
+  }
+  const text = (font2, size, x, y, s, rgb = "0 0 0") => `BT ${rgb} rg /${font2} ${size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${esc(s)}) Tj ET
+`;
+  const rect = (x, y, w, h, rgb) => `${rgb} rg ${x.toFixed(2)} ${y.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re f
+`;
+  const streams = pages.map((pageRows, p) => {
+    let out = "";
+    let y = PAGE_H - MARGIN;
+    if (p === 0) {
+      out += text("F2", 14, MARGIN, y - 14, input.title, "0.06 0.09 0.16");
+      if (input.subtitle) out += text("F1", 8, MARGIN, y - 28, input.subtitle, "0.4 0.45 0.52");
+      y -= titleBlock;
+    }
+    out += rect(MARGIN, y - headH, usable, headH, "0.12 0.16 0.23");
+    let x = MARGIN;
+    cols.forEach((c, ci) => {
+      const label = fit(pdfSafe(c.label), chars[ci]);
+      const tx = c.align === "right" ? x + widths[ci] - CELL_PAD - label.length * MONO_W * fs2 : x + CELL_PAD;
+      out += text("F4", fs2, tx, y - headH + (headH - fs2) / 2 + 1, label, "1 1 1");
+      x += widths[ci];
+    });
+    y -= headH;
+    pageRows.forEach((r, ri) => {
+      if (ri % 2 === 1) out += rect(MARGIN, y - rowH, usable, rowH, "0.95 0.96 0.97");
+      let cx = MARGIN;
+      cols.forEach((c, ci) => {
+        const v = fit(r[ci] || "", chars[ci], c.shorten);
+        const tx = c.align === "right" ? cx + widths[ci] - CELL_PAD - v.length * MONO_W * fs2 : cx + CELL_PAD;
+        out += text("F3", fs2, tx, y - rowH + (rowH - fs2) / 2 + 1, v, "0.1 0.12 0.16");
+        cx += widths[ci];
+      });
+      y -= rowH;
+    });
+    if (rows.length === 0 && p === 0) {
+      out += text("F1", 9, MARGIN + CELL_PAD, y - 16, "No records.", "0.4 0.45 0.52");
+    }
+    out += text("F1", 7, MARGIN, MARGIN - 12, `${input.title}`, "0.5 0.55 0.6");
+    const pn = `Page ${p + 1} of ${pages.length}`;
+    out += text("F1", 7, PAGE_W - MARGIN - pn.length * 3.6, MARGIN - 12, pn, "0.5 0.55 0.6");
+    return out;
+  });
+  const objects = [];
+  const pageIds = pages.map((_, p) => 7 + p * 2);
+  objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objects[2] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>`;
+  const font = (name) => `<< /Type /Font /Subtype /Type1 /BaseFont /${name} /Encoding /WinAnsiEncoding >>`;
+  objects[3] = font("Helvetica");
+  objects[4] = font("Helvetica-Bold");
+  objects[5] = font("Courier");
+  objects[6] = font("Courier-Bold");
+  streams.forEach((s, p) => {
+    const pageId = pageIds[p];
+    objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> /Contents ${pageId + 1} 0 R >>`;
+    objects[pageId + 1] = `<< /Length ${Buffer.byteLength(s, "latin1")} >>
+stream
+${s}endstream`;
+  });
+  let pdf = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
+  const offsets = [];
+  for (let id = 1; id < objects.length; id++) {
+    offsets[id] = Buffer.byteLength(pdf, "latin1");
+    pdf += `${id} 0 obj
+${objects[id]}
+endobj
+`;
+  }
+  const xref = Buffer.byteLength(pdf, "latin1");
+  pdf += `xref
+0 ${objects.length}
+0000000000 65535 f 
+`;
+  for (let id = 1; id < objects.length; id++) pdf += `${String(offsets[id]).padStart(10, "0")} 00000 n 
+`;
+  pdf += `trailer
+<< /Size ${objects.length} /Root 1 0 R >>
+startxref
+${xref}
+%%EOF
+`;
+  return Buffer.from(pdf, "latin1");
+}
+
+// server/adminReports.ts
+var CURRENT_CAMPAIGN_ID = "campaign_genesis_001";
+var CHAIN_NAMES = {
+  1: "Ethereum",
+  10: "Optimism",
+  56: "BNB Chain",
+  100: "Gnosis",
+  130: "Unichain",
+  137: "Polygon",
+  146: "Sonic",
+  250: "Fantom",
+  288: "Boba",
+  324: "zkSync",
+  480: "World Chain",
+  1088: "Metis",
+  1101: "Polygon zkEVM",
+  1135: "Lisk",
+  1284: "Moonbeam",
+  1329: "Sei",
+  2741: "Abstract",
+  5e3: "Mantle",
+  8453: "Base",
+  9745: "Plasma",
+  13371: "Immutable zkEVM",
+  25: "Cronos",
+  33139: "ApeChain",
+  34443: "Mode",
+  42161: "Arbitrum",
+  42220: "Celo",
+  43114: "Avalanche",
+  57073: "Ink",
+  59144: "Linea",
+  60808: "BOB",
+  80094: "Berachain",
+  81457: "Blast",
+  167e3: "Taiko",
+  534352: "Scroll",
+  999: "HyperEVM",
+  1151111081099710: "Solana",
+  728126428: "TRON",
+  927e13: "Sui",
+  20000000000001: "Bitcoin"
+};
+var chainName = (id) => id == null ? "" : CHAIN_NAMES[Number(id)] || `Chain ${id}`;
+var monthKey = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+var monthStart = (y, m0) => new Date(Date.UTC(y, m0, 1));
+function monthsBetween(start, end, max = 240) {
+  const list = [];
+  let [y, m] = start.split("-").map(Number);
+  while (list.length < max) {
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    if (key > end) break;
+    list.push(key);
+    m += 1;
+    if (m > 12) {
+      y += 1;
+      m = 1;
+    }
+  }
+  return list;
+}
+var monthLabel = (key) => {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+};
+function periodRange(period, month, now = /* @__PURE__ */ new Date()) {
+  const y = now.getUTCFullYear();
+  const m0 = now.getUTCMonth();
+  if (period === "current") {
+    return { from: monthStart(y, m0).toISOString(), to: monthStart(y, m0 + 1).toISOString(), label: monthLabel(monthKey(now)) };
+  }
+  if (period === "last6") {
+    const from = monthStart(y, m0 - 5);
+    return {
+      from: from.toISOString(),
+      to: monthStart(y, m0 + 1).toISOString(),
+      label: `${monthLabel(monthKey(from))} \u2013 ${monthLabel(monthKey(now))}`
+    };
+  }
+  if (period === "month") {
+    const match = /^(\d{4})-(\d{2})$/.exec(String(month || ""));
+    if (!match) throw new Error("Choose a month (YYYY-MM).");
+    const yy = Number(match[1]);
+    const mm = Number(match[2]) - 1;
+    if (mm < 0 || mm > 11) throw new Error("Choose a valid month.");
+    return { from: monthStart(yy, mm).toISOString(), to: monthStart(yy, mm + 1).toISOString(), label: monthLabel(match[0]) };
+  }
+  return { from: null, to: null, label: "All time" };
+}
+var inRange = (col, r) => r.from && r.to ? { sql: ` AND ${col} >= ? AND ${col} < ?`, params: [r.from, r.to] } : { sql: "", params: [] };
+function getPeriodAnalytics(period, month, now = /* @__PURE__ */ new Date()) {
+  const range = periodRange(period, month, now);
+  const tx = inRange("created_at", range);
+  const totals = db.prepare(`
+    SELECT COUNT(*) as swaps, COALESCE(SUM(volume_usd), 0) as volume, COUNT(DISTINCT wallet_address) as swapping_wallets
+    FROM swap_transactions WHERE execution_status = 'DONE'${tx.sql}
+  `).get(...tx.params);
+  const firstSeen = `(SELECT wallet_address, MIN(created_at) AS first_at FROM swap_campaign_users GROUP BY wallet_address)`;
+  const fs2 = inRange("first_at", range);
+  const wallets = db.prepare(`SELECT COUNT(*) as n FROM ${firstSeen} WHERE 1 = 1${fs2.sql}`).get(...fs2.params);
+  const byChain = db.prepare(`
+    SELECT chain_id, COUNT(*) as swaps, COALESCE(SUM(volume_usd), 0) as volume
+    FROM swap_transactions WHERE execution_status = 'DONE'${tx.sql}
+    GROUP BY chain_id ORDER BY volume DESC
+  `).all(...tx.params).map((r) => ({
+    chainId: Number(r.chain_id),
+    chainName: chainName(r.chain_id),
+    swaps: r.swaps,
+    volumeUSD: Number(Number(r.volume).toFixed(2))
+  }));
+  const txByMonth = new Map(
+    db.prepare(`
+      SELECT substr(created_at, 1, 7) as m, COUNT(*) as swaps, COALESCE(SUM(volume_usd), 0) as volume
+      FROM swap_transactions WHERE execution_status = 'DONE'${tx.sql} GROUP BY m
+    `).all(...tx.params).map((r) => [r.m, { swaps: r.swaps, volume: r.volume }])
+  );
+  const walletsByMonth = new Map(
+    db.prepare(`SELECT substr(first_at, 1, 7) as m, COUNT(*) as n FROM ${firstSeen} WHERE 1 = 1${fs2.sql} GROUP BY m`).all(...fs2.params).map(
+      (r) => [r.m, r.n]
+    )
+  );
+  const firstMonth = availableMonths(now)[0] || monthKey(now);
+  const startKey = range.from ? range.from.slice(0, 7) : firstMonth;
+  const endKey = range.to ? monthKey(new Date(Date.parse(range.to) - 1)) : monthKey(now);
+  const months = monthsBetween(startKey, endKey, 120).map((key) => {
+    const t = txByMonth.get(key);
+    return {
+      month: key,
+      label: monthLabel(key),
+      volumeUSD: Number((t?.volume || 0).toFixed(2)),
+      swaps: t?.swaps || 0,
+      newWallets: walletsByMonth.get(key) || 0
+    };
+  });
+  return {
+    period,
+    label: range.label,
+    from: range.from,
+    to: range.to,
+    totals: {
+      volumeUSD: Number(Number(totals.volume).toFixed(2)),
+      swaps: totals.swaps || 0,
+      connectedWallets: wallets.n || 0,
+      swappingWallets: totals.swapping_wallets || 0
+    },
+    byChain,
+    months,
+    availableMonths: availableMonths(now)
+  };
+}
+function availableMonths(now = /* @__PURE__ */ new Date()) {
+  const row = db.prepare(`
+    SELECT MIN(m) as first FROM (
+      SELECT MIN(created_at) as m FROM swap_transactions
+      UNION ALL SELECT MIN(created_at) FROM swap_campaign_users
+    ) WHERE m IS NOT NULL
+  `).get();
+  const end = monthKey(now);
+  const start = typeof row?.first === "string" && /^\d{4}-\d{2}/.test(row.first) ? row.first.slice(0, 7) : end;
+  return monthsBetween(start, end);
+}
+var ROUND_SQL = (alias) => `
+  CASE WHEN ${alias}.campaign_id = '${CURRENT_CAMPAIGN_ID}' THEN 'Current'
+       ELSE 'Archived ' || COALESCE(substr(rc.end_date, 1, 10), '') END`;
+function buildExport(type) {
+  if (type === "users") {
+    return {
+      title: "Nova Swap - Users",
+      fileBase: "nova_swap_users",
+      columns: [
+        { key: "wallet_address", label: "Wallet", kind: "hash" },
+        { key: "round", label: "Campaign round" },
+        { key: "chain", label: "Chain" },
+        { key: "total_volume_usd", label: "Volume (USD)", kind: "usd" },
+        { key: "eligible_swaps_count", label: "Swaps", kind: "number" },
+        { key: "referral_code", label: "Referral code" },
+        { key: "is_flagged", label: "Flagged", kind: "bool" },
+        { key: "verified_at", label: "Verified (UTC)", kind: "date" },
+        { key: "created_at", label: "Joined (UTC)", kind: "date" }
+      ],
+      rows: db.prepare(`
+        SELECT u.*, ${ROUND_SQL("u")} as round
+        FROM swap_campaign_users u LEFT JOIN swap_campaigns rc ON rc.id = u.campaign_id
+        ORDER BY (u.campaign_id = '${CURRENT_CAMPAIGN_ID}') DESC, u.total_volume_usd DESC
+      `).all().map((r) => ({ ...r, chain: chainName(r.chain_id), referral_code: String(r.referral_code || "").split("-")[0] }))
+    };
+  }
+  if (type === "transactions") {
+    return {
+      title: "Nova Swap - Swaps",
+      fileBase: "nova_swap_swaps",
+      columns: [
+        { key: "created_at", label: "Date (UTC)", kind: "date" },
+        { key: "wallet_address", label: "Wallet", kind: "hash" },
+        { key: "chain", label: "Chain" },
+        { key: "kind", label: "Type" },
+        { key: "from_token_symbol", label: "From" },
+        { key: "to_token_symbol", label: "To" },
+        { key: "volume_usd", label: "Volume (USD)", kind: "usd" },
+        { key: "execution_status", label: "Status" },
+        { key: "round", label: "Campaign round" },
+        { key: "tx_hash", label: "Tx hash / order id", kind: "hash" }
+      ],
+      rows: db.prepare(`
+        SELECT t.*, ${ROUND_SQL("t")} as round
+        FROM swap_transactions t LEFT JOIN swap_campaigns rc ON rc.id = t.campaign_id
+        ORDER BY t.created_at DESC
+      `).all().map((r) => ({
+        ...r,
+        chain: chainName(r.chain_id),
+        kind: r.verification_source === "cow_orderbook_api" ? "Limit order" : "Market swap"
+      }))
+    };
+  }
+  if (type === "claims") {
+    return {
+      title: "Nova Swap - Reward Claims",
+      fileBase: "nova_swap_claims",
+      columns: [
+        { key: "created_at", label: "Requested (UTC)", kind: "date" },
+        { key: "wallet_address", label: "Wallet", kind: "hash" },
+        { key: "requested_amount_usd", label: "Amount (USD)", kind: "usd" },
+        { key: "status", label: "Status" },
+        { key: "payout_address", label: "Payout address", kind: "hash" },
+        { key: "preferred_network", label: "Network" },
+        { key: "preferred_token", label: "Token" },
+        { key: "payout_tx_hash", label: "Payout tx", kind: "hash" },
+        { key: "paid_at", label: "Paid (UTC)", kind: "date" },
+        { key: "round", label: "Campaign round" },
+        { key: "id", label: "Claim id" }
+      ],
+      rows: db.prepare(`
+        SELECT c.id, u.wallet_address, c.requested_amount_usd, c.payout_address, c.preferred_network, c.preferred_token,
+               c.status, p.payout_tx_hash, p.paid_at, c.created_at, ${ROUND_SQL("c")} as round
+        FROM swap_reward_claims c
+        JOIN swap_campaign_users u ON u.id = c.user_id
+        LEFT JOIN swap_reward_payouts p ON p.claim_id = c.id
+        LEFT JOIN swap_campaigns rc ON rc.id = c.campaign_id
+        ORDER BY c.created_at DESC
+      `).all()
+    };
+  }
+  return {
+    title: "Nova Swap - Referrals",
+    fileBase: "nova_swap_referrals",
+    columns: [
+      { key: "created_at", label: "Date (UTC)", kind: "date" },
+      { key: "referrer_wallet", label: "Referrer", kind: "hash" },
+      { key: "referred_wallet", label: "Referred wallet", kind: "hash" },
+      { key: "referral_code", label: "Code" },
+      { key: "status", label: "Status" },
+      { key: "qualifying_volume_usd", label: "Qualifying volume (USD)", kind: "usd" },
+      { key: "reward_amount_usd", label: "Reward (USD)", kind: "usd" },
+      { key: "round", label: "Campaign round" }
+    ],
+    rows: db.prepare(`
+      SELECT r.*, u1.wallet_address as referrer_wallet, u2.wallet_address as referred_wallet, ${ROUND_SQL("r")} as round
+      FROM swap_referrals r
+      JOIN swap_campaign_users u1 ON u1.id = r.referrer_user_id
+      JOIN swap_campaign_users u2 ON u2.id = r.referred_user_id
+      LEFT JOIN swap_campaigns rc ON rc.id = r.campaign_id
+      ORDER BY r.created_at DESC
+    `).all().map((r) => ({ ...r, referral_code: String(r.referral_code || "").split("-")[0] }))
+  };
+}
+function cellText(value, kind) {
+  if (value === null || value === void 0 || value === "") return "";
+  if (kind === "usd") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n.toFixed(2) : "";
+  }
+  if (kind === "number") {
+    const n = Number(value);
+    return Number.isFinite(n) ? String(n) : "";
+  }
+  if (kind === "bool") return Number(value) ? "Yes" : "No";
+  if (kind === "date") {
+    const t = Date.parse(String(value));
+    return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 19).replace("T", " ") : String(value);
+  }
+  return String(value).replace(/[\r\n\t]+/g, " ").trim();
+}
+function toCsv(table) {
+  const esc2 = (s) => `"${s.replace(/"/g, '""')}"`;
+  const safe = (s, kind) => kind !== "usd" && kind !== "number" && /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  const lines = [table.columns.map((c) => esc2(c.label)).join(",")];
+  for (const row of table.rows) {
+    lines.push(
+      table.columns.map((c) => {
+        const text = cellText(row[c.key], c.kind);
+        return c.kind === "usd" || c.kind === "number" ? text : esc2(safe(text, c.kind));
+      }).join(",")
+    );
+  }
+  return "\uFEFF" + lines.join("\r\n") + "\r\n";
+}
+function toPdf(table, generatedAt = /* @__PURE__ */ new Date()) {
+  return buildTablePdf({
+    title: table.title,
+    subtitle: `${table.rows.length} record${table.rows.length === 1 ? "" : "s"} - generated ${generatedAt.toISOString().slice(0, 16).replace("T", " ")} UTC`,
+    columns: table.columns.map((c) => ({ label: c.label, align: c.kind === "usd" || c.kind === "number" ? "right" : "left", shorten: c.kind === "hash" })),
+    rows: table.rows.map((r) => table.columns.map((c) => cellText(r[c.key], c.kind)))
+  });
+}
+
 // server/api.ts
 var apiRouter = Router2();
 var ENABLED_CHAINS = [1, 56, 137, 42161, 10, 8453];
@@ -3031,37 +3470,44 @@ apiRouter.get("/admin/overview", verifyAdmin, (req, res) => {
   try {
     const campaignId = DEFAULT_CAMPAIGN_ID;
     const campaign = db.prepare("SELECT * FROM swap_campaigns WHERE id = ?").get(campaignId);
-    const userStats = db.prepare(`
-      SELECT 
-        COUNT(DISTINCT id) as total_users,
-        COALESCE(SUM(total_volume_usd), 0) as total_volume,
-        COALESCE(SUM(eligible_swaps_count), 0) as total_swaps,
-        COUNT(CASE WHEN eligible_swaps_count > 1 THEN 1 END) as repeat_swappers
-      FROM swap_campaign_users
-      WHERE campaign_id = ?
-    `).get(campaignId);
+    const txStats = db.prepare(`
+      SELECT
+        COUNT(CASE WHEN execution_status = 'DONE' THEN 1 END) as successful_swaps,
+        COUNT(CASE WHEN execution_status = 'FAILED' THEN 1 END) as failed_swaps,
+        COALESCE(SUM(CASE WHEN execution_status = 'DONE' THEN volume_usd ELSE 0 END), 0) as total_volume
+      FROM swap_transactions
+    `).get();
+    const walletStats = db.prepare(`
+      SELECT COUNT(DISTINCT wallet_address) as total_wallets FROM swap_campaign_users
+    `).get();
+    const repeatStats = db.prepare(`
+      SELECT COUNT(*) as repeat_swappers FROM (
+        SELECT wallet_address FROM swap_transactions WHERE execution_status = 'DONE'
+        GROUP BY wallet_address HAVING COUNT(*) > 1
+      )
+    `).get();
     const eventStats = db.prepare(`
-      SELECT 
+      SELECT
         COUNT(CASE WHEN event_name = 'campaign_page_view' THEN 1 END) as page_views,
         COUNT(DISTINCT CASE WHEN event_name = 'campaign_page_view' THEN ip_address END) as unique_visitors,
         COUNT(CASE WHEN event_name = 'wallet_connect_clicked' THEN 1 END) as connect_attempts,
         COUNT(CASE WHEN event_name = 'wallet_connected' THEN 1 END) as connected_wallets,
         COUNT(CASE WHEN event_name = 'swap_initiated' THEN 1 END) as swaps_initiated
       FROM swap_campaign_events
-      WHERE campaign_id = ?
-    `).get(campaignId);
-    const txStats = db.prepare(`
-      SELECT 
-        COUNT(CASE WHEN execution_status = 'DONE' THEN 1 END) as successful_swaps,
-        COUNT(CASE WHEN execution_status = 'FAILED' THEN 1 END) as failed_swaps
-      FROM swap_transactions
-      WHERE campaign_id = ?
-    `).get(campaignId);
+    `).get();
     const referralStats = db.prepare(`
-      SELECT 
-        COUNT(*) as total_referrals,
-        COUNT(CASE WHEN status IN ('qualified', 'rewarded') THEN 1 END) as qualified_referrals
-      FROM swap_referrals
+      SELECT
+        COUNT(DISTINCT u.wallet_address) as total_referrals,
+        COUNT(DISTINCT CASE WHEN r.status IN ('qualified', 'rewarded') THEN u.wallet_address END) as qualified_referrals
+      FROM swap_referrals r
+      JOIN swap_campaign_users u ON u.id = r.referred_user_id
+    `).get();
+    const roundStats = db.prepare(`
+      SELECT
+        COUNT(CASE WHEN eligible_swaps_count > 0 THEN 1 END) as active_wallets,
+        COALESCE(SUM(total_volume_usd), 0) as total_volume,
+        COALESCE(SUM(eligible_swaps_count), 0) as total_swaps
+      FROM swap_campaign_users
       WHERE campaign_id = ?
     `).get(campaignId);
     const rewardStats = db.prepare(`
@@ -3100,12 +3546,16 @@ apiRouter.get("/admin/overview", verifyAdmin, (req, res) => {
         pageViews: eventStats.page_views || 0,
         uniqueVisitors: eventStats.unique_visitors || 0,
         connectAttempts: eventStats.connect_attempts || 0,
-        connectedWallets: userStats.total_users || 0,
+        connectedWallets: walletStats.total_wallets || 0,
         swapsInitiated: eventStats.swaps_initiated || 0,
         successfulSwaps: txStats.successful_swaps || 0,
         failedSwaps: txStats.failed_swaps || 0,
-        totalVerifiedVolumeUSD: userStats.total_volume || 0,
-        repeatSwappers: userStats.repeat_swappers || 0,
+        totalVerifiedVolumeUSD: txStats.total_volume || 0,
+        repeatSwappers: repeatStats.repeat_swappers || 0,
+        roundVolumeUSD: roundStats.total_volume || 0,
+        roundSwaps: roundStats.total_swaps || 0,
+        roundActiveWallets: roundStats.active_wallets || 0,
+        roundStartedAt: campaign?.reset_at || campaign?.start_date || null,
         referralVisits: referralStats.total_referrals || 0,
         qualifiedReferrals: referralStats.qualified_referrals || 0,
         milestonesUnlocked: rewardStats.unlocked_count || 0,
@@ -3117,6 +3567,21 @@ apiRouter.get("/admin/overview", verifyAdmin, (req, res) => {
         remainingBudgetUSD: remainingBudget
       }
     });
+  } catch (err) {
+    sendServerError(res, err, "swap api");
+  }
+});
+apiRouter.get("/admin/analytics", verifyAdmin, (req, res) => {
+  try {
+    const period = String(req.query.period || "current");
+    if (!["current", "last6", "month", "all"].includes(period)) {
+      return res.status(400).json({ error: "Invalid period. Use current, last6, month or all." });
+    }
+    try {
+      res.json(getPeriodAnalytics(period, typeof req.query.month === "string" ? req.query.month : void 0));
+    } catch (err) {
+      res.status(400).json({ error: err?.message || "Invalid period" });
+    }
   } catch (err) {
     sendServerError(res, err, "swap api");
   }
@@ -3560,41 +4025,22 @@ apiRouter.get("/admin/audit-logs", verifyAdmin, (req, res) => {
 });
 apiRouter.get("/admin/export/:type", verifyAdmin, (req, res) => {
   try {
-    const { type } = req.params;
-    let data = [];
-    let filename = `swap_${type}_${Date.now()}.csv`;
-    if (type === "users") {
-      data = db.prepare("SELECT wallet_address, chain_id, total_volume_usd, eligible_swaps_count, referral_code, is_flagged, verified_at, created_at FROM swap_campaign_users ORDER BY total_volume_usd DESC").all();
-    } else if (type === "transactions") {
-      data = db.prepare("SELECT wallet_address, chain_id, tx_hash, from_token_symbol, to_token_symbol, volume_usd, execution_status, verified_at FROM swap_transactions ORDER BY created_at DESC").all();
-    } else if (type === "claims") {
-      data = db.prepare(`
-        SELECT c.id, u.wallet_address, c.requested_amount_usd, c.payout_address, c.preferred_network, c.preferred_token, c.status, p.payout_tx_hash, p.paid_at, c.created_at
-        FROM swap_reward_claims c
-        JOIN swap_campaign_users u ON u.id = c.user_id
-        LEFT JOIN swap_reward_payouts p ON p.claim_id = c.id
-        ORDER BY c.created_at DESC
-      `).all();
-    } else if (type === "referrals") {
-      data = db.prepare(`
-        SELECT r.id, u1.wallet_address as referrer_wallet, u2.wallet_address as referred_wallet, r.referral_code, r.status, r.qualifying_volume_usd, r.reward_amount_usd, r.created_at
-        FROM swap_referrals r
-        JOIN swap_campaign_users u1 ON u1.id = r.referrer_user_id
-        JOIN swap_campaign_users u2 ON u2.id = r.referred_user_id
-        ORDER BY r.created_at DESC
-      `).all();
-    } else {
+    const type = String(req.params.type);
+    if (!["users", "transactions", "claims", "referrals"].includes(type)) {
       return res.status(400).json({ error: "Invalid export type. Use users, transactions, claims, or referrals." });
     }
-    if (data.length === 0) {
-      return res.send("No data available");
-    }
-    const headers = Object.keys(data[0]).join(",");
-    const rows = data.map((row) => Object.values(row).map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","));
-    const csv = [headers, ...rows].join("\n");
-    res.setHeader("Content-Type", "text/csv");
+    const format = String(req.query.format || "csv").toLowerCase() === "pdf" ? "pdf" : "csv";
+    const table = buildExport(type);
+    const filename = `${table.fileBase}_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.${format}`;
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.send(csv);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Export-Filename", filename);
+    if (format === "pdf") {
+      res.setHeader("Content-Type", "application/pdf");
+      return res.send(toPdf(table));
+    }
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.send(toCsv(table));
   } catch (err) {
     sendServerError(res, err, "swap api");
   }

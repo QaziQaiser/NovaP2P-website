@@ -368,5 +368,48 @@ export const swapCampaignApi = {
   getExportUrl(adminKey: string, type: 'users' | 'transactions' | 'claims' | 'referrals'): string {
     return `${API_BASE}/admin/export/${type}`;
   },
+
+  /** Volume, swaps and new wallets for a period, with a chain-wise breakdown (all campaign rounds). */
+  async getAdminAnalytics(adminKey: string, period: 'current' | 'last6' | 'month' | 'all', month?: string): Promise<AdminPeriodAnalytics> {
+    const qs = new URLSearchParams({ period, ...(month ? { month } : {}) });
+    const res = await fetch(`${API_BASE}/admin/analytics?${qs}`, { headers: { 'x-admin-key': adminKey }, cache: 'no-store' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error || 'Failed to load analytics');
+    return data;
+  },
+
+  /** Downloads an export file (CSV or PDF) and returns it with its file name. */
+  async downloadAdminExport(
+    adminKey: string,
+    type: 'users' | 'transactions' | 'claims' | 'referrals',
+    format: 'csv' | 'pdf'
+  ): Promise<{ blob: Blob; filename: string }> {
+    const res = await fetch(`${API_BASE}/admin/export/${type}?format=${format}`, {
+      headers: { 'x-admin-key': adminKey },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.error || `Export failed (${res.status})`);
+    }
+    const filename =
+      res.headers.get('X-Export-Filename') ||
+      /filename="?([^";]+)"?/.exec(res.headers.get('Content-Disposition') || '')?.[1] ||
+      `nova_swap_${type}.${format}`;
+    const bytes = await res.arrayBuffer();
+    const blob = new Blob([bytes], { type: format === 'pdf' ? 'application/pdf' : 'text/csv;charset=utf-8' });
+    return { blob, filename };
+  },
 };
+
+export interface AdminPeriodAnalytics {
+  period: 'current' | 'last6' | 'month' | 'all';
+  label: string;
+  from: string | null;
+  to: string | null;
+  totals: { volumeUSD: number; swaps: number; connectedWallets: number; swappingWallets: number };
+  byChain: Array<{ chainId: number; chainName: string; swaps: number; volumeUSD: number }>;
+  months: Array<{ month: string; label: string; volumeUSD: number; swaps: number; newWallets: number }>;
+  availableMonths: string[];
+}
 

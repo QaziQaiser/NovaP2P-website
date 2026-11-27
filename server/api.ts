@@ -4,6 +4,7 @@ import { sendAdminClaimNotification } from './notifications.ts';
 import { bindAffiliateReferral, processAffiliateSwapCommission } from './affiliateApi.ts';
 import crypto from 'crypto';
 import { fetchNovaLimitFills } from './cowSync.ts';
+import { getPeriodAnalytics, buildExport, toCsv, toPdf, type AnalyticsPeriod, type ExportType } from './adminReports.ts';
 import {
   verifyAdmin,
   isValidAdminKey,
@@ -1314,40 +1315,54 @@ apiRouter.get('/admin/overview', verifyAdmin, (req: Request, res: Response) => {
     const campaignId = DEFAULT_CAMPAIGN_ID;
     const campaign = db.prepare('SELECT * FROM swap_campaigns WHERE id = ?').get(campaignId) as any;
 
-    const userStats = db.prepare(`
-      SELECT 
-        COUNT(DISTINCT id) as total_users,
-        COALESCE(SUM(total_volume_usd), 0) as total_volume,
-        COALESCE(SUM(eligible_swaps_count), 0) as total_swaps,
-        COUNT(CASE WHEN eligible_swaps_count > 1 THEN 1 END) as repeat_swappers
-      FROM swap_campaign_users
-      WHERE campaign_id = ?
-    `).get(campaignId) as any;
+    // PLATFORM statistics are all-time and never reset: they read every round, including rounds archived by
+    // a campaign reset (a reset moves the old round to an archived campaign id instead of deleting it).
+    // Each swap is stored once (unique chain + tx hash), so counting across rounds never double counts.
+    const txStats = db.prepare(`
+      SELECT
+        COUNT(CASE WHEN execution_status = 'DONE' THEN 1 END) as successful_swaps,
+        COUNT(CASE WHEN execution_status = 'FAILED' THEN 1 END) as failed_swaps,
+        COALESCE(SUM(CASE WHEN execution_status = 'DONE' THEN volume_usd ELSE 0 END), 0) as total_volume
+      FROM swap_transactions
+    `).get() as any;
+
+    // A reset copies every wallet into the new round, so wallets are counted once by address
+    const walletStats = db.prepare(`
+      SELECT COUNT(DISTINCT wallet_address) as total_wallets FROM swap_campaign_users
+    `).get() as any;
+    const repeatStats = db.prepare(`
+      SELECT COUNT(*) as repeat_swappers FROM (
+        SELECT wallet_address FROM swap_transactions WHERE execution_status = 'DONE'
+        GROUP BY wallet_address HAVING COUNT(*) > 1
+      )
+    `).get() as any;
 
     const eventStats = db.prepare(`
-      SELECT 
+      SELECT
         COUNT(CASE WHEN event_name = 'campaign_page_view' THEN 1 END) as page_views,
         COUNT(DISTINCT CASE WHEN event_name = 'campaign_page_view' THEN ip_address END) as unique_visitors,
         COUNT(CASE WHEN event_name = 'wallet_connect_clicked' THEN 1 END) as connect_attempts,
         COUNT(CASE WHEN event_name = 'wallet_connected' THEN 1 END) as connected_wallets,
         COUNT(CASE WHEN event_name = 'swap_initiated' THEN 1 END) as swaps_initiated
       FROM swap_campaign_events
-      WHERE campaign_id = ?
-    `).get(campaignId) as any;
+    `).get() as any;
 
-    const txStats = db.prepare(`
-      SELECT 
-        COUNT(CASE WHEN execution_status = 'DONE' THEN 1 END) as successful_swaps,
-        COUNT(CASE WHEN execution_status = 'FAILED' THEN 1 END) as failed_swaps
-      FROM swap_transactions
-      WHERE campaign_id = ?
-    `).get(campaignId) as any;
-
+    // Referral links are copied into each new round too, so referred wallets are counted once
     const referralStats = db.prepare(`
-      SELECT 
-        COUNT(*) as total_referrals,
-        COUNT(CASE WHEN status IN ('qualified', 'rewarded') THEN 1 END) as qualified_referrals
-      FROM swap_referrals
+      SELECT
+        COUNT(DISTINCT u.wallet_address) as total_referrals,
+        COUNT(DISTINCT CASE WHEN r.status IN ('qualified', 'rewarded') THEN u.wallet_address END) as qualified_referrals
+      FROM swap_referrals r
+      JOIN swap_campaign_users u ON u.id = r.referred_user_id
+    `).get() as any;
+
+    // CURRENT ROUND (resets with the campaign)
+    const roundStats = db.prepare(`
+      SELECT
+        COUNT(CASE WHEN eligible_swaps_count > 0 THEN 1 END) as active_wallets,
+        COALESCE(SUM(total_volume_usd), 0) as total_volume,
+        COALESCE(SUM(eligible_swaps_count), 0) as total_swaps
+      FROM swap_campaign_users
       WHERE campaign_id = ?
     `).get(campaignId) as any;
 
@@ -1392,12 +1407,16 @@ apiRouter.get('/admin/overview', verifyAdmin, (req: Request, res: Response) => {
         pageViews: eventStats.page_views || 0,
         uniqueVisitors: eventStats.unique_visitors || 0,
         connectAttempts: eventStats.connect_attempts || 0,
-        connectedWallets: userStats.total_users || 0,
+        connectedWallets: walletStats.total_wallets || 0,
         swapsInitiated: eventStats.swaps_initiated || 0,
         successfulSwaps: txStats.successful_swaps || 0,
         failedSwaps: txStats.failed_swaps || 0,
-        totalVerifiedVolumeUSD: userStats.total_volume || 0,
-        repeatSwappers: userStats.repeat_swappers || 0,
+        totalVerifiedVolumeUSD: txStats.total_volume || 0,
+        repeatSwappers: repeatStats.repeat_swappers || 0,
+        roundVolumeUSD: roundStats.total_volume || 0,
+        roundSwaps: roundStats.total_swaps || 0,
+        roundActiveWallets: roundStats.active_wallets || 0,
+        roundStartedAt: campaign?.reset_at || campaign?.start_date || null,
         referralVisits: referralStats.total_referrals || 0,
         qualifiedReferrals: referralStats.qualified_referrals || 0,
         milestonesUnlocked: rewardStats.unlocked_count || 0,
@@ -1409,6 +1428,24 @@ apiRouter.get('/admin/overview', verifyAdmin, (req: Request, res: Response) => {
         remainingBudgetUSD: remainingBudget,
       },
     });
+  } catch (err: any) {
+    sendServerError(res, err, 'swap api');
+  }
+});
+
+// Admin period analytics: volume, swaps and new wallets for a month / the last 6 months / all time,
+// with a chain-wise breakdown. All rounds are included (a campaign reset does not change these figures).
+apiRouter.get('/admin/analytics', verifyAdmin, (req: Request, res: Response) => {
+  try {
+    const period = String(req.query.period || 'current') as AnalyticsPeriod;
+    if (!['current', 'last6', 'month', 'all'].includes(period)) {
+      return res.status(400).json({ error: 'Invalid period. Use current, last6, month or all.' });
+    }
+    try {
+      res.json(getPeriodAnalytics(period, typeof req.query.month === 'string' ? req.query.month : undefined));
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Invalid period' });
+    }
   } catch (err: any) {
     sendServerError(res, err, 'swap api');
   }
@@ -1942,48 +1979,26 @@ apiRouter.get('/admin/audit-logs', verifyAdmin, (req: Request, res: Response) =>
   }
 });
 
-// Admin CSV Export
+// Admin data export: ?format=csv (default) or ?format=pdf
 apiRouter.get('/admin/export/:type', verifyAdmin, (req: Request, res: Response) => {
   try {
-    const { type } = req.params;
-    let data: any[] = [];
-    let filename = `swap_${type}_${Date.now()}.csv`;
-
-    if (type === 'users') {
-      data = db.prepare('SELECT wallet_address, chain_id, total_volume_usd, eligible_swaps_count, referral_code, is_flagged, verified_at, created_at FROM swap_campaign_users ORDER BY total_volume_usd DESC').all();
-    } else if (type === 'transactions') {
-      data = db.prepare('SELECT wallet_address, chain_id, tx_hash, from_token_symbol, to_token_symbol, volume_usd, execution_status, verified_at FROM swap_transactions ORDER BY created_at DESC').all();
-    } else if (type === 'claims') {
-      data = db.prepare(`
-        SELECT c.id, u.wallet_address, c.requested_amount_usd, c.payout_address, c.preferred_network, c.preferred_token, c.status, p.payout_tx_hash, p.paid_at, c.created_at
-        FROM swap_reward_claims c
-        JOIN swap_campaign_users u ON u.id = c.user_id
-        LEFT JOIN swap_reward_payouts p ON p.claim_id = c.id
-        ORDER BY c.created_at DESC
-      `).all();
-    } else if (type === 'referrals') {
-      data = db.prepare(`
-        SELECT r.id, u1.wallet_address as referrer_wallet, u2.wallet_address as referred_wallet, r.referral_code, r.status, r.qualifying_volume_usd, r.reward_amount_usd, r.created_at
-        FROM swap_referrals r
-        JOIN swap_campaign_users u1 ON u1.id = r.referrer_user_id
-        JOIN swap_campaign_users u2 ON u2.id = r.referred_user_id
-        ORDER BY r.created_at DESC
-      `).all();
-    } else {
+    const type = String(req.params.type) as ExportType;
+    if (!['users', 'transactions', 'claims', 'referrals'].includes(type)) {
       return res.status(400).json({ error: 'Invalid export type. Use users, transactions, claims, or referrals.' });
     }
+    const format = String(req.query.format || 'csv').toLowerCase() === 'pdf' ? 'pdf' : 'csv';
+    const table = buildExport(type);
+    const filename = `${table.fileBase}_${new Date().toISOString().slice(0, 10)}.${format}`;
 
-    if (data.length === 0) {
-      return res.send('No data available');
-    }
-
-    const headers = Object.keys(data[0]).join(',');
-    const rows = data.map(row => Object.values(row).map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(','));
-    const csv = [headers, ...rows].join('\n');
-
-    res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(csv);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Export-Filename', filename);
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      return res.send(toPdf(table));
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.send(toCsv(table));
   } catch (err: any) {
     sendServerError(res, err, 'swap api');
   }

@@ -29,6 +29,9 @@ import { AffiliateAdminPanel } from './AffiliateAdminPanel';
 // Live chat now runs on tawk.to (replies at dashboard.tawk.to). This tab shows a read-only chat history
 // from tawk.to webhooks. The old in-house panel is kept in ./LiveChatAdminPanel but no longer shown.
 import { TawkChatHistoryPanel } from './TawkChatHistoryPanel';
+import { AdminPeriodAnalytics } from './AdminPeriodAnalytics';
+
+type ExportType = 'users' | 'transactions' | 'claims' | 'referrals';
 
 export const SwapAdminDashboard: React.FC = () => {
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem('nova_swap_admin_key') || '');
@@ -43,6 +46,8 @@ export const SwapAdminDashboard: React.FC = () => {
 
   // Data states
   const [overviewData, setOverviewData] = useState<any>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [exporting, setExporting] = useState<string | null>(null);
   const [claims, setClaims] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
@@ -97,6 +102,7 @@ export const SwapAdminDashboard: React.FC = () => {
   const loadAllData = async (key: string) => {
     try {
       setIsLoading(true);
+      setRefreshKey((n) => n + 1);
       const [overview, claimsRes, usersRes, logsRes] = await Promise.all([
         swapCampaignApi.getAdminOverview(key).catch(() => null),
         swapCampaignApi.getAdminClaims(key).catch(() => ({ claims: [] })),
@@ -159,8 +165,10 @@ export const SwapAdminDashboard: React.FC = () => {
   // 1b. Reset campaign to zero for every user (new round)
   const handleResetCampaign = async () => {
     const typed = prompt(
-      'This resets the campaign to 0 for ALL users: volume, milestones, cashback, referral bonuses and claims.\n' +
-        'The old round is archived and cannot be undone.\n\nType RESET to confirm:'
+      'This resets the CAMPAIGN to 0 for ALL users: campaign volume, milestones, cashback, referral bonuses and claims.\n' +
+        'The old round is archived and cannot be undone.\n\n' +
+        'Platform statistics are kept (total swap volume, connected wallets, verified swaps, impressions, referral conversions).\n\n' +
+        'Type RESET to confirm:'
     );
     if (typed === null) return;
     if (typed.trim() !== 'RESET') {
@@ -286,21 +294,40 @@ export const SwapAdminDashboard: React.FC = () => {
     }
   };
 
-  // 7. CSV Export
-  const handleExportCSV = (type: 'users' | 'transactions' | 'claims' | 'referrals') => {
-    const url = swapCampaignApi.getExportUrl(adminKey, type);
-    fetch(url, { headers: { 'x-admin-key': adminKey } })
-      .then((res) => res.blob())
-      .then((blob) => {
-        const downloadUrl = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = `nova_swap_${type}_${Date.now()}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      })
-      .catch((err) => alert('Export failed: ' + err.message));
+  // 7. Data export (CSV or PDF). On phones the share sheet is offered first (Save to Files, Sheets,
+  // Drive, email...), because some mobile browsers ignore downloads of in-memory files.
+  const handleExport = async (type: ExportType, format: 'csv' | 'pdf') => {
+    const id = `${type}-${format}`;
+    try {
+      setExporting(id);
+      setErrorMessage(null);
+      const { blob, filename } = await swapCampaignApi.downloadAdminExport(adminKey, type, format);
+      const file = new File([blob], filename, { type: blob.type });
+      const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+      const nav = navigator as any;
+      if (isTouch && nav.canShare?.({ files: [file] })) {
+        try {
+          await nav.share({ files: [file], title: filename });
+          return;
+        } catch (err: any) {
+          if (err?.name === 'AbortError') return; // user closed the share sheet
+          // sharing not allowed here: fall back to a normal download
+        }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err: any) {
+      setErrorMessage('Export failed: ' + (err?.message || 'please try again'));
+    } finally {
+      setExporting(null);
+    }
   };
 
   // If not authenticated, render Login Form
@@ -422,7 +449,7 @@ export const SwapAdminDashboard: React.FC = () => {
             { id: 'affiliates', label: 'Partners & BDMs', icon: Users },
             { id: 'chats', label: 'Chat History', icon: MessageCircle },
             { id: 'fraud', label: 'Users & Sybil Review', icon: ShieldAlert },
-            { id: 'logs', label: 'Audit Logs & CSV Export', icon: FileText },
+            { id: 'logs', label: 'Audit Logs & Export', icon: FileText },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -458,7 +485,9 @@ export const SwapAdminDashboard: React.FC = () => {
                 <div className="text-2xl font-extrabold text-white mt-1">
                   ${analytics?.totalVerifiedVolumeUSD?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
                 </div>
-                <div className="text-[11px] text-emerald-400 mt-1">Verified on 6 EVM networks</div>
+                <div className="text-[11px] text-emerald-400 mt-1">
+                  All time · This round: ${(analytics?.roundVolumeUSD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
               </div>
 
               <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 shadow-md">
@@ -474,7 +503,7 @@ export const SwapAdminDashboard: React.FC = () => {
                 <div className="text-2xl font-extrabold text-emerald-400 mt-1">
                   {analytics?.successfulSwaps || 0}
                 </div>
-                <div className="text-[11px] text-slate-400 mt-1">Initiated: {analytics?.swapsInitiated || 0}</div>
+                <div className="text-[11px] text-slate-400 mt-1">All time · This round: {analytics?.roundSwaps || 0}</div>
               </div>
 
               <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 shadow-md">
@@ -517,6 +546,13 @@ export const SwapAdminDashboard: React.FC = () => {
                 <div className="text-[11px] text-slate-400 mt-1">Unique: {analytics?.uniqueVisitors || 0}</div>
               </div>
             </div>
+
+            <p className="text-[11px] text-slate-500 -mt-2 px-1">
+              Volume, wallets, swaps, impressions and referral conversions are platform totals: a campaign reset does not change them.
+              {analytics?.roundStartedAt ? ` Current round started ${new Date(analytics.roundStartedAt).toLocaleDateString()}.` : ''}
+            </p>
+
+            <AdminPeriodAnalytics adminKey={adminKey} refreshKey={refreshKey} />
 
             {/* Campaign Summary Card */}
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800">
@@ -1159,41 +1195,43 @@ export const SwapAdminDashboard: React.FC = () => {
         {/* TAB 5: AUDIT LOGS & CSV EXPORT */}
         {activeTab === 'logs' && (
           <div className="space-y-6">
-            {/* CSV Export Bar */}
+            {/* Data Export */}
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl">
-              <h3 className="text-base font-bold text-white mb-2">Export Campaign Records (CSV)</h3>
+              <h3 className="text-base font-bold text-white mb-2">Export Records</h3>
               <p className="text-xs text-slate-400 mb-4">
-                Download timestamped audit data for financial reconciliation and compliance reporting.
+                CSV opens in Excel, Google Sheets and Numbers (desktop and mobile). PDF opens anywhere for quick viewing or sharing.
+                All campaign rounds are included, with a Campaign round column.
               </p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <button
-                  onClick={() => handleExportCSV('users')}
-                  className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-colors cursor-pointer"
-                >
-                  <Download size={14} className="text-primary" />
-                  <span>Export Users CSV</span>
-                </button>
-                <button
-                  onClick={() => handleExportCSV('transactions')}
-                  className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-colors cursor-pointer"
-                >
-                  <Download size={14} className="text-emerald-400" />
-                  <span>Export Swaps CSV</span>
-                </button>
-                <button
-                  onClick={() => handleExportCSV('claims')}
-                  className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-colors cursor-pointer"
-                >
-                  <Download size={14} className="text-purple-400" />
-                  <span>Export Claims CSV</span>
-                </button>
-                <button
-                  onClick={() => handleExportCSV('referrals')}
-                  className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-colors cursor-pointer"
-                >
-                  <Download size={14} className="text-blue-400" />
-                  <span>Export Referrals CSV</span>
-                </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {([
+                  { type: 'users', label: 'Users', color: 'text-primary' },
+                  { type: 'transactions', label: 'Swaps', color: 'text-emerald-400' },
+                  { type: 'claims', label: 'Claims', color: 'text-purple-400' },
+                  { type: 'referrals', label: 'Referrals', color: 'text-blue-400' },
+                ] as { type: ExportType; label: string; color: string }[]).map((e) => (
+                  <div key={e.type} className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700/50">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-white mb-2.5">
+                      <Download size={14} className={e.color} />
+                      <span>{e.label}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['csv', 'pdf'] as const).map((f) => {
+                        const busy = exporting === `${e.type}-${f}`;
+                        return (
+                          <button
+                            key={f}
+                            onClick={() => handleExport(e.type, f)}
+                            disabled={!!exporting}
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-slate-200 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {busy ? <RefreshCw size={12} className="animate-spin" /> : f === 'csv' ? <Download size={12} /> : <FileText size={12} />}
+                            <span>{f.toUpperCase()}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
